@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -96,6 +96,14 @@ function App() {
   const activeHandState = activeTeam === "-" ? null : battleState.hands?.[activeTeam];
   const latestEvent = battleState.events[battleState.events.length - 1];
 
+  useEffect(() => {
+    if (!profile || !queueState || match) return undefined;
+    const timer = window.setInterval(() => {
+      pollMatchmaking(profile.id).catch((err) => setMessage(err.message || "Queue sync failed."));
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [profile?.id, queueState?.status, queueState?.queueSize, match?.id]);
+
   async function signIn(event) {
     event.preventDefault();
     setBusy(true);
@@ -137,7 +145,10 @@ function App() {
       setProfile(payload.player);
       setLogin((current) => ({ ...current, displayName: payload.player.displayName }));
       await loadLeaderboard();
-      setMessage(`Restored ${payload.player.displayName} at ${payload.player.rank.rating}.`);
+      const status = await pollMatchmaking(payload.player.id);
+      if (!status || status.status === "idle") {
+        setMessage(`Restored ${payload.player.displayName} at ${payload.player.rank.rating}.`);
+      }
     } catch (err) {
       window.localStorage.removeItem(PROFILE_STORAGE_KEY);
       setMessage(err.message || "Profile restore failed.");
@@ -154,6 +165,54 @@ function App() {
     return payload.players || [];
   }
 
+  async function syncMatchRoom(matchId = match?.id, playerId = profile?.id) {
+    if (!matchId || !playerId) return null;
+    const response = await fetch(`/api/match/${matchId}?playerId=${playerId}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "room_sync_failed");
+    setMatch(payload.match);
+    setBattleState(payload.match.state);
+    setLastDecision(null);
+    setQueueState(null);
+    setMessage(`Room synced: ${payload.match.status}.`);
+    return payload.match;
+  }
+
+  async function pollMatchmaking(playerId = profile?.id) {
+    if (!playerId) return null;
+    const response = await fetch(`/api/matchmaking/${playerId}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "matchmaking_sync_failed");
+    if (payload.status === "matched" && payload.match) {
+      await syncMatchRoom(payload.match.id, playerId);
+      return payload;
+    }
+    if (payload.status === "queued") {
+      setQueueState({ ...payload, polling: true });
+      setMessage(`Waiting for humans. Position ${payload.position || "?"}/${payload.queueSize}.`);
+      return payload;
+    }
+    setQueueState(null);
+    setMessage("No active queue or room for this profile.");
+    return payload;
+  }
+
+  async function syncCurrentRoom() {
+    if (!profile) return;
+    setBusy(true);
+    try {
+      if (match?.id) {
+        await syncMatchRoom(match.id, profile.id);
+      } else {
+        await pollMatchmaking(profile.id);
+      }
+    } catch (err) {
+      setMessage(err.message || "Room sync failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function joinMatch(options) {
     if (!profile) return;
     const opts = options || {};
@@ -166,7 +225,7 @@ function App() {
       });
       const payload = await response.json();
       if (response.status === 202) {
-        setQueueState({ queueSize: payload.queueSize, needed: payload.needed });
+        setQueueState({ ...payload, polling: true });
         setMessage(`Waiting for humans. ${payload.queueSize}/4 commanders queued.`);
         return;
       }
@@ -422,7 +481,7 @@ function App() {
       <section className="game-grid">
         <aside className="lobby-panel game-panel">
           <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={signIn} onRestore={restoreProfile} />
-          <MatchCard profile={profile} match={match} queueState={queueState} busy={busy} onJoin={joinMatch} onSettle={settleRank} />
+          <MatchCard profile={profile} match={match} queueState={queueState} busy={busy} onJoin={joinMatch} onSync={syncCurrentRoom} onSettle={settleRank} />
           <RosterCard match={match} />
           <LeaderboardPanel players={leaderboard} profile={profile} onRefresh={loadLeaderboard} />
         </aside>
@@ -515,7 +574,8 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
   );
 }
 
-function MatchCard({ profile, match, queueState, busy, onJoin, onSettle }) {
+function MatchCard({ profile, match, queueState, busy, onJoin, onSync, onSettle }) {
+  const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id}` : "No room synced";
   return (
     <div className="match-card">
       <div className="panel-title"><RadioTower size={18} /> Ranked Matchmaking</div>
@@ -526,6 +586,11 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSettle }) {
       <div className="queue-strip" data-testid="ranked-queue">
         <Activity size={16} />
         <span>{queueState ? `${queueState.queueSize}/4 humans queued` : match?.filledByAi ? "AI fallback active" : "Queue idle"}</span>
+      </div>
+      <div className="sync-strip" data-testid="room-sync">
+        <RefreshCw size={15} />
+        <span>{syncLabel}</span>
+        <button disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
       <div className="match-actions">
         <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Wait for Humans</button>

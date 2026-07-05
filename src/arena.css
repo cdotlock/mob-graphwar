@@ -296,6 +296,37 @@ label {
   flex: 0 0 auto;
 }
 
+.sync-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid rgba(120, 229, 255, 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--cyan);
+  background:
+    linear-gradient(90deg, rgba(120, 229, 255, 0.12), transparent),
+    rgba(3, 7, 14, 0.7);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sync-strip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-strip button {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
 .match-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -964,5 +995,13 @@ code {
   .commander-metrics {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .sync-strip {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sync-strip button {
+    grid-column: 1 / -1;
   }
 }

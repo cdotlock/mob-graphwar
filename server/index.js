@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, "..");
 const DIST_ROOT = path.join(ROOT, "dist");
 const players = new Map();
 const matches = new Map();
+const playerMatchIndex = new Map();
 const matchmakingQueue = [];
 let nextPlayerId = 1;
 let nextMatchId = 1;
@@ -124,6 +125,7 @@ function loadPersistentStore(env) {
   if (!storeFile || loadedStoreFile === storeFile) return storeFile;
   players.clear();
   matches.clear();
+  playerMatchIndex.clear();
   matchmakingQueue.length = 0;
 
   const store = readStoreFile(storeFile);
@@ -258,6 +260,9 @@ function createRankedMatchFromRoster(roster, options) {
     rankSettlements: {}
   };
   matches.set(id, match);
+  for (const seat of roster) {
+    if (seat.playerId) playerMatchIndex.set(seat.playerId, id);
+  }
   return match;
 }
 
@@ -278,6 +283,43 @@ function createHumanRankedMatch(entries) {
 function removeQueuedPlayer(playerId) {
   const existing = matchmakingQueue.findIndex((entry) => entry.playerId === playerId);
   if (existing >= 0) matchmakingQueue.splice(existing, 1);
+}
+
+function getIndexedMatch(playerId) {
+  const matchId = playerMatchIndex.get(playerId);
+  if (!matchId) return null;
+  const match = matches.get(matchId);
+  if (!match) {
+    playerMatchIndex.delete(playerId);
+    return null;
+  }
+  return match;
+}
+
+function publicMatchmakingStatus(player) {
+  const match = getIndexedMatch(player.id);
+  if (match) {
+    return {
+      status: "matched",
+      match,
+      queueSize: matchmakingQueue.length,
+      needed: Math.max(0, 4 - matchmakingQueue.length)
+    };
+  }
+  const queuedIndex = matchmakingQueue.findIndex((entry) => entry.playerId === player.id);
+  if (queuedIndex >= 0) {
+    return {
+      status: "queued",
+      queueSize: matchmakingQueue.length,
+      position: queuedIndex + 1,
+      needed: Math.max(0, 4 - matchmakingQueue.length)
+    };
+  }
+  return {
+    status: "idle",
+    queueSize: matchmakingQueue.length,
+    needed: Math.max(0, 4 - matchmakingQueue.length)
+  };
 }
 
 function queueRankedPlayer(player, preferredProvider) {
@@ -567,6 +609,38 @@ function createServer(options) {
         sendJson(res, 200, { players: publicLeaderboard(limit) });
         return;
       }
+      const matchmakingStatusMatch = url.pathname.match(/^\/api\/matchmaking\/([^/]+)$/);
+      if (req.method === "GET" && matchmakingStatusMatch) {
+        const player = players.get(matchmakingStatusMatch[1]);
+        if (!player) {
+          sendJson(res, 404, { error: "unknown_player" });
+          return;
+        }
+        sendJson(res, 200, publicMatchmakingStatus(player));
+        return;
+      }
+      const readMatch = url.pathname.match(/^\/api\/match\/([^/]+)$/);
+      if (req.method === "GET" && readMatch) {
+        const match = matches.get(readMatch[1]);
+        if (!match) {
+          sendJson(res, 404, { error: "unknown_match" });
+          return;
+        }
+        const playerId = url.searchParams.get("playerId");
+        if (playerId) {
+          const player = players.get(playerId);
+          if (!player) {
+            sendJson(res, 404, { error: "unknown_player" });
+            return;
+          }
+          if (!getPlayerSeat(match, player)) {
+            sendJson(res, 403, { error: "player_not_in_match" });
+            return;
+          }
+        }
+        sendJson(res, 200, { match });
+        return;
+      }
       if (req.method === "POST" && url.pathname === "/api/session") {
         const body = JSON.parse(await readBody(req, 128_000));
         const id = `player-${nextPlayerId++}`;
@@ -588,15 +662,19 @@ function createServer(options) {
           sendJson(res, 404, { error: "unknown_player" });
           return;
         }
+        const indexedMatch = getIndexedMatch(player.id);
+        if (indexedMatch && indexedMatch.status !== "resolved") {
+          sendJson(res, 200, { match: indexedMatch, queueSize: matchmakingQueue.length });
+          return;
+        }
+        if (indexedMatch && indexedMatch.status === "resolved") {
+          playerMatchIndex.delete(player.id);
+        }
         const allowAiFill = body.allowAiFill !== false;
         if (!allowAiFill) {
           const queuedMatch = queueRankedPlayer(player, body.preferredProvider);
           if (!queuedMatch) {
-            sendJson(res, 202, {
-              status: "queued",
-              queueSize: matchmakingQueue.length,
-              needed: Math.max(0, 4 - matchmakingQueue.length)
-            });
+            sendJson(res, 202, publicMatchmakingStatus(player));
             return;
           }
           sendJson(res, 200, { match: queuedMatch, queueSize: matchmakingQueue.length });

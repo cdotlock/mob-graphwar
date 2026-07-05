@@ -202,6 +202,50 @@ async function testHumanMatchmakingQueueCanFormRanked2v2() {
   assert.ok(!matched.text.includes("Alpha-secret"), "match response should not leak queued player keys");
 }
 
+async function testQueuedPlayersCanPollMatchedRoom() {
+  const players = [];
+  for (const name of ["Echo", "Flux", "Glint", "Helix"]) {
+    players.push(await createTestPlayer(name));
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    const queued = await request(createServer({ env: {} }), "/api/match/join", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ playerId: players[index].id, preferredProvider: "deepseek", allowAiFill: false })
+    });
+    assert.strictEqual(queued.status, 202);
+  }
+
+  const waiting = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`);
+  assert.strictEqual(waiting.status, 200);
+  assert.strictEqual(waiting.json.status, "queued");
+  assert.strictEqual(waiting.json.queueSize, 3);
+  assert.strictEqual(waiting.json.position, 1);
+  assert.strictEqual(waiting.json.needed, 1);
+
+  const matched = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: players[3].id, preferredProvider: "deepseek", allowAiFill: false })
+  });
+  assert.strictEqual(matched.status, 200);
+  const matchId = matched.json.match.id;
+
+  const synced = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`);
+  assert.strictEqual(synced.status, 200);
+  assert.strictEqual(synced.json.status, "matched");
+  assert.strictEqual(synced.json.match.id, matchId);
+  assert.strictEqual(synced.json.match.roster.filter((seat) => seat.control === "human").length, 4);
+  assert.ok(!synced.text.includes("Echo-secret"), "matchmaking poll should not leak API keys");
+
+  const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${players[0].id}`);
+  assert.strictEqual(fetched.status, 200);
+  assert.strictEqual(fetched.json.match.id, matchId);
+  assert.ok(fetched.json.match.roster.some((seat) => seat.playerId === players[0].id), "fetched match should include requesting player");
+  assert.ok(!fetched.text.includes("Flux-secret"), "match fetch should not leak API keys");
+}
+
 async function testMatchActionsMutateAuthoritativeState() {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
@@ -445,6 +489,7 @@ async function testProviderShotRequiresKey() {
   await testLoginMatchmakingAndRankLoop();
   await testProfileRankAndLeaderboardPersistAcrossRestart();
   await testHumanMatchmakingQueueCanFormRanked2v2();
+  await testQueuedPlayersCanPollMatchedRoom();
   await testMatchActionsMutateAuthoritativeState();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();

@@ -46,11 +46,19 @@ function testGameSurfacesPersistentProfileAndLeaderboard() {
   assert.ok(css.includes(".leaderboard-panel"), "CSS should style the ranked leaderboard panel");
 }
 
+function testUiPollsQueuedMatchmakingRooms() {
+  assert.ok(main.includes("pollMatchmaking"), "UI should poll queued ranked players into matched rooms");
+  assert.ok(main.includes("/api/matchmaking/"), "UI should call the matchmaking status endpoint");
+  assert.ok(main.includes("/api/match/"), "UI should be able to fetch an active match room");
+  assert.ok(css.includes(".sync-strip"), "CSS should style room sync and polling state");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
 testUiSubmitsRankedActionsToServer();
 testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
+testUiPollsQueuedMatchmakingRooms();
 
 console.log("ui-source tests passed");

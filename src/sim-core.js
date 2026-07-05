@@ -648,6 +648,125 @@
         y: 0,
         w: round(5 + rng() * 4, 1),
         h: round(12 + rng() * 10, 1)
+      },
+      {
+        id: "seed-back-spire-a",
+        x: clamp(round(26 + rng() * 10, 1), 10, CONFIG.width - 14),
+        y: 0,
+        w: round(3.2 + rng() * 2.2, 1),
+        h: round(26 + rng() * 14, 1)
+      },
+      {
+        id: "seed-back-spire-b",
+        x: clamp(round(72 + rng() * 9, 1), 10, CONFIG.width - 14),
+        y: 0,
+        w: round(3.2 + rng() * 2.2, 1),
+        h: round(26 + rng() * 14, 1)
+      },
+      {
+        id: "seed-mid-needle-a",
+        x: clamp(round(39 + rng() * 7, 1), 10, CONFIG.width - 14),
+        y: 0,
+        w: round(2.6 + rng() * 1.8, 1),
+        h: round(25 + rng() * 14, 1)
+      },
+      {
+        id: "seed-mid-needle-b",
+        x: clamp(round(58 + rng() * 9, 1), 10, CONFIG.width - 14),
+        y: 0,
+        w: round(2.6 + rng() * 1.8, 1),
+        h: round(25 + rng() * 14, 1)
+      },
+      {
+        id: "seed-overhang-a",
+        x: clamp(round(18 + rng() * 20, 1), 10, CONFIG.width - 30),
+        y: round(30 + rng() * 10, 1),
+        w: round(14 + rng() * 10, 1),
+        h: round(3.2 + rng() * 2.8, 1)
+      },
+      {
+        id: "seed-overhang-b",
+        x: clamp(round(62 + rng() * 12, 1), 10, CONFIG.width - 30),
+        y: round(29 + rng() * 12, 1),
+        w: round(14 + rng() * 10, 1),
+        h: round(3.2 + rng() * 2.8, 1)
+      },
+      {
+        id: "seed-high-cap-a",
+        x: clamp(round(16 + rng() * 22, 1), 10, CONFIG.width - 30),
+        y: round(47 + rng() * 6, 1),
+        w: round(15 + rng() * 9, 1),
+        h: round(2.4 + rng() * 2.4, 1)
+      },
+      {
+        id: "seed-high-cap-b",
+        x: clamp(round(58 + rng() * 18, 1), 10, CONFIG.width - 30),
+        y: round(47 + rng() * 6, 1),
+        w: round(15 + rng() * 9, 1),
+        h: round(2.4 + rng() * 2.4, 1)
+      },
+      {
+        id: "seed-thread-slot-a",
+        x: clamp(round(41 + rng() * 8, 1), 10, CONFIG.width - 22),
+        y: round(12 + rng() * 8, 1),
+        w: round(8 + rng() * 7, 1),
+        h: round(3.2 + rng() * 2.4, 1)
+      },
+      {
+        id: "seed-thread-slot-b",
+        x: clamp(round(51 + rng() * 10, 1), 10, CONFIG.width - 22),
+        y: round(20 + rng() * 8, 1),
+        w: round(8 + rng() * 8, 1),
+        h: round(3.2 + rng() * 2.4, 1)
+      },
+      {
+        id: "seed-thread-slot-c",
+        x: clamp(round(36 + rng() * 22, 1), 10, CONFIG.width - 22),
+        y: round(35 + rng() * 7, 1),
+        w: round(9 + rng() * 8, 1),
+        h: round(3 + rng() * 2.2, 1)
+      },
+      {
+        id: "seed-splitter-a",
+        x: clamp(round(31 + rng() * 9, 1), 10, CONFIG.width - 15),
+        y: round(7 + rng() * 8, 1),
+        w: round(4 + rng() * 3, 1),
+        h: round(9 + rng() * 11, 1)
+      },
+      {
+        id: "seed-splitter-b",
+        x: clamp(round(68 + rng() * 8, 1), 10, CONFIG.width - 15),
+        y: round(7 + rng() * 8, 1),
+        w: round(4 + rng() * 3, 1),
+        h: round(9 + rng() * 11, 1)
+      },
+      {
+        id: "seed-crown-a",
+        x: clamp(round(44 + rng() * 8, 1), 10, CONFIG.width - 18),
+        y: round(50 + rng() * 4, 1),
+        w: round(7 + rng() * 7, 1),
+        h: round(2.5 + rng() * 2, 1)
+      },
+      {
+        id: "seed-crown-b",
+        x: clamp(round(54 + rng() * 8, 1), 10, CONFIG.width - 18),
+        y: round(49 + rng() * 4, 1),
+        w: round(7 + rng() * 7, 1),
+        h: round(2.5 + rng() * 2, 1)
+      },
+      {
+        id: "seed-ground-rib-a",
+        x: clamp(round(18 + rng() * 12, 1), 8, CONFIG.width - 14),
+        y: 0,
+        w: round(3 + rng() * 3, 1),
+        h: round(8 + rng() * 8, 1)
+      },
+      {
+        id: "seed-ground-rib-b",
+        x: clamp(round(80 + rng() * 8, 1), 8, CONFIG.width - 14),
+        y: 0,
+        w: round(3 + rng() * 3, 1),
+        h: round(8 + rng() * 8, 1)
       }
     ];
     const obstacles = baseObstacles.concat(proceduralObstacles);
@@ -664,11 +783,24 @@
     });
     const tallCount = obstacles.filter((obstacle) => obstacle.h >= 24).length;
     const density = obstacles.reduce((sum, obstacle) => sum + obstacle.w * obstacle.h, 0) / (CONFIG.width * CONFIG.height);
+    const elevatedCount = obstacles.filter((obstacle) => obstacle.y > 0).length;
+    const ceilingCount = obstacles.filter((obstacle) => obstacle.y >= 38).length;
+    const suspendedShelves = obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length;
+    const chokePoints = obstacles.filter((obstacle) => obstacle.h >= 18 || (obstacle.y > 0 && obstacle.w >= 9)).length;
     const difficulty = clamp(Math.round(template.difficulty + tallCount * 4 + density * 120 + obstacles.length * 2 + rng() * 5), 90, 99);
     return {
       id: template.id,
       name: template.name,
       difficulty,
+      complexity: {
+        obstacleCount: obstacles.length,
+        tallCount,
+        elevatedCount,
+        ceilingCount,
+        suspendedShelves,
+        chokePoints,
+        density: round(density, 3)
+      },
       obstacles,
       units
     };
@@ -693,7 +825,8 @@
       mapMeta: {
         id: map.id,
         name: map.name,
-        difficulty: map.difficulty
+        difficulty: map.difficulty,
+        complexity: clone(map.complexity)
       },
       obstacles: clone(map.obstacles),
       units: clone(map.units),

@@ -292,15 +292,23 @@ function testSeededHardMapGeneration() {
   assert.notDeepStrictEqual(first.obstacles, different.obstacles, "different seeds should produce different maps");
   assert.ok(first.mapMeta && first.mapMeta.difficulty >= 90, "map should include high difficulty metadata");
   assert.strictEqual(first.mapMeta.windows, undefined, "map should not expose route windows");
-  assert.ok(first.obstacles.length >= 14, "map should have dense Graphwar-level terrain complexity");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.h >= 24).length >= 4, "map should include multiple tall obstructions");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.y > 0).length >= 4, "map should include elevated blockers");
+  assert.ok(first.mapMeta.complexity, "map should expose a bare complexity summary for the UI");
+  assert.ok(first.obstacles.length >= 28, "map should have dense Graphwar-level terrain complexity");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.h >= 24).length >= 7, "map should include multiple tall obstructions");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.y > 0).length >= 12, "map should include elevated blockers");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.y >= 38).length >= 3, "map should include ceiling pressure");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length >= 5, "map should include long suspended shelves");
+  assert.ok(first.mapMeta.complexity.chokePoints >= 5, "complexity summary should count route choke points");
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
 
 function testHardMapsRemainSolvableByFiniteCardCombos() {
   for (let seed = 1; seed <= 40; seed += 1) {
     const state = Sim.createInitialState({ seed });
+    assert.ok(state.mapMeta.complexity.obstacleCount >= 28, `seed ${seed} should keep dense obstacle count`);
+    assert.ok(state.mapMeta.complexity.tallCount >= 7, `seed ${seed} should keep at least seven tall blockers`);
+    assert.ok(state.mapMeta.complexity.elevatedCount >= 12, `seed ${seed} should keep elevated blockers`);
+    assert.ok(state.mapMeta.complexity.ceilingCount >= 3, `seed ${seed} should keep ceiling pressure`);
     for (const team of ["A", "B"]) {
       const shots = Sim.listLegalShots(state, team, "");
       assert.ok(shots.length > 0, `seed ${seed} team ${team} should have legal shots`);

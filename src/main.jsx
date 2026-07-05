@@ -16,6 +16,18 @@ import "./arena.css";
 
 const Sim = window.GraphwarSim;
 
+const AUTO_ORDERS = {
+  A: "thread high shelf, avoid ally, pressure weakest rival",
+  B: "bend through center, punish exposed target, avoid ally"
+};
+
+const DEFAULT_ROSTER = [
+  { unitId: "A1", team: "A", control: "human", displayName: "You", provider: "local" },
+  { unitId: "A2", team: "A", control: "ai", displayName: "Auto Ally", provider: "local" },
+  { unitId: "B1", team: "B", control: "ai", displayName: "AI Rival 1", provider: "local" },
+  { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "local" }
+];
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -40,6 +52,20 @@ function terrainPath() {
   return `M0,600 L${pts.join(" L")} L1000,600 Z`;
 }
 
+function teamUnits(state, team) {
+  return state.units.filter((unit) => unit.team === team);
+}
+
+function teamHealth(state, team) {
+  const units = teamUnits(state, team);
+  const hp = units.reduce((sum, unit) => sum + unit.hp, 0);
+  return { hp, max: units.length * 100, alive: units.filter((unit) => unit.hp > 0).length };
+}
+
+function getAutoOrder(team) {
+  return AUTO_ORDERS[team] || "";
+}
+
 function App() {
   const [profile, setProfile] = useState(null);
   const [match, setMatch] = useState(null);
@@ -53,6 +79,7 @@ function App() {
   const [battleOrder, setBattleOrder] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("Sign in to enter ranked 2v2.");
+  const [lastDecision, setLastDecision] = useState(null);
 
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
   const activeHand = useMemo(() => (activeTeam === "-" ? [] : Sim.getCurrentHand(battleState, activeTeam)), [battleState, activeTeam]);
@@ -97,6 +124,7 @@ function App() {
       if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
       setMatch(payload.match);
       setBattleState(payload.match.state);
+      setLastDecision(null);
       setMessage(payload.match.filledByAi ? "No full lobby found. AI filled ally and rivals." : "Ranked lobby matched.");
     } catch (err) {
       setMessage(err.message || "Matchmaking failed.");
@@ -111,6 +139,12 @@ function App() {
     try {
       const result = Sim.rerollHand(next, activeTeam);
       setBattleState(next);
+      setLastDecision({
+        action: "reroll",
+        team: activeTeam,
+        provider: "Local AI",
+        publicReason: `Rerolled into ${result.cards.map((card) => card.label).join(", ")}.`
+      });
       setMessage(`Team ${activeTeam} rerolled. ${result.rerollsRemaining} rerolls left this turn.`);
     } catch (err) {
       setMessage(err.message || "Reroll failed.");
@@ -140,6 +174,12 @@ function App() {
         if (!response.ok) throw new Error(payload.error || "provider_failed");
         if (payload.decision.action === "reroll") {
           Sim.rerollHand(next, activeTeam);
+          setLastDecision({
+            action: "reroll",
+            team: activeTeam,
+            provider: `${login.provider} / ${payload.model}`,
+            publicReason: payload.decision.publicReason || "Provider selected a legal reroll."
+          });
           setMessage(`${login.provider} chose to reroll.`);
         } else {
           Sim.applyTurn(next, { A: battleOrder, B: "" }, {
@@ -147,10 +187,34 @@ function App() {
             provider: `${login.provider} / ${payload.model}`,
             providerReason: payload.decision.publicReason
           });
+          const event = next.events[next.events.length - 1];
+          setLastDecision({
+            action: "shot",
+            team: activeTeam,
+            provider: event.provider || `${login.provider} / ${payload.model}`,
+            result: event.resultLabel,
+            combo: event.combo?.name || "Mixed Curve",
+            command: event.command,
+            publicReason: payload.decision.publicReason || "Provider selected a legal shot."
+          });
           setMessage(`${login.provider} fired a legal ranked shot.`);
         }
       } else {
-        Sim.applyTurn(next, { A: battleOrder, B: "" });
+        const orders = {
+          A: activeTeam === "A" ? battleOrder : getAutoOrder("A"),
+          B: activeTeam === "B" ? battleOrder || getAutoOrder("B") : getAutoOrder("B")
+        };
+        Sim.applyTurn(next, orders, { provider: activeTeam === "A" ? "Local Ally AI" : "Local Rival AI" });
+        const event = next.events[next.events.length - 1];
+        setLastDecision({
+          action: "shot",
+          team: activeTeam,
+          provider: event.provider || "Local AI",
+          result: event.resultLabel,
+          combo: event.combo?.name || "Mixed Curve",
+          command: event.command,
+          publicReason: "Local model resolved a legal curve."
+        });
         setMessage(`Team ${activeTeam} resolved by local AI.`);
       }
       setBattleState(next);
@@ -175,6 +239,13 @@ function App() {
       setProfile(payload.player);
       setMatch(payload.match);
       setBattleState(payload.match.state);
+      setLastDecision({
+        action: "rank",
+        team: payload.match.state.winner || "draw",
+        provider: "Rank Engine",
+        result: `${payload.rankDelta > 0 ? "+" : ""}${payload.rankDelta}`,
+        publicReason: `Rating ${payload.player.rank.rating}`
+      });
       setMessage(`Rank ${payload.rankDelta > 0 ? "+" : ""}${payload.rankDelta}. New rating ${payload.player.rank.rating}.`);
     } catch (err) {
       setMessage(err.message || "Rank settlement failed.");
@@ -209,7 +280,10 @@ function App() {
 
         <section className="battle-panel game-panel">
           <BattleHeader state={battleState} activeTeam={activeTeam} message={message} />
-          <Battlefield state={battleState} />
+          <section className="arena-stage" aria-label="AI duel stage">
+            <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={lastDecision} />
+            <Battlefield state={battleState} />
+          </section>
           <CommandConsole
             activeTeam={activeTeam}
             order={battleOrder}
@@ -224,10 +298,47 @@ function App() {
         <aside className="tactical-panel game-panel">
           <HandRack hand={activeHand} activeTeam={activeTeam} />
           <Timeline state={battleState} />
+          <ModelWarFeed state={battleState} lastDecision={lastDecision} />
           <ShotIntel event={latestEvent} state={battleState} />
         </aside>
       </section>
     </main>
+  );
+}
+
+function DuelCommanders({ state, match, activeTeam, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  return (
+    <section className="commander-board" data-testid="commander-board" aria-label="AI commanders">
+      {["A", "B"].map((team) => {
+        const health = teamHealth(state, team);
+        const seats = roster.filter((seat) => seat.team === team);
+        const active = activeTeam === team;
+        const testId = team === "A" ? "team-a-commander" : "team-b-commander";
+        return (
+          <article className={`commander-card commander-${team.toLowerCase()} ${active ? "active" : ""}`} data-testid={testId} key={team}>
+            <div className="commander-topline">
+              <span>Team {team}</span>
+              <b>{active ? "ACTIVE MODEL" : "STANDBY"}</b>
+            </div>
+            <div className="commander-names">
+              {seats.map((seat) => (
+                <strong key={seat.unitId}>{seat.unitId} {seat.displayName}</strong>
+              ))}
+            </div>
+            <div className="hp-track" aria-label={`Team ${team} HP`}>
+              <i style={{ width: `${health.max ? Math.max(0, (health.hp / health.max) * 100) : 0}%` }} />
+            </div>
+            <div className="commander-metrics">
+              <span>{health.hp}/{health.max} HP</span>
+              <span>{health.alive} online</span>
+              <span>{seats.map((seat) => seat.provider).join(" + ")}</span>
+            </div>
+            {lastDecision?.team === team ? <p className="commander-last">{lastDecision.action} · {lastDecision.result || lastDecision.publicReason}</p> : null}
+          </article>
+        );
+      })}
+    </section>
   );
 }
 
@@ -366,6 +477,37 @@ function Timeline({ state }) {
           const event = state.events.find((item) => item.turn === turn);
           return <span key={turn} className={`tick ${event ? event.result : ""} ${turn === state.turn ? "active" : ""}`}>{turn + 1}</span>;
         })}
+      </div>
+    </div>
+  );
+}
+
+function ModelWarFeed({ state, lastDecision }) {
+  const events = state.events.slice(-5).reverse();
+  return (
+    <div className="model-war-feed" data-testid="model-war-feed">
+      <div className="panel-title"><Bot size={18} /> Model War Feed</div>
+      {lastDecision ? (
+        <div className={`feed-prime team-${String(lastDecision.team).toLowerCase()}`}>
+          <span>{lastDecision.provider || "Model"}</span>
+          <strong>{lastDecision.action}</strong>
+          <p>{lastDecision.result || lastDecision.publicReason}</p>
+        </div>
+      ) : (
+        <div className="feed-prime idle">
+          <span>Pre-match</span>
+          <strong>awaiting command</strong>
+          <p>No model decision yet.</p>
+        </div>
+      )}
+      <div className="feed-list">
+        {events.length ? events.map((event) => (
+          <div className={`feed-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.candidateId}`}>
+            <span>T{event.turn + 1} · Team {event.team}</span>
+            <strong>{event.resultLabel}</strong>
+            <small>{event.provider || "Local AI"} · {event.combo?.name || "Mixed Curve"}</small>
+          </div>
+        )) : <p className="empty-copy">The duel feed will fill as models choose rerolls and shots.</p>}
       </div>
     </div>
   );

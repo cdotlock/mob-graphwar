@@ -53,6 +53,19 @@ function testUiPollsQueuedMatchmakingRooms() {
   assert.ok(css.includes(".sync-strip"), "CSS should style room sync and polling state");
 }
 
+function testBattlefieldReadsAsGameSurface() {
+  assert.ok(main.includes("BattlefieldBackdrop"), "battlefield should have a named layered backdrop component");
+  assert.ok(main.includes("renderObstacleFacets"), "battlefield should render obstacles as faceted terrain, not plain blocks");
+  assert.ok(main.includes('data-testid="battlefield-frame"'), "battlefield should expose a framed game-stage surface");
+  assert.ok(main.includes('data-testid="map-intel-strip"'), "battlefield should expose map complexity and pressure metadata");
+  assert.ok(main.includes("impact-burst"), "battlefield should mark the latest shot impact");
+  assert.ok(css.includes(".battlefield-frame"), "CSS should frame the battlefield as a game viewport");
+  assert.ok(css.includes(".map-intel-strip"), "CSS should style map difficulty intel");
+  assert.ok(css.includes(".terrain-ridge"), "CSS should style layered terrain ridges");
+  assert.ok(css.includes(".obstacle-facet"), "CSS should style faceted obstacle terrain");
+  assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
@@ -60,5 +73,6 @@ testUiSubmitsRankedActionsToServer();
 testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testUiPollsQueuedMatchmakingRooms();
+testBattlefieldReadsAsGameSurface();
 
 console.log("ui-source tests passed");

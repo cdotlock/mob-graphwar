@@ -58,6 +58,55 @@ function terrainPath() {
   return `M0,600 L${pts.join(" L")} L1000,600 Z`;
 }
 
+function terrainLinePath(offset) {
+  const pts = [];
+  for (let x = 0; x <= Sim.CONFIG.width; x += 1) {
+    pts.push(`${sx(x)},${sy(Sim.groundY(x) + offset)}`);
+  }
+  return `M${pts.join(" L")}`;
+}
+
+function obstacleFacetPoints(obstacle, layer) {
+  const x = sx(obstacle.x);
+  const top = sy(obstacle.y + obstacle.h);
+  const bottom = sy(obstacle.y);
+  const width = obstacle.w * 10;
+  const height = obstacle.h * 10;
+  const bevel = Math.max(5, Math.min(18, width * 0.28, height * 0.22));
+  if (layer === "cap") {
+    return [
+      `${x + bevel},${top}`,
+      `${x + width},${top + bevel * 0.45}`,
+      `${x + width - bevel * 0.55},${top + bevel + 7}`,
+      `${x + bevel * 0.25},${top + 7}`
+    ].join(" ");
+  }
+  if (layer === "shadow") {
+    return [
+      `${x + width},${top + bevel * 0.45}`,
+      `${x + width + 8},${top + bevel + 9}`,
+      `${x + width - bevel * 0.3},${bottom + 7}`,
+      `${x + width - bevel * 0.65},${bottom}`
+    ].join(" ");
+  }
+  return [
+    `${x + bevel},${top}`,
+    `${x + width},${top + bevel * 0.45}`,
+    `${x + width - bevel * 0.35},${bottom}`,
+    `${x},${bottom}`,
+    `${x},${top + bevel * 0.55}`
+  ].join(" ");
+}
+
+function obstacleLabel(obstacle) {
+  return obstacle.id
+    .replace(/^seed-/, "")
+    .split("-")
+    .slice(0, 2)
+    .join(" ")
+    .toUpperCase();
+}
+
 function teamUnits(state, team) {
   return state.units.filter((unit) => unit.team === team);
 }
@@ -490,7 +539,7 @@ function App() {
           <BattleHeader state={battleState} activeTeam={activeTeam} message={message} />
           <section className="arena-stage" aria-label="AI duel stage">
             <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={lastDecision} />
-            <Battlefield state={battleState} />
+            <Battlefield state={battleState} latestEvent={latestEvent} />
           </section>
           <CommandConsole
             activeTeam={activeTeam}
@@ -647,32 +696,100 @@ function BattleHeader({ state, activeTeam, message }) {
   );
 }
 
-function Battlefield({ state }) {
+function BattlefieldBackdrop({ state }) {
+  const complexity = state.mapMeta?.complexity || {};
   return (
-    <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
-      <defs>
-        <linearGradient id="arenaGround" x1="0" x2="1">
-          <stop offset="0%" stopColor="#173b35" />
-          <stop offset="100%" stopColor="#2f5139" />
-        </linearGradient>
-      </defs>
-      <rect x="0" y="0" width="1000" height="600" fill="#071018" />
+    <g className="battlefield-backdrop" aria-hidden="true">
+      <rect x="0" y="0" width="1000" height="600" fill="url(#skyField)" />
       {Array.from({ length: 11 }, (_, i) => <line key={`x-${i}`} className="grid-line" x1={i * 100} y1="0" x2={i * 100} y2="600" />)}
       {Array.from({ length: 7 }, (_, i) => <line key={`y-${i}`} className="grid-line" x1="0" y1={i * 100} x2="1000" y2={i * 100} />)}
-      <path className="terrain" d={terrainPath()} />
-      {state.obstacles.map((obstacle) => (
-        <rect key={obstacle.id} className="obstacle" x={sx(obstacle.x)} y={sy(obstacle.y + obstacle.h)} width={obstacle.w * 10} height={obstacle.h * 10} rx="2" />
-      ))}
-      {state.paths.map((path, index) => (
-        <polyline key={`${path.turn}-${index}`} className={`shot-path team-${path.team.toLowerCase()}`} points={pointList(path.points)} />
-      ))}
-      {state.units.map((unit) => (
-        <g key={unit.id} className={`unit team-${unit.team.toLowerCase()} ${unit.hp <= 0 ? "dead" : ""}`}>
-          <circle cx={sx(unit.x)} cy={sy(unit.y)} r={Sim.CONFIG.unitRadius * 10} />
-          <text x={sx(unit.x)} y={sy(unit.y) - 32} textAnchor="middle">{unit.id} {unit.hp}</text>
+      <text className="field-watermark" x="34" y="64">DENSITY {complexity.density || "0.000"}</text>
+      <text className="field-watermark right" x="966" y="64" textAnchor="end">CHOKES {complexity.chokePoints || 0}</text>
+      <path className="terrain-ridge ridge-far" d={terrainLinePath(8)} />
+      <path className="terrain-ridge ridge-mid" d={terrainLinePath(4)} />
+    </g>
+  );
+}
+
+function renderObstacleFacets(obstacle, index) {
+  const showLabel = index % 4 === 0 || obstacle.h >= 30 || obstacle.y >= 38;
+  return (
+    <g key={obstacle.id} className="obstacle-cluster">
+      <polygon className="obstacle-shadow" points={obstacleFacetPoints(obstacle, "shadow")} />
+      <polygon className="obstacle-facet" points={obstacleFacetPoints(obstacle, "body")} />
+      <polygon className="obstacle-cap" points={obstacleFacetPoints(obstacle, "cap")} />
+      {showLabel ? (
+        <text className="obstacle-label" x={sx(obstacle.x + obstacle.w / 2)} y={sy(obstacle.y + obstacle.h) + 18} textAnchor="middle">
+          {obstacleLabel(obstacle)}
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
+function Battlefield({ state, latestEvent }) {
+  const complexity = state.mapMeta?.complexity || {};
+  const latestPath = state.paths[state.paths.length - 1];
+  const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
+  return (
+    <div className="battlefield-frame" data-testid="battlefield-frame">
+      <div className="map-intel-strip" data-testid="map-intel-strip">
+        <span><b>{state.mapMeta.name}</b> difficulty {state.mapMeta.difficulty}</span>
+        <span>{complexity.obstacleCount || 0} blockers</span>
+        <span>{complexity.tallCount || 0} towers</span>
+        <span>{complexity.ceilingCount || 0} ceilings</span>
+        <span>{complexity.suspendedShelves || 0} shelves</span>
+      </div>
+      <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
+        <defs>
+          <linearGradient id="arenaGround" x1="0" x2="1">
+            <stop offset="0%" stopColor="#173b35" />
+            <stop offset="62%" stopColor="#2f5139" />
+            <stop offset="100%" stopColor="#121b21" />
+          </linearGradient>
+          <linearGradient id="skyField" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#071018" />
+            <stop offset="48%" stopColor="#081528" />
+            <stop offset="100%" stopColor="#100a14" />
+          </linearGradient>
+          <linearGradient id="obstacleFace" x1="0" x2="1">
+            <stop offset="0%" stopColor="#59646d" />
+            <stop offset="55%" stopColor="#2e3842" />
+            <stop offset="100%" stopColor="#151b24" />
+          </linearGradient>
+          <filter id="impactGlow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <BattlefieldBackdrop state={state} />
+        <path className="terrain" d={terrainPath()} />
+        <path className="terrain-ridge ridge-near" d={terrainLinePath(1.4)} />
+        <g className="obstacle-layer">
+          {state.obstacles.map(renderObstacleFacets)}
         </g>
-      ))}
-    </svg>
+        {state.paths.map((path, index) => (
+          <polyline key={`${path.turn}-${index}`} className={`shot-path team-${path.team.toLowerCase()} ${index === state.paths.length - 1 ? "latest" : ""}`} points={pointList(path.points)} />
+        ))}
+        {impactPoint ? (
+          <g className={`impact-burst team-${latestPath?.team?.toLowerCase() || "a"}`} filter="url(#impactGlow)">
+            <circle cx={sx(impactPoint.x)} cy={sy(impactPoint.y)} r="25" />
+            <circle cx={sx(impactPoint.x)} cy={sy(impactPoint.y)} r="8" />
+            <path d={`M${sx(impactPoint.x) - 34},${sy(impactPoint.y)} L${sx(impactPoint.x) + 34},${sy(impactPoint.y)} M${sx(impactPoint.x)},${sy(impactPoint.y) - 34} L${sx(impactPoint.x)},${sy(impactPoint.y) + 34}`} />
+          </g>
+        ) : null}
+        {state.units.map((unit) => (
+          <g key={unit.id} className={`unit team-${unit.team.toLowerCase()} ${unit.hp <= 0 ? "dead" : ""}`}>
+            <circle className="unit-aura" cx={sx(unit.x)} cy={sy(unit.y)} r={Sim.CONFIG.unitRadius * 14} />
+            <circle cx={sx(unit.x)} cy={sy(unit.y)} r={Sim.CONFIG.unitRadius * 10} />
+            <text x={sx(unit.x)} y={sy(unit.y) - 32} textAnchor="middle">{unit.id} {unit.hp}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
 

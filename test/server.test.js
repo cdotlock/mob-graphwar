@@ -440,6 +440,81 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.ok(!JSON.stringify(autoDuel.json.autoBattle.frames).includes("secret"), "playback frames should not leak stored API keys");
 }
 
+async function testMatchRulesEndpointExposesBareModelContract() {
+  const createIsolatedServer = freshCreateServer();
+  const session = await request(createIsolatedServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Rules Pilot",
+      providers: { openai: { apiKey: "rules-secret", model: "gpt-rules" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createIsolatedServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "openai" })
+  });
+  assert.strictEqual(joined.status, 200);
+
+  const rules = await request(
+    createIsolatedServer({ env: {} }),
+    `/api/match/${joined.json.match.id}/rules?playerId=${session.json.player.id}&command=safe%20high%20arc`
+  );
+  assert.strictEqual(rules.status, 200);
+  assert.strictEqual(rules.json.matchId, joined.json.match.id);
+  assert.strictEqual(rules.json.modelContract.activeUnitId, "A1");
+  assert.strictEqual(rules.json.modelContract.controlledUnit.id, "A1");
+  assert.strictEqual(rules.json.modelContract.hand.owner, "A1");
+  assert.strictEqual(rules.json.modelContract.command, "safe high arc");
+  assert.ok(rules.json.modelContract.legalActions.some((action) => action.action === "swap_hand"));
+  assert.ok(rules.json.modelContract.legalActions.some((action) => action.action === "shot"));
+  assert.strictEqual(rules.json.modelContract.state.map.windows, undefined, "bare rules should not expose removed route windows");
+  assert.strictEqual(rules.json.roster.length, 4);
+  assert.deepStrictEqual(rules.json.roster.map((seat) => seat.unitId), ["A1", "A2", "B1", "B2"]);
+  assert.ok(!rules.text.includes("rules-secret"), "rules endpoint should never leak stored API keys");
+  assert.ok(!rules.text.includes("system"), "rules endpoint should expose environment rules, not hidden prompt scaffolding");
+}
+
+async function testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel() {
+  const createIsolatedServer = freshCreateServer();
+  const session = await request(createIsolatedServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Local Swap",
+      providers: { deepseek: { apiKey: "", model: "local" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createIsolatedServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(joined.status, 200);
+
+  const autoDuel = await request(createIsolatedServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id })
+  });
+  assert.strictEqual(autoDuel.status, 200);
+  const swapFrames = autoDuel.json.autoBattle.frames.filter((frame) => frame.action.action === "swap_hand");
+  assert.ok(swapFrames.length > 0, "local fallback models should sometimes choose swap_hand on hard maps");
+  assert.ok(
+    swapFrames.every((frame) => frame.action.swapsRemaining >= 0 && frame.action.swapsRemaining < 3),
+    "swap frames should expose decreasing swap economy"
+  );
+  assert.ok(
+    autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "shot"),
+    "auto duel should still fire shots after model-selected swaps"
+  );
+}
+
 async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   const capturedPrompts = [];
   const fetchMock = async (url, options) => {
@@ -708,6 +783,8 @@ async function testProviderShotRequiresKey() {
   await testQueuedPlayersCanPollMatchedRoom();
   await testMatchActionsMutateAuthoritativeState();
   await testAutoDuelResolvesRankedMatchWithBattleSummary();
+  await testMatchRulesEndpointExposesBareModelContract();
+  await testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel();
   await testAutoDuelUsesConfiguredProviderWithoutLeakingKeys();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();

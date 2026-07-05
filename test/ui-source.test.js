@@ -116,6 +116,38 @@ function testGameSurfacesRealAccountAuth() {
   assert.ok(css.includes(".auth-mode-tabs"), "CSS should style the auth mode segmented control");
 }
 
+function testGameShowsRankedOnboardingAndProviderReadiness() {
+  assert.ok(main.includes("RankedFlowPanel"), "launch bay should include a named ranked flow panel");
+  assert.ok(main.includes('data-testid="ranked-flow-panel"'), "ranked flow should be selectable for browser verification");
+  assert.ok(main.includes("ProviderReadinessGrid"), "account setup should expose a named provider readiness grid");
+  assert.ok(main.includes('data-testid="provider-readiness-grid"'), "provider grid should be selectable for browser verification");
+  assert.ok(main.includes("API key armed"), "provider setup should visibly distinguish keyed models from local fallback");
+  assert.ok(main.includes("Quick AI Fill"), "matchmaking should expose AI fallback when humans are unavailable");
+  assert.ok(css.includes(".ranked-flow-panel"), "CSS should style ranked onboarding as game chrome");
+  assert.ok(css.includes(".provider-readiness-grid"), "CSS should style provider readiness");
+}
+
+function testUiExposesBareRulesPacketForModels() {
+  assert.ok(main.includes("RulesPacketPanel"), "UI should include a named bare-rules panel");
+  assert.ok(main.includes('data-testid="rules-packet-panel"'), "rules packet should be selectable for browser verification");
+  assert.ok(main.includes("rulesSnapshot"), "UI should derive a rules snapshot from live battle state");
+  assert.ok(main.includes("legalActions"), "rules packet should expose legal action counts");
+  assert.ok(main.includes("swap_hand"), "rules packet should show model-visible swap_hand vocabulary");
+  assert.ok(main.includes("allyIds"), "rules packet should show model-visible ally ids");
+  assert.ok(main.includes("opponentIds"), "rules packet should show model-visible opponent ids");
+  assert.ok(css.includes(".rules-packet-panel"), "CSS should style the rules packet panel");
+  assert.ok(css.includes(".rules-json-preview"), "CSS should style a compact rules JSON preview");
+}
+
+function testMobileHasGameDockForWatchOnlyLoop() {
+  assert.ok(main.includes("MobileSpectatorDock"), "UI should include a mobile spectator dock");
+  assert.ok(main.includes('data-testid="mobile-spectator-dock"'), "mobile dock should be selectable for browser verification");
+  assert.ok(main.includes("ranked: profile ?"), "mobile dock should summarize ranked account state");
+  assert.ok(main.includes("queue: queueState"), "mobile dock should summarize queue state");
+  assert.ok(css.includes(".mobile-spectator-dock"), "CSS should style the fixed mobile spectator dock");
+  assert.ok(css.includes("padding-bottom: 86px"), "mobile layout should reserve room for the fixed game dock");
+}
+
 function testUiPollsQueuedMatchmakingRooms() {
   assert.ok(main.includes("pollMatchmaking"), "UI should poll queued ranked players into matched rooms");
   assert.ok(main.includes("/api/matchmaking/"), "UI should call the matchmaking status endpoint");
@@ -228,6 +260,9 @@ testUiKeepsRankedDuelSpectatorOnly();
 testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testGameSurfacesRealAccountAuth();
+testGameShowsRankedOnboardingAndProviderReadiness();
+testUiExposesBareRulesPacketForModels();
+testMobileHasGameDockForWatchOnlyLoop();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
 testUiExplainsRetainedHandsAndSwapAction();

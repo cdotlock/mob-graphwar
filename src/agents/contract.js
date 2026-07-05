@@ -34,7 +34,11 @@
     const unit = resolveControlledUnit(state, owner);
     const handOwner = unit ? unit.id : owner;
     const shots = Sim.listLegalShots(state, handOwner, command).slice(0, MAX_PUBLIC_CANDIDATES);
-    return shots.map((shot) => ({
+    return shots.map(publicShotCandidate);
+  }
+
+  function publicShotCandidate(shot) {
+    return {
       action: "shot",
       candidateId: shot.candidateId,
       targetId: shot.targetId,
@@ -47,7 +51,7 @@
           }
         : null,
       expression: shot.expression
-    }));
+    };
   }
 
   function buildRulesPayload(state, owner, command) {
@@ -65,7 +69,8 @@
       tags: card.tags,
       description: card.description
     }));
-    const shotActions = listPublicShotCandidates(state, activeUnitId, command);
+    const allShotCandidates = Sim.listLegalShots(state, activeUnitId, command);
+    const shotActions = allShotCandidates.slice(0, MAX_PUBLIC_CANDIDATES).map(publicShotCandidate);
     const swapsUsed = handState ? Number(handState.swapsUsed ?? handState.rerollsUsed) || 0 : 0;
     const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
     const legalActions = swapsRemaining > 0
@@ -78,6 +83,7 @@
         handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
         swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
         cardUse: `${Sim.CONFIG.maxCardsPerShot} cards max, ${Sim.CONFIG.maxShapeCards} shape cards max, ${Sim.CONFIG.maxModifierCards} modifier max`,
+        promptPolicy: "this JSON packet is the full public model contract; no hidden tactical hints are provided",
         output: "return JSON only"
       },
       objective: "eliminate opposing team while avoiding allied units",
@@ -103,7 +109,13 @@
         swapsRemaining,
         rerollsUsed: swapsUsed,
         rerollsRemaining: swapsRemaining,
+        analysis: Sim.analyzeHand(cards, Sim.getEnergy(state.turn)),
         cards
+      },
+      actionSpace: {
+        shotCandidateCount: allShotCandidates.length,
+        publicShotCandidateCount: shotActions.length,
+        capped: allShotCandidates.length > shotActions.length
       },
       legalActions
     };

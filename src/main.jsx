@@ -30,6 +30,14 @@ const DEFAULT_ROSTER = [
   { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "local" }
 ];
 
+const MODEL_PROVIDERS = [
+  { id: "deepseek", label: "DeepSeek", model: "deepseek-v4-flash" },
+  { id: "openai", label: "OpenAI", model: "gpt-4.1-mini" },
+  { id: "minimax", label: "MiniMax", model: "MiniMax-M1" },
+  { id: "zhipu", label: "Zhipu", model: "glm-4-flash" },
+  { id: "anthropic", label: "Anthropic", model: "claude-3-5-haiku-latest" }
+];
+
 const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
 const EXHIBITION_COMMANDS = {
   A: "safe high arc target weakest enemy avoid ally",
@@ -165,6 +173,45 @@ function frameDecision(frame) {
     provider: frame.action.provider,
     result: frame.action.resultLabel,
     publicReason: frame.action.publicReason || frame.action.event?.resultLabel || frame.action.candidateId
+  };
+}
+
+function rulesSnapshot(state, activeUnitId, command) {
+  const unit = state.units.find((item) => item.id === activeUnitId) || Sim.getActiveUnit(state) || state.units[0];
+  const unitId = unit?.id || activeUnitId || "A1";
+  const team = unit?.team || (String(unitId).startsWith("B") ? "B" : "A");
+  const handState = state.hands?.[unitId] || {};
+  const swapsUsed = Number(handState.swapsUsed ?? handState.rerollsUsed) || 0;
+  const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+  const hand = Sim.getCurrentHand(state, unitId);
+  const shotActions = Sim.listLegalShots(state, unitId, command || "").slice(0, 12);
+  const legalActions = [
+    ...(swapsRemaining > 0 ? [{ action: "swap_hand", swapsUsed, swapsRemaining }] : []),
+    ...shotActions.map((shot) => ({
+      action: "shot",
+      candidateId: shot.candidateId,
+      targetId: shot.targetId,
+      cost: shot.cost,
+      combo: shot.combo?.name || "Mixed Curve"
+    }))
+  ];
+  const allyIds = state.units.filter((item) => item.team === team && item.hp > 0).map((item) => item.id);
+  const opponentIds = state.units.filter((item) => item.team !== team && item.hp > 0).map((item) => item.id);
+  return {
+    activeUnitId: unitId,
+    team,
+    objective: "eliminate opposing team while avoiding allied units",
+    allyIds,
+    opponentIds,
+    hand: {
+      owner: unitId,
+      retained: true,
+      swapsUsed,
+      swapsRemaining,
+      analysis: Sim.analyzeHand(hand, Sim.getEnergy(state.turn)),
+      cards: hand.map((card) => ({ id: card.id, label: card.label, family: card.family, cost: card.cost }))
+    },
+    legalActions
   };
 }
 
@@ -639,12 +686,21 @@ function App() {
           <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
           <Timeline state={battleState} />
           <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
+          <RulesPacketPanel state={battleState} activeUnitId={displayUnitId} standingOrder={login.standingOrder} />
           <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
           <ModelWarFeed state={battleState} lastDecision={visibleDecision} />
           <ShotIntel event={latestEvent} state={battleState} />
           <LeagueLab result={leagueResult} busy={leagueBusy} onRun={runLeague} />
         </aside>
       </section>
+      <MobileSpectatorDock
+        profile={profile}
+        queueState={queueState}
+        match={match}
+        state={battleState}
+        activeUnitId={activeUnitId}
+        autoBattle={autoBattle}
+      />
     </main>
   );
 }
@@ -716,6 +772,7 @@ function LaunchBay({
           <span key={step.label}><b>{step.label}</b>{step.value}</span>
         ))}
       </div>
+      <RankedFlowPanel profile={profile} match={match} queueState={queueState} login={login} />
       <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={onSubmit} onRestore={onRestore} />
       <MatchCard
         profile={profile}
@@ -752,6 +809,7 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
       </select></label>
       <label>Model<input autoComplete="off" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })} /></label>
       <label>API key<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
+      <ProviderReadinessGrid login={login} />
       <label>Standing order<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
       <div className="profile-vault">
         <span>{profile ? `${profile.handle || profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked account"}</span>
@@ -759,6 +817,44 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
       </div>
       <button disabled={busy}>{profile ? "Update Account" : authMode === "login" ? "Sign In" : "Create Account"}</button>
     </form>
+  );
+}
+
+function RankedFlowPanel({ profile, match, queueState, login }) {
+  const steps = [
+    { id: "account", label: "Account", value: profile ? "registered" : "guest", ready: Boolean(profile) },
+    { id: "model", label: "Model", value: login.apiKey.trim() ? "API key armed" : "local fallback", ready: Boolean(login.apiKey.trim()) },
+    { id: "match", label: "Match", value: match ? match.status : queueState ? "queue live" : "not queued", ready: Boolean(match || queueState) },
+    { id: "watch", label: "Watch", value: match ? "auto duel" : "exhibition", ready: Boolean(match) },
+    { id: "rank", label: "Rank", value: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "unrated", ready: Boolean(profile?.rank?.games) }
+  ];
+  return (
+    <div className="ranked-flow-panel" data-testid="ranked-flow-panel" aria-label="Ranked game flow">
+      {steps.map((step, index) => (
+        <div className={`flow-step ${step.ready ? "ready" : ""}`} key={step.id}>
+          <span>{String(index + 1).padStart(2, "0")}</span>
+          <strong>{step.label}</strong>
+          <small>{step.value}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProviderReadinessGrid({ login }) {
+  const keyed = Boolean(login.apiKey.trim());
+  return (
+    <div className="provider-readiness-grid" data-testid="provider-readiness-grid" aria-label="Model provider readiness">
+      {MODEL_PROVIDERS.map((provider) => {
+        const selected = login.provider === provider.id;
+        return (
+          <span className={selected ? "selected" : ""} key={provider.id}>
+            <b>{provider.label}</b>
+            <small>{selected && keyed ? "API key armed" : selected ? "local fallback until keyed" : provider.model}</small>
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -785,6 +881,23 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
         <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Quick AI Fill</button>
       </div>
     </div>
+  );
+}
+
+function MobileSpectatorDock({ profile, queueState, match, state, activeUnitId, autoBattle }) {
+  const dock = {
+    ranked: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "guest",
+    queue: queueState ? `${queueState.queueSize}/4` : match ? match.status : "idle",
+    actor: activeUnitId === "-" ? state.winner || "standby" : activeUnitId,
+    result: state.winner ? battleResultLabel(state.winner) : autoBattle ? `${autoBattle.resolvedTurns} turns` : "watching"
+  };
+  return (
+    <nav className="mobile-spectator-dock" data-testid="mobile-spectator-dock" aria-label="Mobile spectator status">
+      <span><b>Rank</b>{dock.ranked}</span>
+      <span><b>Queue</b>{dock.queue}</span>
+      <span><b>AI</b>{dock.actor}</span>
+      <span><b>Result</b>{dock.result}</span>
+    </nav>
   );
 }
 
@@ -1271,6 +1384,38 @@ function AutoDuelPanel({ autoBattle, state }) {
       ) : (
         <p className="empty-copy">Start a ranked match, then let the AIs play the full fight while you watch the battlefield and feed.</p>
       )}
+    </div>
+  );
+}
+
+function RulesPacketPanel({ state, activeUnitId, standingOrder }) {
+  const snapshot = rulesSnapshot(state, activeUnitId, standingOrder);
+  const shotCount = snapshot.legalActions.filter((action) => action.action === "shot").length;
+  const canSwap = snapshot.legalActions.some((action) => action.action === "swap_hand");
+  const preview = {
+    activeUnitId: snapshot.activeUnitId,
+    allyIds: snapshot.allyIds,
+    opponentIds: snapshot.opponentIds,
+    hand: {
+      retained: true,
+      swapsRemaining: snapshot.hand.swapsRemaining,
+      archetype: snapshot.hand.analysis.archetype
+    },
+    legalActions: snapshot.legalActions.slice(0, 5)
+  };
+  return (
+    <div className="rules-packet-panel" data-testid="rules-packet-panel">
+      <div className="panel-title"><KeyRound size={18} /> Bare Rules Packet</div>
+      <div className="rules-metrics">
+        <span><b>{snapshot.activeUnitId}</b> active unit</span>
+        <span><b>{shotCount}</b> shot candidates</span>
+        <span><b>{canSwap ? "swap_hand" : "shot only"}</b> legal action</span>
+      </div>
+      <div className="rules-targets">
+        <span>allyIds <b>{snapshot.allyIds.join(" / ")}</b></span>
+        <span>opponentIds <b>{snapshot.opponentIds.join(" / ")}</b></span>
+      </div>
+      <pre className="rules-json-preview">{JSON.stringify(preview, null, 2)}</pre>
     </div>
   );
 }

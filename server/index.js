@@ -504,6 +504,32 @@ function getRosterSeatForTurn(match, unitId) {
   return match.roster.find((seat) => seat.unitId === unitId) || match.roster.find((seat) => seat.team === unit?.team) || null;
 }
 
+function publicRosterSeat(seat) {
+  return {
+    unitId: seat.unitId,
+    team: seat.team,
+    control: seat.control,
+    playerId: seat.playerId || null,
+    displayName: seat.displayName,
+    provider: seat.provider,
+    model: seat.model || ""
+  };
+}
+
+function buildPublicRulesPacket(match, player, command) {
+  const activeUnitId = getActiveUnitId(match.state);
+  const activeTeam = getActiveTeam(match.state);
+  const seat = getRosterSeatForTurn(match, activeUnitId);
+  return {
+    matchId: match.id,
+    status: match.status,
+    activeSeat: seat ? publicRosterSeat(seat) : null,
+    requesterSeat: getPlayerSeat(match, player) ? publicRosterSeat(getPlayerSeat(match, player)) : null,
+    roster: (match.roster || []).map(publicRosterSeat),
+    modelContract: Contract.buildRulesPayload(match.state, activeUnitId || activeTeam || "A1", command || "")
+  };
+}
+
 function localAutoProviderLabel(team) {
   return team === "A" ? "Auto Resolve A" : "Auto Resolve B";
 }
@@ -811,7 +837,29 @@ function applyLeagueScore(rows, teamA, teamB, winner) {
 }
 
 function localDecisionFromRules(rulesPayload) {
-  const shot = rulesPayload.legalActions.find((action) => action.action === "shot");
+  const actions = Array.isArray(rulesPayload.legalActions) ? rulesPayload.legalActions : [];
+  const swap = actions.find((action) => action.action === "swap_hand");
+  const shotActions = actions.filter((action) => action.action === "shot");
+  const complexity = rulesPayload.state && rulesPayload.state.map && rulesPayload.state.map.complexity
+    ? rulesPayload.state.map.complexity
+    : {};
+  const hand = rulesPayload.hand || {};
+  const analysis = hand.analysis || {};
+  const swapsUsed = Number(swap ? swap.swapsUsed : hand.swapsUsed) || 0;
+  const totalShotCandidates = Number(rulesPayload.actionSpace && rulesPayload.actionSpace.shotCandidateCount) || shotActions.length;
+  const lowActionSpace = totalShotCandidates > 0 && totalShotCandidates < 96;
+  const highPressure = Number(complexity.routePressure) >= 95 || Number(complexity.obstacleCount) >= 40;
+  const underPlayable = Number(analysis.playableCount) < Math.min(Number(analysis.handSize) || 4, 3);
+  const unstableHand = String(analysis.risk || "").includes("volatile") && !(analysis.traits || []).includes("precision");
+  if (swap && swapsUsed < 2 && highPressure && (lowActionSpace || underPlayable || unstableHand)) {
+    return {
+      action: "swap_hand",
+      publicReason: lowActionSpace
+        ? `Local baseline swapped because only ${totalShotCandidates} legal shots fit this high-pressure map.`
+        : "Local baseline swapped a weak retained hand before firing."
+    };
+  }
+  const shot = shotActions[0];
   if (shot) {
     return {
       action: "shot",
@@ -819,10 +867,10 @@ function localDecisionFromRules(rulesPayload) {
       publicReason: "Local baseline selected the first legal shot."
     };
   }
-  if (rulesPayload.legalActions.some((action) => action.action === "reroll")) {
+  if (actions.some((action) => action.action === "reroll")) {
     return { action: "swap_hand", publicReason: "Local baseline swapped hand because no shot was legal." };
   }
-  if (rulesPayload.legalActions.some((action) => action.action === "swap_hand")) {
+  if (actions.some((action) => action.action === "swap_hand")) {
     return { action: "swap_hand", publicReason: "Local baseline swapped hand because no shot was legal." };
   }
   return { action: "shot", candidateId: null, publicReason: "No legal action available." };
@@ -1008,6 +1056,22 @@ function createServer(options) {
           return;
         }
         sendJson(res, 200, publicMatchmakingStatus(player));
+        return;
+      }
+      const rulesMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/rules$/);
+      if (req.method === "GET" && rulesMatch) {
+        const match = matches.get(rulesMatch[1]);
+        const player = players.get(String(url.searchParams.get("playerId") || ""));
+        if (!match || !player) {
+          sendJson(res, 404, { error: "unknown_match_or_player" });
+          return;
+        }
+        if (!getPlayerSeat(match, player)) {
+          sendJson(res, 403, { error: "player_not_in_match" });
+          return;
+        }
+        const command = String(url.searchParams.get("command") || "").slice(0, Sim.CONFIG.maxCommandLength);
+        sendJson(res, 200, buildPublicRulesPacket(match, player, command));
         return;
       }
       const readMatch = url.pathname.match(/^\/api\/match\/([^/]+)$/);

@@ -158,7 +158,10 @@ function App() {
   const [playbackPaused, setPlaybackPaused] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [login, setLogin] = useState({
+    authMode: "register",
+    handle: "clock",
     displayName: "Clock",
+    password: "",
     provider: "deepseek",
     model: "deepseek-v4-flash",
     apiKey: "",
@@ -204,11 +207,14 @@ function App() {
     event.preventDefault();
     setBusy(true);
     try {
-      const response = await fetch("/api/session", {
+      const endpoint = login.authMode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          handle: login.handle,
           displayName: login.displayName,
+          password: login.password,
           providers: {
             [login.provider]: { apiKey: login.apiKey, model: login.model }
           }
@@ -219,7 +225,7 @@ function App() {
       setProfile(payload.player);
       window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
       await loadLeaderboard();
-      setMessage("Profile ready. Join ranked matchmaking.");
+      setMessage(login.authMode === "login" ? "Account signed in. Join ranked matchmaking." : "Account registered. Join ranked matchmaking.");
     } catch (err) {
       setMessage(err.message || "Login failed.");
     } finally {
@@ -239,7 +245,7 @@ function App() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "restore_failed");
       setProfile(payload.player);
-      setLogin((current) => ({ ...current, displayName: payload.player.displayName }));
+      setLogin((current) => ({ ...current, handle: payload.player.handle || current.handle, displayName: payload.player.displayName }));
       await loadLeaderboard();
       const status = await pollMatchmaking(payload.player.id);
       if (!status || status.status === "idle") {
@@ -655,7 +661,7 @@ function LaunchBay({
   onSync
 }) {
   const readySteps = [
-    { label: "Profile", value: profile ? profile.displayName : "Guest" },
+    { label: "Account", value: profile ? profile.handle || profile.displayName : "Guest" },
     { label: "Model", value: login.apiKey.trim() ? login.model : "Local fallback" },
     { label: "Room", value: match ? match.status : queueState ? "queued" : "not matched" }
   ];
@@ -687,10 +693,19 @@ function LaunchBay({
 }
 
 function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
+  const authMode = login.authMode === "login" ? "login" : "register";
   return (
     <form className="login-card" onSubmit={onSubmit}>
-      <div className="panel-title"><LogIn size={18} /> Login / Model Key</div>
-      <label>Display name<input autoComplete="username" value={login.displayName} onChange={(e) => setLogin({ ...login, displayName: e.target.value })} /></label>
+      <div className="panel-title"><LogIn size={18} /> Account / Model Key</div>
+      <div className="auth-mode-tabs" data-testid="auth-mode-tabs" role="tablist" aria-label="Account mode">
+        <button type="button" className={authMode === "register" ? "active" : ""} aria-selected={authMode === "register"} onClick={() => setLogin({ ...login, authMode: "register" })}>Register</button>
+        <button type="button" className={authMode === "login" ? "active" : ""} aria-selected={authMode === "login"} onClick={() => setLogin({ ...login, authMode: "login" })}>Sign In</button>
+      </div>
+      <label>Handle<input autoComplete="username" value={login.handle} onChange={(e) => setLogin({ ...login, handle: e.target.value })} placeholder="3-24 letters, numbers, _ or -" /></label>
+      {authMode === "register" ? (
+        <label>Display name<input autoComplete="nickname" value={login.displayName} onChange={(e) => setLogin({ ...login, displayName: e.target.value })} /></label>
+      ) : null}
+      <label>Password<input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} placeholder="8+ characters" /></label>
       <label>Provider<select value={login.provider} onChange={(e) => setLogin({ ...login, provider: e.target.value })}>
         <option value="deepseek">DeepSeek</option>
         <option value="openai">OpenAI</option>
@@ -702,10 +717,10 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
       <label>API key<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
       <label>Standing order<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
       <div className="profile-vault">
-        <span>{profile ? `${profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked profile"}</span>
+        <span>{profile ? `${profile.handle || profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked account"}</span>
         <button type="button" disabled={busy} onClick={onRestore}>Restore</button>
       </div>
-      <button disabled={busy}>{profile ? "Update Session" : "Enter Arena"}</button>
+      <button disabled={busy}>{profile ? "Update Account" : authMode === "login" ? "Sign In" : "Create Account"}</button>
     </form>
   );
 }

@@ -70,6 +70,17 @@ function testGameSurfacesPersistentProfileAndLeaderboard() {
   assert.ok(css.includes(".leaderboard-panel"), "CSS should style the ranked leaderboard panel");
 }
 
+function testGameSurfacesRealAccountAuth() {
+  assert.ok(main.includes("authMode"), "UI should distinguish register and sign-in modes");
+  assert.ok(main.includes("/api/auth/register"), "UI should call the register endpoint");
+  assert.ok(main.includes("/api/auth/login"), "UI should call the login endpoint");
+  assert.ok(main.includes("Account / Model Key"), "account panel should frame login as a persistent account");
+  assert.ok(main.includes('data-testid="auth-mode-tabs"'), "auth mode control should be selectable for browser verification");
+  assert.ok(main.includes("Handle"), "auth form should collect a stable player handle");
+  assert.ok(main.includes("Password"), "auth form should collect a password");
+  assert.ok(css.includes(".auth-mode-tabs"), "CSS should style the auth mode segmented control");
+}
+
 function testUiPollsQueuedMatchmakingRooms() {
   assert.ok(main.includes("pollMatchmaking"), "UI should poll queued ranked players into matched rooms");
   assert.ok(main.includes("/api/matchmaking/"), "UI should call the matchmaking status endpoint");
@@ -167,6 +178,7 @@ testStaticEntrypointLoadsSimBeforeReactBundle();
 testUiKeepsRankedDuelSpectatorOnly();
 testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
+testGameSurfacesRealAccountAuth();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
 testUiExplainsRetainedHandsAndSwapAction();

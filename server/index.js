@@ -1,6 +1,7 @@
 "use strict";
 
 const http = require("http");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { listProviders, getProvider } = require("./providers/catalog.js");
@@ -101,7 +102,12 @@ function persistableProviders(providers) {
 function persistablePlayer(player) {
   return {
     id: player.id,
+    handle: player.handle || "",
     displayName: player.displayName,
+    createdAt: player.createdAt || "",
+    lastLoginAt: player.lastLoginAt || "",
+    passwordHash: player.passwordHash || "",
+    passwordSalt: player.passwordSalt || "",
     rank: player.rank,
     providers: persistableProviders(player.providers)
   };
@@ -134,7 +140,12 @@ function loadPersistentStore(env) {
     if (!player || !player.id) continue;
     players.set(player.id, {
       id: String(player.id),
+      handle: String(player.handle || "").toLowerCase().slice(0, 24),
       displayName: String(player.displayName || "Player").slice(0, 32),
+      createdAt: String(player.createdAt || ""),
+      lastLoginAt: String(player.lastLoginAt || ""),
+      passwordHash: String(player.passwordHash || ""),
+      passwordSalt: String(player.passwordSalt || ""),
       rank: player.rank || { rating: 1000, tier: "Bronze", games: 0 },
       providers: persistableProviders(player.providers)
     });
@@ -187,6 +198,7 @@ function summarizeState(state) {
 function publicPlayer(player) {
   return {
     id: player.id,
+    handle: player.handle || "",
     displayName: player.displayName,
     rank: player.rank,
     providers: Object.fromEntries(
@@ -196,6 +208,91 @@ function publicPlayer(player) {
       ])
     )
   };
+}
+
+function normalizeHandle(handle) {
+  return String(handle || "").trim().toLowerCase();
+}
+
+function assertValidHandle(handle) {
+  if (!/^[a-z0-9_-]{3,24}$/.test(handle)) {
+    const err = new Error("invalid_handle");
+    err.status = 400;
+    throw err;
+  }
+}
+
+function assertValidPassword(password) {
+  if (String(password || "").length < 8) {
+    const err = new Error("weak_password");
+    err.status = 400;
+    throw err;
+  }
+}
+
+function hashPassword(password, salt) {
+  return crypto.pbkdf2Sync(String(password), salt, 120_000, 32, "sha256").toString("hex");
+}
+
+function createPasswordRecord(password) {
+  const passwordSalt = crypto.randomBytes(16).toString("hex");
+  return {
+    passwordSalt,
+    passwordHash: hashPassword(password, passwordSalt)
+  };
+}
+
+function verifyPassword(player, password) {
+  if (!player.passwordHash || !player.passwordSalt) return false;
+  const expected = Buffer.from(player.passwordHash, "hex");
+  const actual = Buffer.from(hashPassword(password, player.passwordSalt), "hex");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function findPlayerByHandle(handle) {
+  const normalized = normalizeHandle(handle);
+  return Array.from(players.values()).find((player) => normalizeHandle(player.handle) === normalized) || null;
+}
+
+function normalizeAuthProviders(providers) {
+  if (!providers || typeof providers !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(providers).map(([id, value]) => [
+      String(id).slice(0, 40),
+      {
+        apiKey: typeof value?.apiKey === "string" ? value.apiKey : "",
+        model: typeof value?.model === "string" ? value.model.slice(0, 100) : "",
+        configured: Boolean(value?.apiKey || value?.configured)
+      }
+    ])
+  );
+}
+
+function createRegisteredPlayer(body) {
+  const handle = normalizeHandle(body.handle);
+  assertValidHandle(handle);
+  assertValidPassword(body.password);
+  if (findPlayerByHandle(handle)) {
+    const err = new Error("handle_taken");
+    err.status = 409;
+    throw err;
+  }
+  const now = new Date().toISOString();
+  const passwordRecord = createPasswordRecord(body.password);
+  return {
+    id: `player-${nextPlayerId++}`,
+    handle,
+    displayName: String(body.displayName || handle).trim().slice(0, 32) || handle,
+    createdAt: now,
+    lastLoginAt: now,
+    ...passwordRecord,
+    providers: normalizeAuthProviders(body.providers),
+    rank: { rating: 1000, tier: "Bronze", games: 0 }
+  };
+}
+
+function authErrorResponse(res, err) {
+  sendJson(res, err.status || 400, { error: err.message || "auth_failed" });
 }
 
 function publicLeaderboard(limit) {
@@ -864,6 +961,35 @@ function createServer(options) {
       if (req.method === "GET" && url.pathname === "/api/leaderboard") {
         const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 25));
         sendJson(res, 200, { players: publicLeaderboard(limit) });
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/auth/register") {
+        const body = JSON.parse(await readBody(req, 128_000));
+        try {
+          const player = createRegisteredPlayer(body);
+          players.set(player.id, player);
+          savePersistentStore(env);
+          sendJson(res, 200, { player: publicPlayer(player) });
+        } catch (err) {
+          authErrorResponse(res, err);
+        }
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/auth/login") {
+        const body = JSON.parse(await readBody(req, 128_000));
+        const handle = normalizeHandle(body.handle);
+        const player = findPlayerByHandle(handle);
+        if (!player || !verifyPassword(player, body.password)) {
+          sendJson(res, 401, { error: "invalid_credentials" });
+          return;
+        }
+        const providers = normalizeAuthProviders(body.providers);
+        if (Object.keys(providers).length) {
+          player.providers = { ...(player.providers || {}), ...providers };
+        }
+        player.lastLoginAt = new Date().toISOString();
+        savePersistentStore(env);
+        sendJson(res, 200, { player: publicPlayer(player) });
         return;
       }
       const matchmakingStatusMatch = url.pathname.match(/^\/api\/matchmaking\/([^/]+)$/);

@@ -153,6 +153,77 @@ async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   assert.ok(!leaderboard.text.includes("persist-secret"), "leaderboard should not expose API keys");
 }
 
+async function testRegisterLoginAndProviderUpdatePersistAcrossRestart() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-auth-"));
+  const dataFile = path.join(dataDir, "store.json");
+  const env = { GRAPHWAR_DATA_FILE: dataFile };
+  const createPersistentServer = freshCreateServer();
+
+  const registered = await request(createPersistentServer({ env }), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      handle: "Clock_AI",
+      displayName: "Clock Auth",
+      password: "Swordfish!9",
+      providers: {
+        deepseek: { apiKey: "sk-auth-register", model: "deepseek-v4-flash" }
+      }
+    })
+  });
+  assert.strictEqual(registered.status, 200);
+  assert.strictEqual(registered.json.player.handle, "clock_ai");
+  assert.strictEqual(registered.json.player.displayName, "Clock Auth");
+  assert.strictEqual(registered.json.player.rank.rating, 1000);
+  assert.strictEqual(registered.json.player.providers.deepseek.configured, true);
+  assert.ok(!registered.text.includes("sk-auth-register"), "register response should not echo API keys");
+  assert.ok(!registered.text.includes("passwordHash"), "register response should not expose password hash");
+  assert.ok(!registered.text.includes("passwordSalt"), "register response should not expose password salt");
+
+  const duplicate = await request(createPersistentServer({ env }), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ handle: "clock_ai", displayName: "Dup", password: "Swordfish!9" })
+  });
+  assert.strictEqual(duplicate.status, 409);
+  assert.strictEqual(duplicate.json.error, "handle_taken");
+
+  const badPassword = await request(createPersistentServer({ env }), "/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ handle: "clock_ai", password: "wrong-password" })
+  });
+  assert.strictEqual(badPassword.status, 401);
+  assert.strictEqual(badPassword.json.error, "invalid_credentials");
+
+  const restartedCreateServer = freshCreateServer();
+  const loggedIn = await request(restartedCreateServer({ env }), "/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      handle: "CLOCK_AI",
+      password: "Swordfish!9",
+      providers: {
+        openai: { apiKey: "sk-auth-login", model: "gpt-4.1-mini" }
+      }
+    })
+  });
+  assert.strictEqual(loggedIn.status, 200);
+  assert.strictEqual(loggedIn.json.player.id, registered.json.player.id);
+  assert.strictEqual(loggedIn.json.player.handle, "clock_ai");
+  assert.strictEqual(loggedIn.json.player.providers.openai.model, "gpt-4.1-mini");
+  assert.strictEqual(loggedIn.json.player.providers.openai.configured, true);
+  assert.ok(!loggedIn.text.includes("sk-auth-login"), "login response should not echo API keys");
+  assert.ok(!loggedIn.text.includes("Swordfish!9"), "login response should not echo password");
+  assert.ok(!loggedIn.text.includes("passwordHash"), "login response should not expose password hash");
+
+  const stored = fs.readFileSync(dataFile, "utf8");
+  assert.ok(stored.includes("passwordHash"), "persistent store should keep a password verifier");
+  assert.ok(!stored.includes("Swordfish!9"), "persistent store should not keep raw passwords");
+  assert.ok(!stored.includes("sk-auth-register"), "persistent store should not keep registration API keys");
+  assert.ok(!stored.includes("sk-auth-login"), "persistent store should not keep login API keys");
+}
+
 async function createTestPlayer(displayName) {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
@@ -625,6 +696,7 @@ async function testProviderShotRequiresKey() {
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
   await testProfileRankAndLeaderboardPersistAcrossRestart();
+  await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
   await testHumanMatchmakingQueueCanFormRanked2v2();
   await testQueuedPlayersCanPollMatchedRoom();
   await testMatchActionsMutateAuthoritativeState();

@@ -357,13 +357,19 @@ function getActiveTeam(state) {
   return state.turn % 2 === 0 ? "A" : "B";
 }
 
+function isSwapAction(action) {
+  return action === "swap_hand" || action === "reroll";
+}
+
 function buildActionSummary(match, action, team, rerollResult, beforeEventCount) {
-  if (action === "reroll") {
+  if (isSwapAction(action)) {
     return {
-      action,
+      action: "swap_hand",
       team,
       rerollsUsed: rerollResult.rerollsUsed,
       rerollsRemaining: rerollResult.rerollsRemaining,
+      swapsUsed: rerollResult.swapsUsed,
+      swapsRemaining: rerollResult.swapsRemaining,
       hand: rerollResult.cards
     };
   }
@@ -466,9 +472,9 @@ async function advanceMatchToResolution(match, options) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
     const resolved = await autoResolveDecisionForTurn(match, turn, opts);
-    if (resolved.decision.action === "reroll") {
+    if (isSwapAction(resolved.decision.action)) {
       Sim.applyTurn(match.state, {}, {
-        action: "reroll",
+        action: "swap_hand",
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
       });
@@ -628,7 +634,10 @@ function localDecisionFromRules(rulesPayload) {
     };
   }
   if (rulesPayload.legalActions.some((action) => action.action === "reroll")) {
-    return { action: "reroll", publicReason: "Local baseline rerolled because no shot was legal." };
+    return { action: "swap_hand", publicReason: "Local baseline swapped hand because no shot was legal." };
+  }
+  if (rulesPayload.legalActions.some((action) => action.action === "swap_hand")) {
+    return { action: "swap_hand", publicReason: "Local baseline swapped hand because no shot was legal." };
   }
   return { action: "shot", candidateId: null, publicReason: "No legal action available." };
 }
@@ -673,9 +682,9 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
     const team = getActiveTeam(state);
     const contestant = team === "A" ? teamA : teamB;
     const resolved = await contestantDecision(contestant, state, team, env, fetchFn);
-    if (resolved.decision.action === "reroll") {
+    if (isSwapAction(resolved.decision.action)) {
       Sim.applyTurn(state, {}, {
-        action: "reroll",
+        action: "swap_hand",
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
       });
@@ -866,7 +875,7 @@ function createServer(options) {
           return;
         }
         const action = String(body.action || "shot");
-        if (action !== "shot" && action !== "reroll") {
+        if (action !== "shot" && !isSwapAction(action)) {
           sendJson(res, 400, { error: "unknown_action" });
           return;
         }
@@ -878,8 +887,8 @@ function createServer(options) {
         try {
           let rerollResult = null;
           const beforeEventCount = match.state.events.length;
-          if (action === "reroll") {
-            rerollResult = Sim.applyTurn(match.state, {}, { action: "reroll" });
+          if (isSwapAction(action)) {
+            rerollResult = Sim.applyTurn(match.state, {}, { action: "swap_hand" });
           } else {
             const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
             Sim.applyTurn(

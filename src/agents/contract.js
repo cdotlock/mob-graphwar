@@ -51,16 +51,17 @@
       description: card.description
     }));
     const shotActions = listPublicShotCandidates(state, team, command);
-    const rerollsUsed = handState ? handState.rerollsUsed : 0;
-    const rerollsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - rerollsUsed);
-    const legalActions = rerollsRemaining > 0
-      ? [{ action: "reroll", rerollsRemaining }].concat(shotActions)
+    const swapsUsed = handState ? Number(handState.swapsUsed ?? handState.rerollsUsed) || 0 : 0;
+    const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+    const legalActions = swapsRemaining > 0
+      ? [{ action: "swap_hand", swapsUsed, swapsRemaining }].concat(shotActions)
       : shotActions;
     return {
       rules: {
         turnOrder: "A and B alternate one active unit per turn",
-        actionLimit: "choose exactly one legal action: reroll or shot",
-        rerollLimit: `${Sim.CONFIG.maxRerollsPerTurn} rerolls per active turn`,
+        actionLimit: "choose exactly one legal action: swap_hand or shot",
+        handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
+        swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
         cardUse: `${Sim.CONFIG.maxCardsPerShot} cards max, ${Sim.CONFIG.maxShapeCards} shape cards max, ${Sim.CONFIG.maxModifierCards} modifier max`,
         output: "return JSON only"
       },
@@ -77,8 +78,11 @@
         obstacles: state.obstacles || []
       },
       hand: {
-        rerollsUsed,
-        rerollsRemaining,
+        retained: true,
+        swapsUsed,
+        swapsRemaining,
+        rerollsUsed: swapsUsed,
+        rerollsRemaining: swapsRemaining,
         cards
       },
       legalActions
@@ -89,13 +93,13 @@
     if (!decision || typeof decision !== "object") return { ok: false, reason: "missing_decision" };
     const actions = Array.isArray(legalActions) ? legalActions : [];
     const candidates = actions.filter((item) => item.action === "shot" || !item.action);
-    if (decision.action === "reroll") {
-      if (!actions.some((item) => item.action === "reroll")) return { ok: false, reason: "reroll_limit_reached" };
+    if (decision.action === "swap_hand" || decision.action === "reroll") {
+      if (!actions.some((item) => item.action === "swap_hand")) return { ok: false, reason: "reroll_limit_reached" };
       return {
         ok: true,
-        action: "reroll",
+        action: "swap_hand",
         publicReason:
-          typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider chose to reroll."
+          typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider chose to swap hand."
       };
     }
     if (typeof decision.candidateId !== "string") return { ok: false, reason: "missing_candidate_id" };

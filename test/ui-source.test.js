@@ -29,6 +29,8 @@ function testUiKeepsRankedDuelSpectatorOnly() {
   assert.ok(!main.includes("submitMatchAction"), "ranked UI should not expose per-turn manual action submission");
   assert.ok(!main.includes("/action"), "ranked UI should not post reroll or shot actions during the duel");
   assert.ok(main.includes("After that, watch only."), "command console should frame the player as a spectator after kickoff");
+  assert.ok(main.includes("spectator-hud"), "battle surface should include a dedicated spectator HUD");
+  assert.ok(main.includes("AI auto-battle"), "battle surface should state that models auto-battle after kickoff");
 }
 
 function testGameSurfacesMatchmakingAndLeagueSimulation() {
@@ -59,12 +61,24 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes("renderObstacleFacets"), "battlefield should render obstacles as faceted terrain, not plain blocks");
   assert.ok(main.includes('data-testid="battlefield-frame"'), "battlefield should expose a framed game-stage surface");
   assert.ok(main.includes('data-testid="map-intel-strip"'), "battlefield should expose map complexity and pressure metadata");
+  assert.ok(main.includes("route-pressure"), "battlefield should show route pressure metadata");
+  assert.ok(main.includes("battlefield-depth"), "battlefield should show layered route depth metadata");
   assert.ok(main.includes("impact-burst"), "battlefield should mark the latest shot impact");
   assert.ok(css.includes(".battlefield-frame"), "CSS should frame the battlefield as a game viewport");
   assert.ok(css.includes(".map-intel-strip"), "CSS should style map difficulty intel");
+  assert.ok(css.includes(".route-pressure"), "CSS should style route pressure metadata");
+  assert.ok(css.includes(".battlefield-depth"), "CSS should style battlefield depth metadata");
+  assert.ok(css.includes(".spectator-hud"), "CSS should style the spectator HUD");
   assert.ok(css.includes(".terrain-ridge"), "CSS should style layered terrain ridges");
   assert.ok(css.includes(".obstacle-facet"), "CSS should style faceted obstacle terrain");
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
+}
+
+function testUiExplainsRetainedHandsAndSwapAction() {
+  assert.ok(main.includes("Retained Hand"), "hand panel should use retained-hand game language");
+  assert.ok(main.includes("Swap Hand x3"), "hand panel should explain the active model can swap hand up to three times");
+  assert.ok(main.includes("swap_hand"), "model feed should surface the provider action vocabulary");
+  assert.ok(!main.includes("choose rerolls and shots"), "model feed should not use old reroll wording");
 }
 
 function testUiOffersOneClickRankedAutoDuel() {
@@ -85,6 +99,7 @@ testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
+testUiExplainsRetainedHandsAndSwapAction();
 testUiOffersOneClickRankedAutoDuel();
 
 console.log("ui-source tests passed");

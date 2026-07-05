@@ -76,10 +76,10 @@ async function executeProviderDecision(provider, payload, options) {
     err.validation = validation;
     throw err;
   }
-  if (validation.action === "reroll") {
+  if (validation.action === "swap_hand") {
     return {
       decision: {
-        action: "reroll",
+        action: "swap_hand",
         publicReason: validation.publicReason
       },
       candidate: null

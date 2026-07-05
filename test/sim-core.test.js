@@ -272,16 +272,21 @@ function testHandsPersistAndCanBeRerolledThreeTimes() {
     "shooting should not discard the team's hand"
   );
 
-  const firstReroll = Sim.rerollHand(state, "A");
+  const swapState = Sim.createInitialState({ seed: 8811 });
+  const swapFirstHand = Sim.getCurrentHand(swapState, "A").map((card) => card.instanceId);
+  const firstReroll = Sim.applyTurn(swapState, {}, { action: "swap_hand" });
+  assert.strictEqual(firstReroll.action, "swap_hand");
   assert.strictEqual(firstReroll.rerollsUsed, 1);
+  assert.strictEqual(firstReroll.swapsUsed, 1);
+  assert.strictEqual(swapState.turn, 0, "swap_hand should not consume the active turn");
   assert.notDeepStrictEqual(
-    Sim.getCurrentHand(state, "A").map((card) => card.instanceId),
-    firstHand,
-    "reroll should replace the retained hand"
+    Sim.getCurrentHand(swapState, "A").map((card) => card.instanceId),
+    swapFirstHand,
+    "swap_hand should replace the retained hand"
   );
-  Sim.rerollHand(state, "A");
-  Sim.rerollHand(state, "A");
-  assert.throws(() => Sim.rerollHand(state, "A"), /reroll_limit_reached/);
+  Sim.rerollHand(swapState, "A");
+  Sim.rerollHand(swapState, "A");
+  assert.throws(() => Sim.rerollHand(swapState, "A"), /reroll_limit_reached/);
 }
 
 function testSeededHardMapGeneration() {
@@ -299,6 +304,8 @@ function testSeededHardMapGeneration() {
   assert.ok(first.obstacles.filter((obstacle) => obstacle.y >= 38).length >= 3, "map should include ceiling pressure");
   assert.ok(first.obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length >= 5, "map should include long suspended shelves");
   assert.ok(first.mapMeta.complexity.chokePoints >= 5, "complexity summary should count route choke points");
+  assert.ok(first.mapMeta.complexity.routePressure >= 80, "complexity summary should expose route pressure");
+  assert.ok(first.mapMeta.complexity.layerCount >= 6, "complexity summary should expose battlefield depth layers");
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
 
@@ -309,6 +316,8 @@ function testHardMapsRemainSolvableByFiniteCardCombos() {
     assert.ok(state.mapMeta.complexity.tallCount >= 7, `seed ${seed} should keep at least seven tall blockers`);
     assert.ok(state.mapMeta.complexity.elevatedCount >= 12, `seed ${seed} should keep elevated blockers`);
     assert.ok(state.mapMeta.complexity.ceilingCount >= 3, `seed ${seed} should keep ceiling pressure`);
+    assert.ok(state.mapMeta.complexity.routePressure >= 80, `seed ${seed} should keep route pressure high`);
+    assert.ok(state.mapMeta.complexity.layerCount >= 6, `seed ${seed} should keep layered route depth`);
     for (const team of ["A", "B"]) {
       const shots = Sim.listLegalShots(state, team, "");
       assert.ok(shots.length > 0, `seed ${seed} team ${team} should have legal shots`);

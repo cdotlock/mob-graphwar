@@ -2,6 +2,9 @@ const assert = require("assert");
 const { listProviders, getProvider } = require("../server/providers/catalog.js");
 const { normalizeProviderDecision } = require("../server/providers/normalize.js");
 const { buildOpenAICompatibleRequest } = require("../server/providers/openai-compatible.js");
+const { buildAnthropicRequest } = require("../server/providers/anthropic.js");
+const Sim = require("../src/sim-core.js");
+const Contract = require("../src/agents/contract.js");
 const fs = require("fs");
 const path = require("path");
 
@@ -17,10 +20,15 @@ function testProviderCatalogRedactsKeys() {
 function testNormalizeDecision() {
   const decision = normalizeProviderDecision('{"candidateId":"A-1","publicReason":"<think>x</think>Use high arc."}');
   assert.deepStrictEqual(decision, { action: "shot", candidateId: "A-1", publicReason: "Use high arc." });
-  assert.deepStrictEqual(normalizeProviderDecision('{"action":"reroll","publicReason":"Need a different hand."}'), {
-    action: "reroll",
+  assert.deepStrictEqual(normalizeProviderDecision('{"action":"swap_hand","publicReason":"Need a different hand."}'), {
+    action: "swap_hand",
     candidateId: undefined,
     publicReason: "Need a different hand."
+  });
+  assert.deepStrictEqual(normalizeProviderDecision('{"action":"reroll","publicReason":"Legacy action."}'), {
+    action: "swap_hand",
+    candidateId: undefined,
+    publicReason: "Legacy action."
   });
   assert.throws(() => normalizeProviderDecision("not json"), /invalid_provider_json/);
 }
@@ -47,12 +55,43 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
   assert.ok(!request.body.messages[0].content.includes("safest"), "system prompt should not provide tactical advice");
   assert.ok(!request.body.messages[0].content.includes("high-clearance"), "system prompt should not provide tactical advice");
   assert.ok(!request.body.messages[0].content.includes("clearest"), "system prompt should not provide tactical advice");
+  assert.ok(request.body.messages[0].content.includes("swap_hand"), "system prompt should name the public hand swap action");
+  assert.ok(!request.body.messages[0].content.includes("reroll"), "system prompt should not expose old reroll wording");
   const userPayload = JSON.parse(request.body.messages[1].content);
   assert.ok(userPayload.rules, "provider should receive bare rules");
   assert.ok(Array.isArray(userPayload.legalActions), "provider should receive legal actions");
-  assert.ok(userPayload.legalActions.some((action) => action.action === "reroll"), "provider should be allowed to reroll");
+  assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"), "provider should be allowed to swap the retained hand");
+  assert.ok(!userPayload.legalActions.some((action) => action.action === "reroll"), "provider legal actions should use swap_hand");
   assert.ok(!JSON.stringify(userPayload).includes("score"), "provider payload should not expose local scores");
   assert.ok(!JSON.stringify(userPayload).includes("hitEnemy"), "provider payload should not expose simulated hit outcomes");
+}
+
+function testAnthropicUsesSameBareRulesPayload() {
+  const anthropic = getProvider("anthropic");
+  const state = Sim.createInitialState({ seed: 7351 });
+  const rulesPayload = Contract.buildRulesPayload(state, "A", "thread the center");
+  const request = buildAnthropicRequest(
+    anthropic,
+    {
+      command: "thread the center",
+      candidates: [{ candidateId: "legacy", targetId: "B2" }],
+      stateSummary: { seed: 7351, turn: 0, map: { name: "legacy" } },
+      rulesPayload,
+      model: "claude-test"
+    },
+    "sk-redacted"
+  );
+  assert.strictEqual(request.body.model, "claude-test");
+  assert.ok(request.body.system.includes("JSON"), "Anthropic prompt should request JSON");
+  assert.ok(request.body.system.includes("swap_hand"), "Anthropic prompt should name the public hand swap action");
+  assert.ok(!request.body.system.includes("clearest"), "Anthropic system prompt should not provide tactical advice");
+  const userPayload = JSON.parse(request.body.messages[0].content);
+  assert.strictEqual(userPayload.command, "thread the center");
+  assert.ok(userPayload.rules, "Anthropic should receive the shared bare rules payload");
+  assert.ok(userPayload.hand && userPayload.hand.retained, "Anthropic payload should include retained hand state");
+  assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"));
+  assert.ok(userPayload.legalActions.some((action) => action.action === "shot"));
+  assert.ok(!JSON.stringify(userPayload).includes("hitEnemy"), "Anthropic payload should not expose simulated hit outcomes");
 }
 
 function testRealDeepSeekSmokeScriptIsDiscoverable() {
@@ -65,6 +104,7 @@ function testRealDeepSeekSmokeScriptIsDiscoverable() {
 testProviderCatalogRedactsKeys();
 testNormalizeDecision();
 testDeepSeekUsesCurrentJsonModeDefaults();
+testAnthropicUsesSameBareRulesPayload();
 testRealDeepSeekSmokeScriptIsDiscoverable();
 
 console.log("provider-catalog tests passed");

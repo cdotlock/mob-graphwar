@@ -266,17 +266,18 @@ async function testMatchActionsMutateAuthoritativeState() {
   const rerolled = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ playerId: session.json.player.id, action: "reroll" })
+    body: JSON.stringify({ playerId: session.json.player.id, action: "swap_hand" })
   });
   assert.strictEqual(rerolled.status, 200);
-  assert.strictEqual(rerolled.json.action.action, "reroll");
+  assert.strictEqual(rerolled.json.action.action, "swap_hand");
   assert.strictEqual(rerolled.json.action.team, "A");
-  assert.strictEqual(rerolled.json.match.state.turn, 0, "reroll should not consume the turn");
+  assert.strictEqual(rerolled.json.match.state.turn, 0, "swap_hand should not consume the turn");
   assert.strictEqual(rerolled.json.match.state.hands.A.rerollsUsed, 1);
+  assert.strictEqual(rerolled.json.match.state.hands.A.swapsUsed, 1);
   assert.notStrictEqual(
     rerolled.json.match.state.hands.A.cards.map((card) => card.instanceId).join("|"),
     originalHand,
-    "reroll should replace the active hand"
+    "swap_hand should replace the active hand"
   );
 
   const fired = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
@@ -358,6 +359,7 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
     const prompt = JSON.parse(requestBody.messages[1].content);
     const candidates = prompt.legalActions.filter((action) => action.action === "shot");
     capturedPrompts.push({ url, options, requestBody, prompt });
+    const firstCall = capturedPrompts.length === 1;
     return {
       ok: true,
       status: 200,
@@ -365,11 +367,16 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                action: "shot",
-                candidateId: candidates[0].candidateId,
-                publicReason: "Provider chose a legal spectator-duel shot."
-              })
+              content: JSON.stringify(firstCall
+                ? {
+                    action: "swap_hand",
+                    publicReason: "Provider wants a different retained hand."
+                  }
+                : {
+                    action: "shot",
+                    candidateId: candidates[0].candidateId,
+                    publicReason: "Provider chose a listed legal shot."
+                  })
             }
           }
         ]
@@ -404,12 +411,12 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   });
 
   assert.strictEqual(autoDuel.status, 200);
-  assert.ok(capturedPrompts.length >= 1, "auto duel should call the configured player provider");
+  assert.ok(capturedPrompts.length >= 2, "auto duel should continue the same provider turn after swap_hand");
   assert.strictEqual(capturedPrompts[0].options.headers.authorization, "Bearer auto-provider-secret");
   assert.strictEqual(capturedPrompts[0].requestBody.model, "gpt-auto");
   assert.strictEqual(capturedPrompts[0].prompt.command, "safe high arc, avoid ally, target the weakest opponent");
   assert.strictEqual(capturedPrompts[0].prompt.state.map.windows, undefined, "auto duel prompt should not include route windows");
-  assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "reroll"));
+  assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "swap_hand"));
   assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "shot"));
   assert.ok(
     autoDuel.json.autoBattle.providers.some((provider) => provider.includes("Provider Pilot / gpt-auto")),
@@ -456,7 +463,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
             message: {
               content: JSON.stringify({
                 candidateId: candidates[0].candidateId,
-                publicReason: "Provider chose the clearest legal combo."
+                publicReason: "Provider chose a listed legal combo."
               })
             }
           }
@@ -486,7 +493,8 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   const prompt = JSON.parse(JSON.parse(captured.options.body).messages[1].content);
   assert.strictEqual(prompt.state.map.windows, undefined, "provider prompt should not include route windows");
   assert.ok(prompt.legalActions.every((action) => action.mapFit === undefined), "provider candidates should not leak simulated map fit");
-  assert.ok(prompt.legalActions.some((action) => action.action === "reroll"), "provider prompt should expose reroll as a legal action");
+  assert.ok(prompt.legalActions.some((action) => action.action === "swap_hand"), "provider prompt should expose swap_hand as a legal action");
+  assert.ok(!prompt.legalActions.some((action) => action.action === "reroll"), "provider prompt should not expose old reroll wording");
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
 }
 
@@ -537,7 +545,7 @@ async function testProviderShotUsesCurrentTurnOrder() {
   assert.strictEqual(capturedPrompt.command, "must target A1, low risky direct shot", "server should use the current turn command");
 }
 
-async function testProviderCanChooseReroll() {
+async function testProviderCanChooseSwapHand() {
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
   const fetchMock = async () => ({
     ok: true,
@@ -547,7 +555,7 @@ async function testProviderCanChooseReroll() {
         {
           message: {
             content: JSON.stringify({
-              action: "reroll",
+              action: "swap_hand",
               publicReason: "Need a different legal hand."
             })
           }
@@ -569,7 +577,7 @@ async function testProviderCanChooseReroll() {
   });
 
   assert.strictEqual(result.status, 200);
-  assert.strictEqual(result.json.decision.action, "reroll");
+  assert.strictEqual(result.json.decision.action, "swap_hand");
   assert.strictEqual(result.json.candidate, null);
 }
 
@@ -603,7 +611,7 @@ async function testProviderShotRequiresKey() {
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();
-  await testProviderCanChooseReroll();
+  await testProviderCanChooseSwapHand();
   await testProviderShotRequiresKey();
   console.log("server tests passed");
 })().catch((err) => {

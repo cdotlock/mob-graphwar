@@ -481,6 +481,7 @@
       team,
       turn,
       rerollsUsed: 0,
+      swapsUsed: 0,
       cards: dealHand(seed, 0, team, 0)
     };
   }
@@ -497,6 +498,10 @@
       if (state.hands[team].turn !== state.turn) {
         state.hands[team].turn = state.turn;
         state.hands[team].rerollsUsed = 0;
+        state.hands[team].swapsUsed = 0;
+      }
+      if (!Number.isFinite(Number(state.hands[team].swapsUsed))) {
+        state.hands[team].swapsUsed = Number(state.hands[team].rerollsUsed) || 0;
       }
     }
     return state.hands;
@@ -514,17 +519,26 @@
     const hands = ensureHands(state);
     const handState = hands[team];
     if (!handState) throw new Error("unknown_team");
-    if (handState.rerollsUsed >= CONFIG.maxRerollsPerTurn) {
+    const used = Math.max(Number(handState.rerollsUsed) || 0, Number(handState.swapsUsed) || 0);
+    if (used >= CONFIG.maxRerollsPerTurn) {
       throw new Error("reroll_limit_reached");
     }
-    handState.rerollsUsed += 1;
+    handState.rerollsUsed = used + 1;
+    handState.swapsUsed = handState.rerollsUsed;
     handState.cards = dealHand(state.seed, state.turn, team, handState.rerollsUsed);
     return {
+      action: "swap_hand",
       team,
       rerollsUsed: handState.rerollsUsed,
       rerollsRemaining: CONFIG.maxRerollsPerTurn - handState.rerollsUsed,
+      swapsUsed: handState.swapsUsed,
+      swapsRemaining: CONFIG.maxRerollsPerTurn - handState.swapsUsed,
       cards: clone(handState.cards)
     };
+  }
+
+  function swapHand(state, team) {
+    return rerollHand(state, team);
   }
 
   function getEnergy(turn) {
@@ -787,6 +801,16 @@
     const ceilingCount = obstacles.filter((obstacle) => obstacle.y >= 38).length;
     const suspendedShelves = obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length;
     const chokePoints = obstacles.filter((obstacle) => obstacle.h >= 18 || (obstacle.y > 0 && obstacle.w >= 9)).length;
+    const layerCount = clamp(
+      Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3),
+      6,
+      14
+    );
+    const routePressure = clamp(
+      Math.round(52 + tallCount * 3 + ceilingCount * 4 + suspendedShelves * 2 + chokePoints + density * 42),
+      80,
+      99
+    );
     const difficulty = clamp(Math.round(template.difficulty + tallCount * 4 + density * 120 + obstacles.length * 2 + rng() * 5), 90, 99);
     return {
       id: template.id,
@@ -799,6 +823,8 @@
         ceilingCount,
         suspendedShelves,
         chokePoints,
+        layerCount,
+        routePressure,
         density: round(density, 3)
       },
       obstacles,
@@ -1689,7 +1715,7 @@
     const opts = options || {};
     const team = state.turn % 2 === 0 ? "A" : "B";
     ensureHands(state);
-    if (opts.action === "reroll") {
+    if (opts.action === "swap_hand" || opts.action === "reroll") {
       return rerollHand(state, team);
     }
     const orders = normalizeBattleOrders(commands);
@@ -1810,6 +1836,7 @@
     createInitialState,
     applyTurn,
     getCurrentHand,
+    swapHand,
     rerollHand,
     runBattle,
     exportTrace,

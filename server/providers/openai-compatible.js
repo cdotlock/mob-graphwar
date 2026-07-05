@@ -10,7 +10,7 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
       },
       command: payload.command,
       state: payload.stateSummary,
-      legalActions: [{ action: "reroll", rerollsRemaining: 3 }].concat(
+      legalActions: [{ action: "swap_hand", swapsRemaining: 3 }].concat(
         (payload.candidates || []).map((candidate) => ({ action: "shot", ...candidate }))
       )
     };
@@ -24,7 +24,7 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
         role: "system",
         content:
           'Return only valid JSON. For a shot, return {"action":"shot","candidateId":"...","publicReason":"..."}. ' +
-          'For a reroll, return {"action":"reroll","publicReason":"..."}. Use only legalActions from the user payload.'
+          'For a hand swap, return {"action":"swap_hand","publicReason":"..."}. Use only legalActions from the user payload.'
       },
       {
         role: "user",

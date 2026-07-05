@@ -14,14 +14,15 @@ function normalizeProviderDecision(raw) {
   } catch (err) {
     throw new Error("invalid_provider_json");
   }
-  if (!parsed || (parsed.action !== "reroll" && typeof parsed.candidateId !== "string")) {
+  const wantsSwap = parsed && (parsed.action === "swap_hand" || parsed.action === "reroll");
+  if (!parsed || (!wantsSwap && typeof parsed.candidateId !== "string")) {
     throw new Error("missing_candidate_id");
   }
   return {
-    action: parsed.action === "reroll" ? "reroll" : "shot",
+    action: wantsSwap ? "swap_hand" : "shot",
     candidateId: parsed.candidateId,
     publicReason: stripReasoning(
-      parsed.publicReason || (parsed.action === "reroll" ? "Provider selected a legal reroll." : "Provider selected this legal shot.")
+      parsed.publicReason || (wantsSwap ? "Provider selected a legal hand swap." : "Provider selected this legal shot.")
     ).slice(0, 240)
   };
 }

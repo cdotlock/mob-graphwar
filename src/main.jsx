@@ -391,6 +391,7 @@ function App() {
 
         <section className="battle-panel game-panel">
           <BattleHeader state={battleState} activeTeam={activeTeam} message={message} />
+          <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
           <section className="arena-stage" aria-label="AI duel stage">
             <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={lastDecision} />
             <Battlefield state={battleState} latestEvent={latestEvent} />
@@ -550,6 +551,25 @@ function BattleHeader({ state, activeTeam, message }) {
   );
 }
 
+function SpectatorHud({ state, activeTeam, match }) {
+  return (
+    <div className="spectator-hud" data-testid="spectator-hud">
+      <div>
+        <span>AI auto-battle</span>
+        <strong>{match ? "armed" : "offline"}</strong>
+      </div>
+      <div>
+        <span>Model action</span>
+        <strong>shot / swap_hand</strong>
+      </div>
+      <div>
+        <span>Viewer state</span>
+        <strong>{state.winner ? "settled" : activeTeam === "-" ? "standby" : "watch only"}</strong>
+      </div>
+    </div>
+  );
+}
+
 function BattlefieldBackdrop({ state }) {
   const complexity = state.mapMeta?.complexity || {};
   return (
@@ -593,6 +613,8 @@ function Battlefield({ state, latestEvent }) {
         <span>{complexity.tallCount || 0} towers</span>
         <span>{complexity.ceilingCount || 0} ceilings</span>
         <span>{complexity.suspendedShelves || 0} shelves</span>
+        <span className="route-pressure">{complexity.routePressure || 0} pressure</span>
+        <span className="battlefield-depth">{complexity.layerCount || 0} layers</span>
       </div>
       <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
         <defs>
@@ -668,7 +690,8 @@ function CommandConsole({ activeTeam, order, setOrder, onAutoDuel, busy, canRun 
 function HandRack({ hand, activeTeam }) {
   return (
     <div className="hand-rack">
-      <div className="panel-title"><KeyRound size={18} /> Team {activeTeam} Hand</div>
+      <div className="panel-title"><KeyRound size={18} /> Retained Hand</div>
+      <p className="hand-rule">Team {activeTeam} cards stay after shots. Active model may choose Swap Hand x3 before firing.</p>
       <div className="card-grid">
         {hand.map((card) => (
           <article className={`battle-card ${card.rarity}`} key={card.instanceId}>
@@ -746,7 +769,7 @@ function ModelWarFeed({ state, lastDecision }) {
             <strong>{event.resultLabel}</strong>
             <small>{event.provider || "Local AI"} · {event.combo?.name || "Mixed Curve"}</small>
           </div>
-        )) : <p className="empty-copy">The duel feed will fill as models choose rerolls and shots.</p>}
+        )) : <p className="empty-copy">The duel feed will fill as models choose swap_hand or shot.</p>}
       </div>
     </div>
   );

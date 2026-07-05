@@ -64,17 +64,17 @@ async function main() {
     assert.strictEqual(payload.provider, "deepseek");
     assert.strictEqual(payload.model, model);
     assert.ok(payload.decision, "DeepSeek should return a validated decision");
-    assert.ok(["shot", "reroll"].includes(payload.decision.action), "DeepSeek should choose a legal action");
+    assert.ok(["shot", "swap_hand"].includes(payload.decision.action), "DeepSeek should choose a legal action");
 
     let result = null;
     let combo = null;
-    if (payload.decision.action === "reroll") {
+    if (payload.decision.action === "swap_hand") {
       const before = Sim.getCurrentHand(state, "A").map((card) => card.instanceId);
-      const reroll = Sim.rerollHand(state, "A");
-      const after = reroll.cards.map((card) => card.instanceId);
-      assert.notDeepStrictEqual(after, before, "validated reroll should change the active hand");
-      assert.strictEqual(state.events.length, 0, "reroll should not execute a shot");
-      result = "reroll";
+      const swap = Sim.applyTurn(state, {}, { action: "swap_hand" });
+      const after = swap.cards.map((card) => card.instanceId);
+      assert.notDeepStrictEqual(after, before, "validated swap_hand should change the active hand");
+      assert.strictEqual(state.events.length, 0, "swap_hand should not execute a shot");
+      result = "swap_hand";
     } else {
       assert.ok(payload.decision.candidateId, "DeepSeek shot should choose a legal candidate id");
       assert.ok(payload.candidate && payload.candidate.expression, "shot response should include the validated candidate");

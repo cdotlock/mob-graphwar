@@ -7,7 +7,7 @@ do not submit arbitrary functions.
 ## Contract
 
 1. The game creates a bare rules payload for the active turn.
-2. The provider receives rules, map, unit positions, current hand, reroll count,
+2. The provider receives rules, map, unit positions, retained hand, swap count,
    command text, and legal actions. Shot actions include target, cards, cost,
    combo identity, and expression. They do not include local simulation score or
    final hit/miss result.
@@ -25,13 +25,14 @@ or:
 
 ```json
 {
-  "action": "reroll",
+  "action": "swap_hand",
   "publicReason": "Need a different hand."
 }
 ```
 
 4. The server validates the action against the legal list.
-5. The game executes the already-known legal shot or applies the legal reroll.
+5. The game executes the already-known legal shot or applies the legal hand
+   swap without consuming the active shot turn.
 
 Models never output arbitrary functions, JavaScript, or card IDs that were not
 offered by the game.
@@ -49,7 +50,7 @@ offered by the game.
 
 The provider execution endpoint calls the selected provider, normalizes its
 JSON, validates the selected legal action, then returns the verified action to
-the browser. The browser applies that shot or reroll through the same simulation
+the browser. The browser applies that shot or hand swap through the same simulation
 path used by local AI.
 
 OpenAI-compatible providers use JSON mode. DeepSeek defaults to

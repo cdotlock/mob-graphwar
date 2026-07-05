@@ -29,8 +29,14 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(payload.allyIds.includes("A2"), "payload should identify allies");
   assert.ok(payload.opponentIds.includes("B1") && payload.opponentIds.includes("B2"), "payload should identify opponents");
   assert.ok(payload.hand.cards.length === Sim.CONFIG.handSize, "payload should include the retained current hand");
-  assert.ok(payload.legalActions.some((action) => action.action === "reroll"), "payload should include reroll as a legal model action");
+  assert.strictEqual(payload.hand.retained, true, "payload should tell providers that hands persist");
+  assert.strictEqual(payload.hand.swapsUsed, 0, "payload should expose active-turn swap usage");
+  assert.strictEqual(payload.hand.swapsRemaining, Sim.CONFIG.maxRerollsPerTurn, "payload should expose remaining hand swaps");
+  assert.ok(payload.legalActions.some((action) => action.action === "swap_hand"), "payload should include swap_hand as a legal model action");
   assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should include shot as a legal model action");
+  assert.ok(payload.rules.handRetention.includes("persist"), "rules should describe retained hands");
+  assert.ok(payload.rules.actionLimit.includes("swap_hand"), "rules should use the public swap_hand action");
+  assert.ok(!serialized.includes('"action":"reroll"'), "provider payload should not expose reroll as the public action");
   assert.ok(!serialized.includes("score"), "payload should not expose local scoring");
   assert.ok(!serialized.includes("hitEnemy"), "payload should not expose simulated outcomes");
 }
@@ -42,12 +48,17 @@ function testDecisionValidation() {
   assert.strictEqual(valid.ok, true);
 
   const payload = Contract.buildRulesPayload(state, "A", "hit B2 high");
-  const reroll = Contract.validateAgentDecision({ action: "reroll", publicReason: "Need a better hand." }, payload.legalActions);
-  assert.strictEqual(reroll.ok, true);
+  const swap = Contract.validateAgentDecision({ action: "swap_hand", publicReason: "Need a better hand." }, payload.legalActions);
+  assert.strictEqual(swap.ok, true);
+  assert.strictEqual(swap.action, "swap_hand");
+
+  const legacyReroll = Contract.validateAgentDecision({ action: "reroll", publicReason: "Legacy client." }, payload.legalActions);
+  assert.strictEqual(legacyReroll.ok, true);
+  assert.strictEqual(legacyReroll.action, "swap_hand", "legacy reroll should normalize to swap_hand");
 
   const noReroll = Contract.validateAgentDecision(
-    { action: "reroll", publicReason: "Need a better hand." },
-    payload.legalActions.filter((action) => action.action !== "reroll")
+    { action: "swap_hand", publicReason: "Need a better hand." },
+    payload.legalActions.filter((action) => action.action !== "swap_hand")
   );
   assert.strictEqual(noReroll.ok, false);
   assert.strictEqual(noReroll.reason, "reroll_limit_reached");

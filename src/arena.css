@@ -539,6 +539,43 @@ label {
   overflow-wrap: anywhere;
 }
 
+.spectator-hud {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.spectator-hud div {
+  min-width: 0;
+  border: 1px solid rgba(217, 255, 71, 0.22);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background:
+    linear-gradient(90deg, rgba(217, 255, 71, 0.1), transparent),
+    rgba(3, 7, 14, 0.7);
+}
+
+.spectator-hud span {
+  display: block;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.spectator-hud strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--acid);
+  font-family: "Orbitron", sans-serif;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .battlefield-frame {
   overflow: hidden;
   border: 2px solid rgba(88, 212, 255, 0.24);
@@ -554,7 +591,7 @@ label {
 
 .map-intel-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(4, minmax(82px, 0.55fr));
+  grid-template-columns: minmax(0, 1.5fr) repeat(6, minmax(82px, 0.55fr));
   gap: 1px;
   border-bottom: 1px solid rgba(88, 212, 255, 0.22);
   background: rgba(88, 212, 255, 0.14);
@@ -576,6 +613,14 @@ label {
 
 .map-intel-strip b {
   color: var(--acid);
+}
+
+.map-intel-strip .route-pressure {
+  color: var(--gold);
+}
+
+.map-intel-strip .battlefield-depth {
+  color: var(--green);
 }
 
 .battlefield {
@@ -817,6 +862,17 @@ label {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.hand-rule {
+  border-left: 4px solid rgba(217, 255, 71, 0.7);
+  padding: 7px 9px;
+  background: rgba(217, 255, 71, 0.07);
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .battle-card {
@@ -1189,6 +1245,10 @@ code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .spectator-hud {
+    grid-template-columns: 1fr;
+  }
+
   .commander-board {
     grid-template-columns: 1fr;
   }
@@ -1224,6 +1284,7 @@ code {
   .command-actions,
   .match-actions,
   .map-intel-strip,
+  .spectator-hud,
   .profile-vault,
   .leaderboard-row,
   .commander-names,

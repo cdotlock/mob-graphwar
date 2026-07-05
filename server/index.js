@@ -44,6 +44,10 @@ function readBody(req, limit) {
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://127.0.0.1");
   const rawPath = url.pathname === "/" ? "/index.html" : url.pathname;
+  if (path.extname(rawPath) === ".html" && rawPath !== "/index.html") {
+    sendJson(res, 404, { error: "not_found" });
+    return;
+  }
   const filePath = path.resolve(ROOT, `.${decodeURIComponent(rawPath)}`);
   if (!filePath.startsWith(ROOT)) {
     sendJson(res, 403, { error: "forbidden" });

@@ -3,6 +3,7 @@ node_modules/
 .env.*
 !.env.example
 .DS_Store
+index 2.html
 coverage/
 dist/
 build/

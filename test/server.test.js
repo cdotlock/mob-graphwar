@@ -8,7 +8,9 @@ async function request(server, path, options) {
   try {
     const response = await fetch(`http://127.0.0.1:${address.port}${path}`, options);
     const text = await response.text();
-    return { status: response.status, text, json: text ? JSON.parse(text) : null };
+    const trimmed = text.trim();
+    const json = trimmed.startsWith("{") || trimmed.startsWith("[") ? JSON.parse(text) : null;
+    return { status: response.status, text, json };
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -23,6 +25,16 @@ async function testHealthAndProviders() {
   assert.strictEqual(providers.status, 200);
   assert.ok(providers.json.providers.some((provider) => provider.id === "openai" && provider.available));
   assert.ok(!JSON.stringify(providers.json).includes("sk-test"), "response should redact keys");
+}
+
+async function testStaticServerOnlyServesMainEntrypoint() {
+  const main = await request(createServer({ env: {} }), "/index.html");
+  assert.strictEqual(main.status, 200);
+  assert.ok(main.text.includes("Mob Graphwar"));
+
+  const duplicate = await request(createServer({ env: {} }), "/index%202.html");
+  assert.strictEqual(duplicate.status, 404);
+  assert.strictEqual(duplicate.json.error, "not_found");
 }
 
 async function testInvalidProviderFails() {
@@ -148,6 +160,7 @@ async function testProviderShotRequiresKey() {
 
 (async () => {
   await testHealthAndProviders();
+  await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesLockedStateOrder();

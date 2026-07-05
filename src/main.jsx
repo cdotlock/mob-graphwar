@@ -593,6 +593,7 @@ function App() {
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
             <Battlefield state={battleState} latestEvent={latestEvent} />
+            <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
             <BattleReplayRail state={battleState} />
             <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
           </section>
@@ -813,6 +814,59 @@ function VersusBanner({ state, match, activeTeam }) {
         <small>{b.health.hp}/{b.health.max} HP · {b.health.alive} online</small>
       </div>
     </div>
+  );
+}
+
+function AgentBattleMatrix({ state, match, activeTeam, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const events = state.events || [];
+  const latestTeamEvent = (team) => [...events].reverse().find((event) => event.team === team);
+  return (
+    <section className="agent-battle-matrix" data-testid="agent-battle-matrix" aria-label="Four AI battle seats">
+      {roster.map((seat) => {
+        const unit = state.units.find((item) => item.id === seat.unitId) || { hp: 0, team: seat.team };
+        const handState = state.hands?.[seat.team] || {};
+        const hand = Sim.getCurrentHand(state, seat.team).slice(0, 4);
+        const swapsUsed = Number(handState.swapsUsed ?? handState.rerollsUsed) || 0;
+        const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+        const teamDecision = lastDecision?.team === seat.team ? lastDecision : null;
+        const event = latestTeamEvent(seat.team);
+        const actionLabel = teamDecision?.action || (event ? event.resultLabel : "standing by");
+        const actionReason = teamDecision?.publicReason || event?.combo?.name || "waiting for auto-battle";
+        const active = activeTeam === seat.team && !state.winner;
+        return (
+          <article className={`agent-seat team-${seat.team.toLowerCase()} ${active ? "active" : ""} ${unit.hp <= 0 ? "offline" : ""}`} data-testid={`agent-seat-${seat.unitId}`} key={seat.unitId}>
+            <div className="agent-vitals">
+              <span>{seat.unitId} / Team {seat.team}</span>
+              <b>{Math.max(0, unit.hp || 0)} HP</b>
+            </div>
+            <div className="agent-identity">
+              <strong>{seat.displayName}</strong>
+              <small>{seat.provider}{seat.model ? ` / ${seat.model}` : ""}</small>
+            </div>
+            <div className="agent-hp-track" aria-label={`${seat.unitId} HP`}>
+              <i style={{ width: `${Math.max(0, Math.min(100, unit.hp || 0))}%` }} />
+            </div>
+            <div className="agent-hand-strip" aria-label={`${seat.unitId} retained hand`}>
+              {hand.map((card) => (
+                <span key={`${seat.unitId}-${card.instanceId}`}>
+                  {card.label}<b>{card.cost}</b>
+                </span>
+              ))}
+            </div>
+            <div className="agent-action-beam">
+              <span>{active ? "ACTIVE" : unit.hp <= 0 ? "OFFLINE" : "WATCHING"}</span>
+              <strong>{actionLabel}</strong>
+              <small>{actionReason}</small>
+            </div>
+            <div className="agent-economy">
+              <span>swapsRemaining <b>{swapsRemaining}</b></span>
+              <span>retained hand</span>
+            </div>
+          </article>
+        );
+      })}
+    </section>
   );
 }
 

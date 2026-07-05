@@ -22,6 +22,20 @@ function testModelWarFeedIsVisibleInSource() {
   assert.ok(main.includes('data-testid="model-decision-stack"'), "model decision stack should be selectable for browser verification");
 }
 
+function testFourSeatAgentBattleMatrixExists() {
+  assert.ok(main.includes("AgentBattleMatrix"), "battle surface should include a named four-seat AI battle matrix");
+  assert.ok(main.includes('data-testid="agent-battle-matrix"'), "agent matrix should be selectable for browser verification");
+  assert.ok(main.includes('data-testid={`agent-seat-${seat.unitId}`}'), "each unit seat should expose a stable test id");
+  assert.ok(main.includes("agent-hand-strip"), "each agent seat should surface the retained hand visible to its model");
+  assert.ok(main.includes("agent-action-beam"), "agent seats should show the latest model action/reason as a game HUD element");
+  assert.ok(main.includes("swapsRemaining"), "agent seats should expose retained-hand swap economy");
+  assert.ok(css.includes(".agent-battle-matrix"), "CSS should style the four-seat battle matrix");
+  assert.ok(css.includes(".agent-seat"), "CSS should style each AI seat card");
+  assert.ok(css.includes(".agent-hand-strip"), "CSS should style per-agent retained hand chips");
+  assert.ok(css.includes(".agent-action-beam"), "CSS should style latest agent action beams");
+  assert.ok(css.includes(".agent-vitals"), "CSS should style per-agent HP and provider vitals");
+}
+
 function testGameGradeHudStylesExist() {
   assert.ok(css.includes(".commander-board"), "CSS should style the commander board");
   assert.ok(css.includes(".model-war-feed"), "CSS should style the model war feed");
@@ -183,6 +197,7 @@ function testBattleHeaderDoesNotCallDrawAWin() {
 
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
+testFourSeatAgentBattleMatrixExists();
 testGameGradeHudStylesExist();
 testStaticEntrypointLoadsSimBeforeReactBundle();
 testUiKeepsRankedDuelSpectatorOnly();

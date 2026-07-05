@@ -4,7 +4,6 @@ import {
   Activity,
   Bot,
   Cpu,
-  Crosshair,
   KeyRound,
   ListOrdered,
   LogIn,
@@ -162,9 +161,9 @@ function App() {
     displayName: "Clock",
     provider: "deepseek",
     model: "deepseek-v4-flash",
-    apiKey: ""
+    apiKey: "",
+    standingOrder: ""
   });
-  const [battleOrder, setBattleOrder] = useState("");
   const [busy, setBusy] = useState(false);
   const [leagueBusy, setLeagueBusy] = useState(false);
   const [message, setMessage] = useState("Watching an exhibition AI duel. Sign in to enter ranked 2v2.");
@@ -177,6 +176,7 @@ function App() {
   const playbackFramesRef = useRef([]);
   const playbackPausedRef = useRef(false);
   const playbackSpeedRef = useRef(1);
+  const autoStartRef = useRef("");
 
   const latestEvent = battleState.events[battleState.events.length - 1];
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
@@ -267,8 +267,9 @@ function App() {
     const response = await fetch(`/api/match/${matchId}?playerId=${playerId}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "room_sync_failed");
-    setMatch(payload.match);
-    setBattleState(payload.match.state);
+    const room = payload.match;
+    setMatch(room);
+    setBattleState(room.state);
     setBattlePlayback(null);
     setPlaybackDeck([]);
     playbackFramesRef.current = [];
@@ -276,8 +277,11 @@ function App() {
     setLastDecision(null);
     setQueueState(null);
     setAutoBattle(null);
-    setMessage(`Room synced: ${payload.match.status}.`);
-    return payload.match;
+    setMessage(`Room synced: ${room.status}.`);
+    if (room.status !== "resolved" && !room.state?.winner) {
+      await autoStartRankedDuel(room, playerId);
+    }
+    return room;
   }
 
   async function pollMatchmaking(playerId = profile?.id) {
@@ -342,7 +346,8 @@ function App() {
       setLastDecision(null);
       setQueueState(null);
       setAutoBattle(null);
-      setMessage(payload.match.filledByAi ? "No full lobby found. AI filled ally and rivals." : "Ranked lobby matched.");
+      setMessage(payload.match.filledByAi ? "AI filled ally and rivals. Auto duel launching." : "Ranked lobby matched. Auto duel launching.");
+      await autoStartRankedDuel(payload.match, profile.id);
     } catch (err) {
       setMessage(err.message || "Matchmaking failed.");
     } finally {
@@ -365,7 +370,7 @@ function App() {
               provider: login.apiKey.trim() ? login.provider : "local",
               model: login.model,
               apiKey: login.apiKey,
-              command: battleOrder || "safe high arc target weakest enemy avoid ally"
+              command: login.standingOrder || "safe high arc target weakest enemy avoid ally"
             },
             {
               id: "pressure-local",
@@ -495,14 +500,17 @@ function App() {
     playbackSpeedRef.current = nextSpeed;
   }
 
-  async function runAutoDuel() {
-    if (!profile || !match || busy) return;
-    setBusy(true);
+  async function autoStartRankedDuel(room = match, playerId = profile?.id) {
+    if (!room || !playerId || room.status === "resolved" || room.state?.winner) return room;
+    const lockKey = `${room.id}:${playerId}`;
+    if (autoStartRef.current === lockKey) return room;
+    autoStartRef.current = lockKey;
+    setMessage("Match ready. Models are resolving the full duel.");
     try {
-      const response = await fetch(`/api/match/${match.id}/auto-duel`, {
+      const response = await fetch(`/api/match/${room.id}/auto-duel`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ playerId: profile.id, command: battleOrder })
+        body: JSON.stringify({ playerId, command: login.standingOrder })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "auto_duel_failed");
@@ -520,10 +528,12 @@ function App() {
         publicReason: `Rank ${payload.rankDelta > 0 ? "+" : ""}${payload.rankDelta}; rating ${payload.player.rank.rating}.`
       });
       setMessage(`Auto duel complete. ${payload.match.state.winner || "draw"} result, rank ${payload.rankDelta > 0 ? "+" : ""}${payload.rankDelta}.`);
+      return payload.match;
     } catch (err) {
       setMessage(err.message || "Auto duel failed.");
+      return null;
     } finally {
-      setBusy(false);
+      if (autoStartRef.current === lockKey) autoStartRef.current = "";
     }
   }
 
@@ -553,12 +563,10 @@ function App() {
             match={match}
             queueState={queueState}
             busy={busy}
-            canAutoDuel={Boolean(profile && match && !battleState.winner)}
             onSubmit={signIn}
             onRestore={restoreProfile}
             onJoin={joinMatch}
             onSync={syncCurrentRoom}
-            onAutoDuel={runAutoDuel}
           />
           <RosterCard match={match} />
           <LeaderboardPanel players={leaderboard} profile={profile} onRefresh={loadLeaderboard} />
@@ -582,14 +590,6 @@ function App() {
             <BattleReplayRail state={battleState} />
             <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
           </section>
-          <CommandConsole
-            activeTeam={activeTeam}
-            order={battleOrder}
-            setOrder={setBattleOrder}
-            onAutoDuel={runAutoDuel}
-            busy={busy}
-            canRun={Boolean(profile && match && !battleState.winner)}
-          />
         </section>
 
         <aside className="tactical-panel game-panel">
@@ -649,12 +649,10 @@ function LaunchBay({
   match,
   queueState,
   busy,
-  canAutoDuel,
   onSubmit,
   onRestore,
   onJoin,
-  onSync,
-  onAutoDuel
+  onSync
 }) {
   const readySteps = [
     { label: "Profile", value: profile ? profile.displayName : "Guest" },
@@ -681,10 +679,8 @@ function LaunchBay({
         match={match}
         queueState={queueState}
         busy={busy}
-        canAutoDuel={canAutoDuel}
         onJoin={onJoin}
         onSync={onSync}
-        onAutoDuel={onAutoDuel}
       />
     </section>
   );
@@ -704,6 +700,7 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
       </select></label>
       <label>Model<input autoComplete="off" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })} /></label>
       <label>API key<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
+      <label>Standing order<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
       <div className="profile-vault">
         <span>{profile ? `${profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked profile"}</span>
         <button type="button" disabled={busy} onClick={onRestore}>Restore</button>
@@ -713,7 +710,7 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
   );
 }
 
-function MatchCard({ profile, match, queueState, busy, canAutoDuel, onJoin, onSync, onAutoDuel }) {
+function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
   const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id}` : "No room synced";
   return (
     <div className="match-card">
@@ -735,7 +732,6 @@ function MatchCard({ profile, match, queueState, busy, canAutoDuel, onJoin, onSy
         <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Wait for Humans</button>
         <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Quick AI Fill</button>
       </div>
-      <button className="auto-duel-button" disabled={busy || !canAutoDuel} onClick={onAutoDuel}><PlayCircle size={16} /> Start Auto Duel</button>
     </div>
   );
 }
@@ -994,24 +990,6 @@ function BattleReplayRail({ state }) {
           <small>{event.combo?.name || "Mixed Curve"}</small>
         </div>
       )) : <span className="empty-copy">No battle events yet.</span>}
-    </div>
-  );
-}
-
-function CommandConsole({ activeTeam, order, setOrder, onAutoDuel, busy, canRun }) {
-  return (
-    <div className="command-console">
-      <div className="console-copy">
-        <Crosshair size={18} />
-        <div>
-          <strong>Spectator standing order</strong>
-          <span>Give your AI one short instruction before the duel starts. After that, watch only.</span>
-        </div>
-      </div>
-      <textarea maxLength="80" value={order} onChange={(e) => setOrder(e.target.value)} placeholder="Optional 80-character standing order before auto duel" />
-      <div className="command-actions">
-        <button className="fire-button" disabled={busy || !canRun} onClick={onAutoDuel}><PlayCircle size={16} /> Watch Auto Duel</button>
-      </div>
     </div>
   );
 }

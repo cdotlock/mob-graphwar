@@ -1145,54 +1145,6 @@ label {
   }
 }
 
-.command-console {
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px;
-  background: rgba(3, 7, 14, 0.68);
-}
-
-.console-copy {
-  display: flex;
-  gap: 10px;
-}
-
-.console-copy svg {
-  color: var(--acid);
-  flex: 0 0 auto;
-}
-
-.console-copy strong {
-  display: block;
-}
-
-.console-copy span {
-  display: block;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.command-actions {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
-
-.fire-button {
-  border-color: rgba(217, 255, 71, 0.75);
-  background: linear-gradient(180deg, rgba(109, 137, 27, 0.96), rgba(36, 54, 13, 0.96));
-}
-
-.auto-duel-button {
-  border-color: rgba(217, 255, 71, 0.78);
-  background:
-    linear-gradient(90deg, rgba(217, 255, 71, 0.22), transparent),
-    linear-gradient(180deg, rgba(72, 93, 20, 0.98), rgba(14, 20, 10, 0.98));
-  color: #faffd7;
-}
-
 .card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1744,7 +1696,6 @@ code {
     font-size: 20px;
   }
 
-  .command-actions,
   .match-actions,
   .map-intel-strip,
   .profile-vault,

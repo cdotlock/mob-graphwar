@@ -14,6 +14,8 @@ function testCandidateExportIsSafe() {
     candidates.every((candidate) => Array.isArray(candidate.combo.traits)),
     "candidate combo should expose readable traits"
   );
+  assert.ok(candidates.every((candidate) => candidate.score === undefined), "candidate should not expose local score");
+  assert.ok(candidates.every((candidate) => candidate.resultLabel === undefined), "candidate should not expose simulated result");
 }
 
 function testDecisionValidation() {
@@ -24,23 +26,4 @@ function testDecisionValidation() {
 
   const invalid = Contract.validateAgentDecision({ candidateId: "missing", publicReason: "Nope." }, candidates);
   assert.strictEqual(invalid.ok, false);
-  assert.strictEqual(invalid.reason, "unknown_candidate");
-}
-
-function testSecretRedaction() {
-  const redacted = Contract.redactSecrets({
-    provider: "openai",
-    apiKey: "sk-secret",
-    nested: { authorization: "Bearer token" },
-    safe: "ok"
-  });
-  assert.strictEqual(redacted.apiKey, "[redacted]");
-  assert.strictEqual(redacted.nested.authorization, "[redacted]");
-  assert.strictEqual(redacted.safe, "ok");
-}
-
-testCandidateExportIsSafe();
-testDecisionValidation();
-testSecretRedaction();
-
-console.log("agent-contract tests passed");
+  assert.strictEqua

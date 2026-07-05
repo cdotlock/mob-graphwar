@@ -22,9 +22,15 @@
   const runBtn = document.getElementById("runBtn");
   const autoBtn = document.getElementById("autoBtn");
   const copyTraceBtn = document.getElementById("copyTraceBtn");
+  const providerEnabled = document.getElementById("providerEnabled");
+  const providerSelect = document.getElementById("providerSelect");
+  const providerModel = document.getElementById("providerModel");
+  const providerKey = document.getElementById("providerKey");
+  const providerStatus = document.getElementById("providerStatus");
 
   let state = Sim.createInitialState({ seed: Number(seedInput.value) });
   let autoTimer = null;
+  let busy = false;
 
   function commands() {
     return {
@@ -220,6 +226,7 @@
       summaryRow("Command", event.command || "(empty)"),
       summaryRow("Result", `${event.resultLabel}, damage ${event.damage}`),
       summaryRow("Energy", `${event.cost}/${event.energy}`),
+      summaryRow("Agent", event.provider || "Local"),
       summaryRow("Rules", event.thinking?.commandRules || "soft guidance only"),
       summaryRow("Combo", comboSummary(event)),
       summaryRow("Expression", `<code>${esc(event.expression)}</code>`, true),
@@ -261,138 +268,4 @@
     }
     const team = state.turn % 2 === 0 ? "A" : "B";
     const hand = Sim.dealHand(state.seed, state.turn, team);
-    handTitle.textContent = `Current Hand - Team ${team}`;
-    handHint.textContent = `${Sim.getEnergy(state.turn)} energy before lock-in`;
-    handCards.innerHTML = hand.map((card) => cardMarkup(card, false)).join("");
-  }
-
-  function renderThinking(event) {
-    const thinking = event.thinking || {};
-    const targets = (thinking.targetPriority || []).map((target) => `${target.id}(${target.hp})`).join(" -> ");
-    thinkingPanel.innerHTML = [
-      thinkingRow("Intent", thinking.intent || "balanced shot"),
-      thinkingRow("Rules", thinking.commandRules || "soft guidance only", true),
-      thinkingRow("Targets", targets || event.targetId),
-      thinkingRow("Hand", thinking.handConstraint || `${event.hand.length} cards`),
-      thinkingRow(
-        "Combo",
-        `${thinking.comboName || "Mixed Curve"} - ${
-          thinking.selectedCombo || event.components.map((component) => component.label).join(" + ") || "baseline"
-        }`,
-        true
-      ),
-      thinkingRow("Trait", thinking.comboNote || comboSummary(event)),
-      thinkingRow("Risk", thinking.risk || "none"),
-      thinkingRow("Reason", thinking.publicReason || "Local deterministic agent selected the highest scoring legal shot.")
-    ].join("");
-  }
-
-  function thinkingRow(label, value, featured) {
-    return `<div class="thinking-row${featured ? " thinking-rule" : ""}"><span>${esc(label)}</span><strong>${esc(
-      value
-    )}</strong></div>`;
-  }
-
-  function renderLog() {
-    const items = state.events
-      .slice()
-      .reverse()
-      .map((event) => {
-        const cls = event.team === "A" ? "log-a" : "log-b";
-        return `
-          <li class="${cls}">
-            <strong>Turn ${event.turn} - Team ${event.team} - ${esc(event.resultLabel)}</strong>
-            <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} using ${event.cost}/${event.energy} energy.</div>
-            <div>${esc(event.combo ? event.combo.name : "Mixed Curve")} - ${esc(
-              event.components.map((component) => component.label).join(" + ") || "baseline"
-            )}</div>
-          </li>`;
-      })
-      .join("");
-    eventLog.innerHTML = items || `<li>No events yet.</li>`;
-  }
-
-  function render() {
-    updateCommandCounts();
-    renderStatus();
-    renderBattlefield();
-    renderShotSummary();
-    renderLog();
-    nextBtn.disabled = Boolean(state.winner);
-    runBtn.disabled = Boolean(state.winner);
-  }
-
-  function reset() {
-    stopAuto();
-    state = Sim.createInitialState({ seed: Number(seedInput.value) });
-    render();
-  }
-
-  function nextTurn() {
-    if (!state.winner) {
-      Sim.applyTurn(state, commands());
-      render();
-    }
-  }
-
-  function runBattle() {
-    while (!state.winner) {
-      Sim.applyTurn(state, commands());
-    }
-    render();
-  }
-
-  function stopAuto() {
-    if (autoTimer) {
-      clearInterval(autoTimer);
-      autoTimer = null;
-      autoBtn.textContent = "Auto";
-    }
-  }
-
-  function toggleAuto() {
-    if (autoTimer) {
-      stopAuto();
-      return;
-    }
-    autoBtn.textContent = "Stop";
-    autoTimer = setInterval(() => {
-      if (state.winner) {
-        stopAuto();
-        render();
-        return;
-      }
-      nextTurn();
-    }, 700);
-  }
-
-  async function copyTrace() {
-    const trace = JSON.stringify(Sim.exportTrace(state), null, 2);
-    try {
-      await navigator.clipboard.writeText(trace);
-      copyTraceBtn.textContent = "Copied";
-      copyTraceBtn.classList.add("copy-ok");
-      setTimeout(() => {
-        copyTraceBtn.textContent = "Copy Trace";
-        copyTraceBtn.classList.remove("copy-ok");
-      }, 900);
-    } catch (err) {
-      console.log(trace);
-      copyTraceBtn.textContent = "Logged";
-      setTimeout(() => {
-        copyTraceBtn.textContent = "Copy Trace";
-      }, 900);
-    }
-  }
-
-  resetBtn.addEventListener("click", reset);
-  nextBtn.addEventListener("click", nextTurn);
-  runBtn.addEventListener("click", runBattle);
-  autoBtn.addEventListener("click", toggleAuto);
-  copyTraceBtn.addEventListener("click", copyTrace);
-  seedInput.addEventListener("change", reset);
-  commandA.addEventListener("input", render);
-  commandB.addEventListener("input", render);
-
-  render();
-})();
+    handTitle.textContent = `Cu

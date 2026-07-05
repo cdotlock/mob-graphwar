@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Mob Graphwar</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=6" />
+    <link rel="stylesheet" href="styles.css?v=7" />
   </head>
   <body>
     <main class="app-shell">
@@ -59,32 +59,30 @@
         </section>
 
         <aside class="side-panel">
-          <section>
+          <section class="provider-panel">
             <div class="panel-heading">
-              <h2>Current Shot</h2>
-              <button id="copyTraceBtn" type="button">Copy Trace</button>
+              <h2>Agent Source</h2>
+              <span id="providerStatus">Local</span>
             </div>
-            <div id="shotSummary" class="shot-summary"></div>
+            <div class="provider-form">
+              <label class="provider-toggle">
+                <input id="providerEnabled" type="checkbox" />
+                <span>Live</span>
+              </label>
+              <label>
+                Provider
+                <select id="providerSelect"></select>
+              </label>
+              <label>
+                Model
+                <input id="providerModel" type="text" autocomplete="off" />
+              </label>
+              <label>
+                API Key
+                <input id="providerKey" type="password" autocomplete="off" />
+              </label>
+            </div>
           </section>
 
           <section>
-            <div class="panel-heading">
-              <h2>AI Thinking</h2>
-            </div>
-            <div id="thinkingPanel" class="thinking-panel"></div>
-          </section>
-
-          <section>
-            <div class="panel-heading">
-              <h2>Event Log</h2>
-            </div>
-            <ol id="eventLog" class="event-log"></ol>
-          </section>
-        </aside>
-      </section>
-    </main>
-
-    <script src="src/sim-core.js?v=5"></script>
-    <script src="src/app.js?v=5"></script>
-  </body>
-</html>
+  

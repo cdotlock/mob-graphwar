@@ -18,6 +18,7 @@ function buildAnthropicRequest(provider, payload, apiKey) {
           role: "user",
           content: JSON.stringify({
             command: payload.command,
+            state: payload.stateSummary,
             candidates: payload.candidates
           })
         }

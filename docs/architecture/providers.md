@@ -7,6 +7,8 @@ support is intentionally a thin optional layer.
 
 1. The game creates a bounded list of legal shot candidates.
 2. The provider receives compact battle state, command text, and candidate IDs.
+   Public candidates include target, cards, cost, combo identity, and expression.
+   They do not include local simulation score or final hit/miss result.
 3. The provider returns JSON:
 
 ```json
@@ -30,9 +32,18 @@ offered by the game.
 - `GET /api/providers`
 - `POST /api/agent/shot`
 
-The provider execution endpoint currently returns `501` until live provider
-calls are enabled. This keeps the offline game stable while the contract is
-reviewed.
+The provider execution endpoint calls the selected provider, normalizes its
+JSON, validates the returned `candidateId`, then returns the verified candidate
+to the browser. The browser applies that candidate through the same one-shot
+simulation path used by the local agent.
+
+The UI defaults to local deterministic play. The Agent Source panel enables
+live provider mode per shot. Run Battle and Auto stay disabled while live mode
+is active to avoid accidental multi-call spending.
+
+User-supplied API keys are sent only in the `/api/agent/shot` request body and
+are not returned in responses or exported traces. Server environment keys can be
+used instead.
 
 ## Railway
 

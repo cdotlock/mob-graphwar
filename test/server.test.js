@@ -35,11 +35,7 @@ async function testInvalidProviderFails() {
   assert.strictEqual(result.json.error, "unknown_provider");
 }
 
-(async () => {
-  await testHealthAndProviders();
-  await testInvalidProviderFails();
-  console.log("server tests passed");
-})().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+async function testProviderShotUsesByokAndValidatesCandidate() {
+  let captured;
+  const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
+  const fetchMock = async (

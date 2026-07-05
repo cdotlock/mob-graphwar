@@ -4,6 +4,8 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { listProviders, getProvider } = require("./providers/catalog.js");
+const { executeProviderDecision } = require("./providers/execute.js");
+const Contract = require("../src/agents/contract.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const MIME = {
@@ -58,9 +60,41 @@ function serveStatic(req, res) {
   });
 }
 
+function summarizeState(state) {
+  return {
+    seed: state.seed,
+    turn: state.turn,
+    map: state.mapMeta,
+    units: (state.units || []).map((unit) => ({
+      id: unit.id,
+      team: unit.team,
+      x: unit.x,
+      y: unit.y,
+      hp: unit.hp
+    })),
+    obstacles: (state.obstacles || []).map((obstacle) => ({
+      id: obstacle.id,
+      x: obstacle.x,
+      y: obstacle.y,
+      w: obstacle.w,
+      h: obstacle.h
+    }))
+  };
+}
+
+function providerErrorStatus(error) {
+  if (error.message === "missing_api_key") return 400;
+  if (error.message === "unknown_candidate") return 422;
+  if (error.message === "missing_candidate_id") return 502;
+  if (error.message === "invalid_provider_json") return 502;
+  if (error.message === "provider_http_error") return 502;
+  return 400;
+}
+
 function createServer(options) {
   const opts = options || {};
   const env = opts.env || process.env;
+  const fetchFn = opts.fetch || globalThis.fetch;
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://127.0.0.1");
@@ -73,16 +107,45 @@ function createServer(options) {
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/agent/shot") {
-        const body = JSON.parse(await readBody(req, 32_000));
+        const body = JSON.parse(await readBody(req, 512_000));
         const provider = getProvider(body.provider);
-        if (!provider) {
+        const allowedProviders = listProviders(env).map((item) => item.id);
+        if (!provider || !allowedProviders.includes(provider.id)) {
           sendJson(res, 400, { error: "unknown_provider" });
           return;
         }
-        sendJson(res, 501, {
-          error: "provider_execution_not_enabled",
-          message: "This build exposes the provider contract but keeps the offline local agent as default."
-        });
+        if (!body.state || (body.team !== "A" && body.team !== "B")) {
+          sendJson(res, 400, { error: "invalid_agent_request" });
+          return;
+        }
+        const command = String(body.command || "").slice(0, 80);
+        const candidates = Contract.listPublicShotCandidates(body.state, body.team, command);
+        if (!candidates.length) {
+          sendJson(res, 409, { error: "no_legal_candidates" });
+          return;
+        }
+        try {
+          const result = await executeProviderDecision(
+            provider,
+            {
+              apiKey: body.apiKey,
+              command,
+              candidates,
+              stateSummary: summarizeState(body.state),
+              model: body.model
+            },
+            { env, fetch: fetchFn }
+          );
+          sendJson(res, 200, {
+            provider: provider.id,
+            model: body.model || env[provider.modelEnv] || provider.defaultModel,
+            decision: result.decision,
+            candidate: result.candidate,
+            candidatesConsidered: candidates.length
+          });
+        } catch (err) {
+          sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
+        }
         return;
       }
       if (req.method === "GET" || req.method === "HEAD") {

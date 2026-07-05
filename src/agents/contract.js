@@ -22,14 +22,12 @@
 
   function listPublicShotCandidates(state, team, command) {
     const shots = Sim.listLegalShots(state, team, command).slice(0, MAX_PUBLIC_CANDIDATES);
-    return shots.map((shot, index) => ({
-      candidateId: `${team}-${state.turn}-${index}-${shot.targetId}-${shot.usedCardIds.join(".") || "baseline"}`,
+    return shots.map((shot) => ({
+      candidateId: shot.candidateId,
       targetId: shot.targetId,
       cards: shot.cards,
       cost: shot.cost,
       combo: shot.combo,
-      resultLabel: shot.resultLabel,
-      score: shot.score,
       expression: shot.expression
     }));
   }

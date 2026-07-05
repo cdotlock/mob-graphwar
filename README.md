@@ -51,7 +51,7 @@ catalog redaction, and the minimal Node server.
 
 Offline play uses the deterministic local agent.
 
-Hosted provider work is scaffolded but not enabled by default:
+Hosted provider play is optional:
 
 - `src/agents/contract.js` exposes legal candidate IDs and redaction helpers.
 - `server/providers/catalog.js` lists OpenAI, DeepSeek, MiniMax, Zhipu, and
@@ -60,7 +60,13 @@ Hosted provider work is scaffolded but not enabled by default:
   provider-shot contract endpoint.
 
 Models are expected to choose from candidate IDs. They should never output
-arbitrary JavaScript or free-form functions.
+arbitrary JavaScript or free-form functions. Public candidates include cards,
+combo identity, target, cost, and expression, but not local simulation scores or
+hit results.
+
+The browser defaults to `Local`. Toggle `Live` in Agent Source to send one
+locked shot through `/api/agent/shot` with either a server environment key or a
+user-supplied session key.
 
 See [docs/architecture/providers.md](docs/architecture/providers.md).
 
@@ -80,7 +86,7 @@ Use `.env.example` as the variable reference.
 
 ## Roadmap
 
-- Live provider execution behind the candidate-ID contract.
+- Better live-provider status and model presets.
 - Better shot playback animation and timeline controls.
 - More map templates and balance tests.
 - Multiplayer lobby.

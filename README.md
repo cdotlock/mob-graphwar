@@ -1,35 +1,91 @@
-# AI Graphwar Demo
+# Mob Graphwar
 
-This is a minimal prototype for a Graphwar-like AI game.
+Mob Graphwar is a Graphwar-inspired AI command game.
 
-The important rule is that AI players do not get to write arbitrary functions.
-Each turn they draw a small hand of function resource cards and must build a
-shot from those cards only. The human command is intentionally short, so the
-interesting part is the interface between a player intent and the AI's limited
-math toolkit.
+Two human players write short commands. Their AI agents must fire one shot using
+only the function cards in the current hand. There is no movement, fog of war,
+scouting, counterspell phase, or reward drafting in the current prototype.
 
-## Run
+The design goal is simple: do not let AI play raw Graphwar as an unconstrained
+math solver. Make it play inside a small card economy where wording, hand
+variance, hard maps, and risk choices matter.
 
-Open `index.html` in a browser.
+## Play Locally
 
-For a smoke test:
+Static offline mode:
+
+```sh
+open index.html
+```
+
+Hosted local mode:
+
+```sh
+npm start
+```
+
+Then open `http://127.0.0.1:3000`.
+
+## Test
 
 ```sh
 npm test
 ```
 
-## Current Scope
+The test suite covers deterministic simulation, card/resource validation,
+seeded map generation, score/rank output, provider contract redaction, provider
+catalog redaction, and the minimal Node server.
 
-- No fog of war.
-- No movement.
-- No scouting.
-- Two deterministic AI agents fight using limited function resources.
-- The page shows the trajectory, current hand, expression, event log, and trace
-  export.
+## Current Game Rules
 
-## Next Prototype Questions
+- 2v2 artillery board.
+- Each turn shows the active team's five-card hand.
+- The player has one 80-character command.
+- `Lock Shot` resolves exactly one AI-generated legal function shot.
+- The AI can use at most two shape/control cards and one modifier card.
+- Maps are seeded and intentionally hard.
+- The game exports a deterministic trace with no API keys.
+- Finished battles show score and rank.
 
-- Is the card hand restrictive enough to make shots visibly different?
-- Do short human commands produce meaningfully different choices?
-- Are misses understandable from the trajectory and event log?
-- Should movement become a card effect later, instead of a full tactical layer?
+## Provider Architecture
+
+Offline play uses the deterministic local agent.
+
+Hosted provider work is scaffolded but not enabled by default:
+
+- `src/agents/contract.js` exposes legal candidate IDs and redaction helpers.
+- `server/providers/catalog.js` lists OpenAI, DeepSeek, MiniMax, Zhipu, and
+  Anthropic.
+- `server/index.js` serves the app plus `/healthz`, `/api/providers`, and the
+  provider-shot contract endpoint.
+
+Models are expected to choose from candidate IDs. They should never output
+arbitrary JavaScript or free-form functions.
+
+See [docs/architecture/providers.md](docs/architecture/providers.md).
+
+## Railway
+
+The Node server listens on `HOST` and `PORT`.
+
+For Railway, set:
+
+```sh
+HOST=0.0.0.0
+PORT=<Railway provided port>
+```
+
+Provider keys belong in Railway environment variables. Do not commit `.env`.
+Use `.env.example` as the variable reference.
+
+## Roadmap
+
+- Live provider execution behind the candidate-ID contract.
+- Better shot playback animation and timeline controls.
+- More map templates and balance tests.
+- Multiplayer lobby.
+- Rank history and replay browser.
+
+## License
+
+MIT

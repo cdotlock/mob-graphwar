@@ -985,6 +985,44 @@
     return best;
   }
 
+  function listLegalShots(state, team, command) {
+    const shooter = chooseShooter(state, team);
+    if (!shooter) return [];
+    const directive = parseDirective(command);
+    const hand = dealHand(state.seed, state.turn, team);
+    const energy = getEnergy(state.turn);
+    const targets = rankTargets(state, shooter, directive);
+    const combos = generateComponentCombos(hand, energy, directive);
+    const shots = [];
+
+    for (const target of targets) {
+      for (const combo of combos) {
+        const validation = validateResourceUse(hand, combo.components, energy);
+        if (!validation.ok) continue;
+        const shot = makeShot(shooter, target, combo);
+        const sim = simulateShot(state, shot);
+        shots.push({
+          targetId: target.id,
+          cards: shot.components.map((component) => ({
+            id: component.id,
+            label: component.label,
+            family: component.family,
+            tags: component.tags,
+            cost: hand.find((card) => card.instanceId === component.cardId)?.cost || 0
+          })),
+          cost: shot.cost,
+          usedCardIds: shot.usedCardIds,
+          expression: formatExpression(shot),
+          result: sim.kind,
+          resultLabel: resultLabel(sim),
+          score: round(scoreSimulation(sim, shot, directive), 2)
+        });
+      }
+    }
+
+    return shots.sort((a, b) => b.score - a.score);
+  }
+
   function formatComponent(component) {
     const amp = round(component.amp, 1);
     const kind = component.component || component.id;
@@ -1177,6 +1215,7 @@
     groundY,
     parseDirective,
     chooseShot,
+    listLegalShots,
     simulateShot,
     validateResourceUse,
     formatExpression,

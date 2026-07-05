@@ -84,6 +84,8 @@ function testUiKeepsRankedDuelSpectatorOnly() {
   assert.ok(main.includes("standingOrder"), "pre-match setup should keep the one allowed human-to-AI instruction");
   assert.ok(main.includes("spectator-hud"), "battle surface should include a dedicated spectator HUD");
   assert.ok(main.includes("AI auto-battle"), "battle surface should state that models auto-battle after kickoff");
+  assert.ok(main.includes("Watch-only after launch"), "launch bay should tell users the duel locks into spectator mode");
+  assert.ok(main.includes("Spectator lock"), "matchmaking panel should expose the no-mid-duel-intervention rule");
 }
 
 function testGameSurfacesMatchmakingAndLeagueSimulation() {

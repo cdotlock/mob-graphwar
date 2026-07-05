@@ -317,7 +317,7 @@ async function testQueuedPlayersCanPollMatchedRoom() {
   assert.ok(!fetched.text.includes("Flux-secret"), "match fetch should not leak API keys");
 }
 
-async function testMatchActionsMutateAuthoritativeState() {
+async function testRankedMatchRejectsMidDuelManualActions() {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -332,25 +332,14 @@ async function testMatchActionsMutateAuthoritativeState() {
   });
   assert.strictEqual(joined.status, 200);
   const matchId = joined.json.match.id;
-  const originalHand = joined.json.match.state.hands.A1.cards.map((card) => card.instanceId).join("|");
 
   const rerolled = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ playerId: session.json.player.id, action: "swap_hand" })
   });
-  assert.strictEqual(rerolled.status, 200);
-  assert.strictEqual(rerolled.json.action.action, "swap_hand");
-  assert.strictEqual(rerolled.json.action.team, "A");
-  assert.strictEqual(rerolled.json.action.unitId, "A1");
-  assert.strictEqual(rerolled.json.match.state.turn, 0, "swap_hand should not consume the turn");
-  assert.strictEqual(rerolled.json.match.state.hands.A1.rerollsUsed, 1);
-  assert.strictEqual(rerolled.json.match.state.hands.A1.swapsUsed, 1);
-  assert.notStrictEqual(
-    rerolled.json.match.state.hands.A1.cards.map((card) => card.instanceId).join("|"),
-    originalHand,
-    "swap_hand should replace the active hand"
-  );
+  assert.strictEqual(rerolled.status, 410);
+  assert.strictEqual(rerolled.json.error, "manual_actions_disabled");
 
   const fired = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
     method: "POST",
@@ -362,28 +351,22 @@ async function testMatchActionsMutateAuthoritativeState() {
       provider: "Test Model"
     })
   });
-  assert.strictEqual(fired.status, 200);
-  assert.strictEqual(fired.json.action.action, "shot");
-  assert.strictEqual(fired.json.action.team, "A");
-  assert.strictEqual(fired.json.action.unitId, "A1");
-  assert.strictEqual(fired.json.match.state.turn, 1, "shot should consume the turn");
-  assert.strictEqual(fired.json.match.state.events.length, 1);
-  assert.strictEqual(fired.json.match.state.events[0].unitId, "A1");
-  assert.strictEqual(fired.json.match.state.events[0].provider, "Test Model");
-  assert.strictEqual(fired.json.match.state.events[0].command, "must target B2 with a safe high arc");
+  assert.strictEqual(fired.status, 410);
+  assert.strictEqual(fired.json.error, "manual_actions_disabled");
 
-  const playedEvent = fired.json.match.state.events[0];
-  const resolved = await request(createServer({ env: {} }), `/api/match/${matchId}/resolve`, {
+  const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${session.json.player.id}`);
+  assert.strictEqual(fetched.status, 200);
+  assert.strictEqual(fetched.json.match.state.turn, 0, "rejected manual actions must not consume turns");
+  assert.strictEqual(fetched.json.match.state.events.length, 0, "rejected manual actions must not create events");
+
+  const autoDuel = await request(createServer({ env: {} }), `/api/match/${matchId}/auto-duel`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ playerId: session.json.player.id })
   });
-  assert.strictEqual(resolved.status, 200);
-  assert.ok(resolved.json.match.state.events.length >= 1, "resolve should keep played events");
-  assert.strictEqual(resolved.json.match.state.events[0].candidateId, playedEvent.candidateId);
-  assert.strictEqual(resolved.json.match.state.events[0].result, playedEvent.result);
-  assert.strictEqual(resolved.json.match.state.events[0].provider, "Test Model");
-  assert.ok(resolved.json.score.turns >= 1, "rank score should include the played turn");
+  assert.strictEqual(autoDuel.status, 200);
+  assert.strictEqual(autoDuel.json.match.status, "resolved");
+  assert.ok(autoDuel.json.autoBattle.resolvedTurns >= 1, "auto duel should be the only ranked play path");
 }
 
 async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
@@ -781,7 +764,7 @@ async function testProviderShotRequiresKey() {
   await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
   await testHumanMatchmakingQueueCanFormRanked2v2();
   await testQueuedPlayersCanPollMatchedRoom();
-  await testMatchActionsMutateAuthoritativeState();
+  await testRankedMatchRejectsMidDuelManualActions();
   await testAutoDuelResolvesRankedMatchWithBattleSummary();
   await testMatchRulesEndpointExposesBareModelContract();
   await testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel();

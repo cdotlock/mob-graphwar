@@ -1141,55 +1141,10 @@ function createServer(options) {
       }
       const actionMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/action$/);
       if (req.method === "POST" && actionMatch) {
-        const body = JSON.parse(await readBody(req, 64_000));
-        const match = matches.get(actionMatch[1]);
-        const player = players.get(String(body.playerId || ""));
-        if (!match || !player) {
-          sendJson(res, 404, { error: "unknown_match_or_player" });
-          return;
-        }
-        if (!getPlayerSeat(match, player)) {
-          sendJson(res, 403, { error: "player_not_in_match" });
-          return;
-        }
-        if (match.status === "resolved" || match.state.winner) {
-          sendJson(res, 409, { error: "match_already_resolved" });
-          return;
-        }
-        const action = String(body.action || "shot");
-        if (action !== "shot" && !isSwapAction(action)) {
-          sendJson(res, 400, { error: "unknown_action" });
-          return;
-        }
-        const unitId = getActiveUnitId(match.state);
-        const team = getActiveTeam(match.state);
-        if (!team || !unitId) {
-          sendJson(res, 409, { error: "match_already_resolved" });
-          return;
-        }
-        try {
-          let rerollResult = null;
-          const beforeEventCount = match.state.events.length;
-          if (isSwapAction(action)) {
-            rerollResult = Sim.applyTurn(match.state, {}, { action: "swap_hand" });
-          } else {
-            const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
-            Sim.applyTurn(
-              match.state,
-              { [unitId]: command },
-              {
-                candidateId: body.candidateId,
-                provider: String(body.provider || "").slice(0, 80) || null,
-                providerReason: String(body.providerReason || "").slice(0, 240) || null
-              }
-            );
-          }
-          match.status = match.state.winner ? "resolved" : "active";
-          const summary = buildActionSummary(match, action, team, unitId, rerollResult, beforeEventCount);
-          sendJson(res, 200, { match, action: summary });
-        } catch (err) {
-          sendJson(res, providerErrorStatus(err), { error: err.message || "action_failed" });
-        }
+        sendJson(res, 410, {
+          error: "manual_actions_disabled",
+          message: "Ranked matches are watch-only after launch. Use /api/match/:id/auto-duel to resolve model play."
+        });
         return;
       }
       const autoDuelMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/auto-duel$/);

@@ -756,7 +756,8 @@ function LaunchBay({
   const readySteps = [
     { label: "Account", value: profile ? profile.handle || profile.displayName : "Guest" },
     { label: "Model", value: login.apiKey.trim() ? login.model : "Local fallback" },
-    { label: "Room", value: match ? match.status : queueState ? "queued" : "not matched" }
+    { label: "Room", value: match ? match.status : queueState ? "queued" : "not matched" },
+    { label: "Control", value: "Watch-only after launch" }
   ];
   return (
     <section className="launch-bay" data-testid="launch-bay">
@@ -870,6 +871,10 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
       <div className="queue-strip" data-testid="ranked-queue">
         <Activity size={16} />
         <span>{queueState ? `${queueState.queueSize}/4 humans queued` : match?.filledByAi ? "AI fallback active" : "Queue idle"}</span>
+      </div>
+      <div className="spectator-lock-strip" data-testid="spectator-lock">
+        <Shield size={15} />
+        <span><b>Spectator lock</b> One standing order before launch, then models fight unattended.</span>
       </div>
       <div className="sync-strip" data-testid="room-sync">
         <RefreshCw size={15} />

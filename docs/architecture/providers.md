@@ -1,8 +1,9 @@
 # Provider Architecture
 
 Mob Graphwar Arena supports local AI seats plus BYOK hosted providers. The
-hosted layer is intentionally narrow: providers choose from legal actions; they
-do not submit arbitrary functions.
+hosted layer is intentionally narrow: providers choose from legal actions
+during auto-duel resolution; humans do not submit mid-duel ranked actions, and
+models do not submit arbitrary functions.
 
 ## Contract
 
@@ -31,8 +32,8 @@ or:
 ```
 
 4. The server validates the action against the legal list.
-5. The game executes the already-known legal shot or applies the legal hand
-   swap without consuming the active shot turn.
+5. The auto-duel resolver executes the already-known legal shot or applies the
+   legal hand swap without consuming the active shot turn.
 
 Models never output arbitrary functions, JavaScript, or card IDs that were not
 offered by the game.
@@ -45,13 +46,13 @@ offered by the game.
 - `GET /api/providers`
 - `POST /api/session`
 - `POST /api/match/join`
-- `POST /api/match/:id/resolve`
+- `POST /api/match/:id/auto-duel`
 - `POST /api/agent/shot`
 
 The provider execution endpoint calls the selected provider, normalizes its
 JSON, validates the selected legal action, then returns the verified action to
-the browser. The browser applies that shot or hand swap through the same simulation
-path used by local AI.
+the auto-duel resolver. The browser only watches the resulting frame stream and
+rank settlement.
 
 OpenAI-compatible providers use JSON mode. DeepSeek defaults to
 `deepseek-v4-flash`, caps output tokens for the candidate-selection response,

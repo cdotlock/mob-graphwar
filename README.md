@@ -35,8 +35,9 @@ npm test
 ```
 
 The test suite covers deterministic simulation, card/resource validation,
-seeded map generation, score/rank output, provider contract redaction, provider
-catalog redaction, and the minimal Node server.
+seeded map generation, score/rank output, watch-only ranked resolution,
+provider contract redaction, provider catalog redaction, and the minimal Node
+server.
 
 Real DeepSeek smoke test:
 
@@ -45,13 +46,15 @@ DEEPSEEK_API_KEY=... npm run test:real:deepseek
 ```
 
 This calls the hosted provider path against DeepSeek, validates the returned
-legal action, executes either the selected shot or hand swap locally, and
-verifies the response does not echo the API key.
+legal action for an auto-duel turn, and verifies the response does not echo the
+API key.
 
 ## Current Game Rules
 
 - Ranked 2v2 artillery board with human player plus AI-filled seats.
 - Players give one 80-character standing order before auto-duel resolution.
+- After launch, ranked play is spectator-only; humans cannot submit mid-duel
+  `shot` or `swap_hand` actions.
 - Cards persist in hand until swapped; each active turn allows up to 3 swaps.
 - The model chooses exactly one legal action: `swap_hand` or `shot`.
 - The AI can use at most two shape/control cards and one modifier card.
@@ -67,7 +70,7 @@ Local AI fills missing seats and handles offline play. Hosted providers are BYOK
 - `server/providers/catalog.js` lists OpenAI, DeepSeek, MiniMax, Zhipu, and
   Anthropic.
 - `server/index.js` serves the React app plus `/healthz`, `/api/providers`,
-  `/api/session`, `/api/match/join`, `/api/match/:id/resolve`, and
+  `/api/session`, `/api/match/join`, `/api/match/:id/auto-duel`, and
   `/api/agent/shot`.
 
 Models are expected to choose `{"action":"swap_hand"}` or a listed shot

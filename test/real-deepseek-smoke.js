@@ -63,25 +63,41 @@ async function main() {
     const payload = JSON.parse(text);
     assert.strictEqual(payload.provider, "deepseek");
     assert.strictEqual(payload.model, model);
-    assert.ok(payload.decision && payload.decision.candidateId, "DeepSeek should choose a legal candidate id");
-    assert.ok(payload.candidate && payload.candidate.expression, "response should include the validated candidate");
+    assert.ok(payload.decision, "DeepSeek should return a validated decision");
+    assert.ok(["shot", "reroll"].includes(payload.decision.action), "DeepSeek should choose a legal action");
 
-    Sim.applyTurn(state, { A: command }, {
-      candidateId: payload.decision.candidateId,
-      provider: "DeepSeek",
-      providerReason: payload.decision.publicReason
-    });
-    assert.strictEqual(state.events.length, 1, "validated DeepSeek choice should execute one shot");
-    assert.strictEqual(state.events[0].provider, "DeepSeek");
+    let result = null;
+    let combo = null;
+    if (payload.decision.action === "reroll") {
+      const before = Sim.getCurrentHand(state, "A").map((card) => card.instanceId);
+      const reroll = Sim.rerollHand(state, "A");
+      const after = reroll.cards.map((card) => card.instanceId);
+      assert.notDeepStrictEqual(after, before, "validated reroll should change the active hand");
+      assert.strictEqual(state.events.length, 0, "reroll should not execute a shot");
+      result = "reroll";
+    } else {
+      assert.ok(payload.decision.candidateId, "DeepSeek shot should choose a legal candidate id");
+      assert.ok(payload.candidate && payload.candidate.expression, "shot response should include the validated candidate");
+      Sim.applyTurn(state, { A: command }, {
+        candidateId: payload.decision.candidateId,
+        provider: "DeepSeek",
+        providerReason: payload.decision.publicReason
+      });
+      assert.strictEqual(state.events.length, 1, "validated DeepSeek choice should execute one shot");
+      assert.strictEqual(state.events[0].provider, "DeepSeek");
+      result = state.events[0].result;
+      combo = state.events[0].combo && state.events[0].combo.name;
+    }
 
     console.log(
       JSON.stringify({
         ok: true,
         provider: payload.provider,
         model: payload.model,
+        action: payload.decision.action,
         candidateId: payload.decision.candidateId,
-        result: state.events[0].result,
-        combo: state.events[0].combo && state.events[0].combo.name
+        result,
+        combo
       })
     );
   } finally {

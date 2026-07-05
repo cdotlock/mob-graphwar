@@ -67,14 +67,27 @@ async function executeProviderDecision(provider, payload, options) {
 
   const json = await response.json();
   const decision = normalizeProviderDecision(extractProviderText(provider, json));
-  const validation = validateAgentDecision(decision, payload.candidates);
+  const validation = validateAgentDecision(
+    decision,
+    payload.rulesPayload && payload.rulesPayload.legalActions ? payload.rulesPayload.legalActions : payload.candidates
+  );
   if (!validation.ok) {
     const err = new Error(validation.reason);
     err.validation = validation;
     throw err;
   }
+  if (validation.action === "reroll") {
+    return {
+      decision: {
+        action: "reroll",
+        publicReason: validation.publicReason
+      },
+      candidate: null
+    };
+  }
   return {
     decision: {
+      action: "shot",
       candidateId: validation.candidate.candidateId,
       publicReason: validation.publicReason
     },

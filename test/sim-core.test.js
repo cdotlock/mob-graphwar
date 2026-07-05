@@ -19,7 +19,7 @@ function testDeterministicBattle() {
   assert.ok(["S", "A", "B", "C", "D"].includes(first.score.rank), "battle should include a rank");
 }
 
-function testBattleOrdersLockAfterFirstShot() {
+function testBattleOrdersCanChangeEveryTurn() {
   const state = Sim.createInitialState({ seed: 7351 });
   const firstOrders = {
     A: "must target B2, high safe arc",
@@ -30,26 +30,22 @@ function testBattleOrdersLockAfterFirstShot() {
     B: "must target A1, low risky direct shot"
   };
 
-  assert.strictEqual(state.lockedOrders, null, "fresh battle should not start locked");
   Sim.applyTurn(state, firstOrders);
-  assert.deepStrictEqual(state.lockedOrders, firstOrders, "first shot should lock both battle orders");
 
   Sim.applyTurn(state, editedOrders);
   assert.strictEqual(state.events[1].team, "B");
-  assert.strictEqual(state.events[1].command, firstOrders.B, "later turns should use the locked order");
-  assert.notStrictEqual(state.events[1].command, editedOrders.B, "mid-battle edits should not affect the current battle");
+  assert.strictEqual(state.events[1].command, editedOrders.B, "each turn should use the newest command for the active team");
 
   const trace = Sim.exportTrace(state);
-  assert.deepStrictEqual(trace.lockedOrders, firstOrders, "exported trace should include locked battle orders");
+  assert.strictEqual(trace.lockedOrders, null, "trace should not freeze per-turn human prompts");
 }
 
-function testInvalidProviderCandidateDoesNotLockOrders() {
+function testInvalidProviderCandidateDoesNotAdvanceTurn() {
   const state = Sim.createInitialState({ seed: 7351 });
   assert.throws(
     () => Sim.applyTurn(state, { A: "must target B2, high safe arc", B: "must target A2, high safe arc" }, { candidateId: "missing" }),
     /unknown_candidate/
   );
-  assert.strictEqual(state.lockedOrders, null, "failed provider validation should not lock orders");
   assert.strictEqual(state.events.length, 0, "failed provider validation should not append an event");
   assert.strictEqual(state.turn, 0, "failed provider validation should not advance the turn");
 }
@@ -266,16 +262,39 @@ function testCompactHandsStillGuaranteeShapeChoices() {
   }
 }
 
+function testHandsPersistAndCanBeRerolledThreeTimes() {
+  const state = Sim.createInitialState({ seed: 8811 });
+  const firstHand = Sim.getCurrentHand(state, "A").map((card) => card.instanceId);
+  Sim.applyTurn(state, { A: "", B: "" });
+  assert.deepStrictEqual(
+    Sim.getCurrentHand(state, "A").map((card) => card.instanceId),
+    firstHand,
+    "shooting should not discard the team's hand"
+  );
+
+  const firstReroll = Sim.rerollHand(state, "A");
+  assert.strictEqual(firstReroll.rerollsUsed, 1);
+  assert.notDeepStrictEqual(
+    Sim.getCurrentHand(state, "A").map((card) => card.instanceId),
+    firstHand,
+    "reroll should replace the retained hand"
+  );
+  Sim.rerollHand(state, "A");
+  Sim.rerollHand(state, "A");
+  assert.throws(() => Sim.rerollHand(state, "A"), /reroll_limit_reached/);
+}
+
 function testSeededHardMapGeneration() {
   const first = Sim.createInitialState({ seed: 9001 });
   const second = Sim.createInitialState({ seed: 9001 });
   const different = Sim.createInitialState({ seed: 9002 });
   assert.deepStrictEqual(first.obstacles, second.obstacles, "same seed should produce same map");
   assert.notDeepStrictEqual(first.obstacles, different.obstacles, "different seeds should produce different maps");
-  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 75, "map should include high difficulty metadata");
+  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 90, "map should include high difficulty metadata");
   assert.strictEqual(first.mapMeta.windows, undefined, "map should not expose route windows");
-  assert.ok(first.obstacles.length >= 5, "map should have dense pure terrain complexity");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.h >= 24).length >= 2, "map should include multiple tall obstructions");
+  assert.ok(first.obstacles.length >= 14, "map should have dense Graphwar-level terrain complexity");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.h >= 24).length >= 4, "map should include multiple tall obstructions");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.y > 0).length >= 4, "map should include elevated blockers");
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
 
@@ -306,8 +325,8 @@ function testTraceShapeIncludesMapAndScore() {
 }
 
 testDeterministicBattle();
-testBattleOrdersLockAfterFirstShot();
-testInvalidProviderCandidateDoesNotLockOrders();
+testBattleOrdersCanChangeEveryTurn();
+testInvalidProviderCandidateDoesNotAdvanceTurn();
 testNoInvalidState();
 testResourceValidation();
 testCommandParsing();
@@ -322,6 +341,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testApplyTurnCanUseProviderCandidate();
   testRicherCardCatalog();
   testCompactHandsStillGuaranteeShapeChoices();
+  testHandsPersistAndCanBeRerolledThreeTimes();
   testSeededHardMapGeneration();
   testHardMapsRemainSolvableByFiniteCardCombos();
   testTraceShapeIncludesMapAndScore();

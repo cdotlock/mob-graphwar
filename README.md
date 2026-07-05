@@ -1,30 +1,32 @@
-# Mob Graphwar
+# Mob Graphwar Arena
 
-Mob Graphwar is a Graphwar-inspired AI command game.
+Mob Graphwar Arena is a ranked AI-command artillery game inspired by Graphwar.
 
-Two human players write short commands. Their AI agents must fire one shot using
-only the function cards in the current hand. There is no movement, fog of war,
-scouting, counterspell phase, or reward drafting in the current prototype.
-
-The design goal is simple: do not let AI play raw Graphwar as an unconstrained
-math solver. Make it play inside a small card economy where wording, hand
-variance, hard maps, and risk choices matter.
+Players log in, attach their own model key, enter ranked 2v2 matchmaking, and
+issue short per-turn orders to a model that only receives bare rules, map state,
+units, current hand, and legal actions. Empty seats are filled by AI. The point
+is not to let a model solve raw Graphwar directly; it has to act inside a hard
+function-card economy where human wording, hand variance, reroll timing, and map
+complexity matter.
 
 ## Play Locally
 
-Static offline mode:
+Install and run:
 
 ```sh
-open index.html
-```
-
-Hosted local mode:
-
-```sh
+npm install
+npm run build
 npm start
 ```
 
-Then open `http://127.0.0.1:3000`.
+Development mode:
+
+```sh
+npm run dev
+```
+
+Then open the printed local URL. The production server serves `dist/` when it is
+present, and falls back to the source entrypoint for local development.
 
 ## Test
 
@@ -43,40 +45,36 @@ DEEPSEEK_API_KEY=... npm run test:real:deepseek
 ```
 
 This calls the hosted provider path against DeepSeek, validates the returned
-candidate id, executes that candidate locally, and verifies the response does
-not echo the API key.
+legal action, executes either the selected shot or reroll locally, and verifies
+the response does not echo the API key.
 
 ## Current Game Rules
 
-- 2v2 artillery board.
-- Each turn shows the active team's four-card hand.
-- The player has one 80-character command.
-- `Lock Shot` resolves exactly one AI-generated legal function shot.
+- Ranked 2v2 artillery board with human player plus AI-filled seats.
+- Each turn uses a fresh 80-character human order for the active model.
+- Cards persist in hand until rerolled; each active turn allows up to 3 rerolls.
+- The model chooses exactly one legal action: reroll or shot.
 - The AI can use at most two shape/control cards and one modifier card.
-- Maps are seeded and intentionally hard.
-- The game exports a deterministic trace with no API keys.
-- Finished battles show score and rank.
+- Maps are seeded, high-density, and intentionally hard.
+- Session responses and traces never expose API keys.
+- Rank changes after match resolution.
 
 ## Provider Architecture
 
-Offline play uses the deterministic local agent.
-
-Hosted provider play is optional:
+Local AI fills missing seats and handles offline play. Hosted providers are BYOK:
 
 - `src/agents/contract.js` exposes legal candidate IDs and redaction helpers.
 - `server/providers/catalog.js` lists OpenAI, DeepSeek, MiniMax, Zhipu, and
   Anthropic.
-- `server/index.js` serves the app plus `/healthz`, `/api/providers`, and the
-  provider-shot contract endpoint.
+- `server/index.js` serves the React app plus `/healthz`, `/api/providers`,
+  `/api/session`, `/api/match/join`, `/api/match/:id/resolve`, and
+  `/api/agent/shot`.
 
-Models are expected to choose from candidate IDs. They should never output
-arbitrary JavaScript or free-form functions. Public candidates include cards,
-combo identity, target, cost, and expression, but not local simulation scores or
-hit results.
-
-The browser defaults to `Local`. Toggle `Live` in Agent Source to send one
-locked shot through `/api/agent/shot` with either a server environment key or a
-user-supplied session key.
+Models are expected to choose `{"action":"reroll"}` or a listed shot
+`candidateId`. They should never output arbitrary JavaScript or free-form
+functions. Public payloads include rules, map, unit positions, current hand,
+legal actions, cards, combo identity, target, cost, and expression, but not
+local simulation scores or hit results.
 
 See [docs/architecture/providers.md](docs/architecture/providers.md).
 
@@ -96,10 +94,9 @@ Use `.env.example` as the variable reference.
 
 ## Roadmap
 
-- More live-provider status and model presets.
+- Real player matchmaking persistence.
 - Richer shot playback animation and replay controls.
-- More map templates and balance tests.
-- Multiplayer lobby.
+- More map templates and balance tests across provider families.
 - Rank history and replay browser.
 
 ## License

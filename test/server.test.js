@@ -31,13 +31,13 @@ async function testHealthAndProviders() {
 async function testStaticServerOnlyServesMainEntrypoint() {
   const main = await request(createServer({ env: {} }), "/index.html");
   assert.strictEqual(main.status, 200);
-  assert.ok(main.text.includes("Mob Graphwar"));
-  assert.ok(main.text.includes('<textarea id="commandA" maxlength="80"></textarea>'), "Team A should not ship with a default prompt");
-  assert.ok(main.text.includes('<textarea id="commandB" maxlength="80"></textarea>'), "Team B should not ship with a default prompt");
-  assert.ok(main.text.includes('data-ui-version="cockpit-v2"'), "entrypoint should expose the upgraded cockpit shell");
-  assert.ok(/class="[^"]*\bcommand-center\b[^"]*"/.test(main.text), "entrypoint should include a focused command center");
-  assert.ok(/class="[^"]*\btactical-rail\b[^"]*"/.test(main.text), "entrypoint should include a tactical side rail");
-  assert.ok(main.text.includes('id="battleTimeline"'), "entrypoint should include a visible battle timeline surface");
+  assert.ok(main.text.includes("Mob Graphwar Arena"));
+  assert.ok(main.text.includes('<div id="root"></div>'), "entrypoint should mount the React game shell");
+  assert.ok(main.text.includes("/src/sim-core.js"), "entrypoint should load the simulation engine");
+  assert.ok(
+    main.text.includes("/src/main.jsx") || main.text.includes("/assets/"),
+    "entrypoint should load either the dev React app or the built bundle"
+  );
 
   const duplicate = await request(createServer({ env: {} }), "/index%202.html");
   assert.strictEqual(duplicate.status, 404);
@@ -54,13 +54,51 @@ async function testInvalidProviderFails() {
   assert.strictEqual(result.json.error, "unknown_provider");
 }
 
+async function testLoginMatchmakingAndRankLoop() {
+  const session = await request(createServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Clock",
+      providers: {
+        deepseek: { apiKey: "sk-user", model: "deepseek-v4-flash" },
+        openai: { apiKey: "", model: "gpt-4.1-mini" }
+      }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+  assert.ok(session.json.player && session.json.player.id, "login should create a player session");
+  assert.strictEqual(session.json.player.rank.rating, 1000);
+  assert.ok(!session.text.includes("sk-user"), "session response should not echo API keys");
+
+  const match = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(match.status, 200);
+  assert.strictEqual(match.json.match.mode, "ranked_2v2");
+  assert.ok(match.json.match.roster.filter((seat) => seat.control === "ai").length >= 3, "empty matchmaking should fill seats with AI");
+  assert.ok(match.json.match.state.mapMeta.difficulty >= 90, "ranked match should use complex maps");
+
+  const result = await request(createServer({ env: {} }), `/api/match/${match.json.match.id}/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id })
+  });
+  assert.strictEqual(result.status, 200);
+  assert.ok(result.json.rankDelta !== 0, "resolved ranked match should award or remove rank points");
+  assert.ok(Number.isFinite(result.json.player.rank.rating), "resolved ranked match should return updated rank");
+}
+
 async function testProviderShotUsesByokAndValidatesCandidate() {
   let captured;
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
   const fetchMock = async (url, options) => {
     captured = { url, options };
     const payload = JSON.parse(options.body);
-    const candidates = JSON.parse(payload.messages[1].content).candidates;
+    const legalActions = JSON.parse(payload.messages[1].content).legalActions;
+    const candidates = legalActions.filter((action) => action.action === "shot");
     return {
       ok: true,
       status: 200,
@@ -99,11 +137,12 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
   const prompt = JSON.parse(JSON.parse(captured.options.body).messages[1].content);
   assert.strictEqual(prompt.state.map.windows, undefined, "provider prompt should not include route windows");
-  assert.ok(prompt.candidates.every((candidate) => candidate.mapFit === undefined), "provider candidates should not leak simulated map fit");
+  assert.ok(prompt.legalActions.every((action) => action.mapFit === undefined), "provider candidates should not leak simulated map fit");
+  assert.ok(prompt.legalActions.some((action) => action.action === "reroll"), "provider prompt should expose reroll as a legal action");
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
 }
 
-async function testProviderShotUsesLockedStateOrder() {
+async function testProviderShotUsesCurrentTurnOrder() {
   let capturedPrompt;
   const Sim = require("../src/sim-core.js");
   const lockedOrders = {
@@ -115,6 +154,7 @@ async function testProviderShotUsesLockedStateOrder() {
   const fetchMock = async (url, options) => {
     const payload = JSON.parse(options.body);
     capturedPrompt = JSON.parse(payload.messages[1].content);
+    const candidates = capturedPrompt.legalActions.filter((action) => action.action === "shot");
     return {
       ok: true,
       status: 200,
@@ -123,7 +163,7 @@ async function testProviderShotUsesLockedStateOrder() {
           {
             message: {
               content: JSON.stringify({
-                candidateId: capturedPrompt.candidates[0].candidateId,
+                candidateId: candidates[0].candidateId,
                 publicReason: "Provider followed the locked order."
               })
             }
@@ -146,7 +186,43 @@ async function testProviderShotUsesLockedStateOrder() {
   });
 
   assert.strictEqual(result.status, 200);
-  assert.strictEqual(capturedPrompt.command, lockedOrders.B, "server should prefer locked state order over request body command");
+  assert.strictEqual(capturedPrompt.command, "must target A1, low risky direct shot", "server should use the current turn command");
+}
+
+async function testProviderCanChooseReroll() {
+  const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
+  const fetchMock = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              action: "reroll",
+              publicReason: "Need a different legal hand."
+            })
+          }
+        }
+      ]
+    })
+  });
+
+  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/agent/shot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "openai",
+      apiKey: "sk-live-user",
+      state,
+      team: "A",
+      command: "find a better lane"
+    })
+  });
+
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.json.decision.action, "reroll");
+  assert.strictEqual(result.json.candidate, null);
 }
 
 async function testProviderShotRequiresKey() {
@@ -169,8 +245,10 @@ async function testProviderShotRequiresKey() {
   await testHealthAndProviders();
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
+  await testLoginMatchmakingAndRankLoop();
   await testProviderShotUsesByokAndValidatesCandidate();
-  await testProviderShotUsesLockedStateOrder();
+  await testProviderShotUsesCurrentTurnOrder();
+  await testProviderCanChooseReroll();
   await testProviderShotRequiresKey();
   console.log("server tests passed");
 })().catch((err) => {

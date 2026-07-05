@@ -16,7 +16,12 @@ function testProviderCatalogRedactsKeys() {
 
 function testNormalizeDecision() {
   const decision = normalizeProviderDecision('{"candidateId":"A-1","publicReason":"<think>x</think>Use high arc."}');
-  assert.deepStrictEqual(decision, { candidateId: "A-1", publicReason: "Use high arc." });
+  assert.deepStrictEqual(decision, { action: "shot", candidateId: "A-1", publicReason: "Use high arc." });
+  assert.deepStrictEqual(normalizeProviderDecision('{"action":"reroll","publicReason":"Need a different hand."}'), {
+    action: "reroll",
+    candidateId: undefined,
+    publicReason: "Need a different hand."
+  });
   assert.throws(() => normalizeProviderDecision("not json"), /invalid_provider_json/);
 }
 
@@ -39,7 +44,15 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
   assert.ok(request.body.max_tokens > 0 && request.body.max_tokens <= 512, "JSON mode should cap output tokens");
   assert.ok(request.body.messages[0].content.includes("JSON"), "system prompt should explicitly request JSON");
   assert.ok(request.body.messages[0].content.includes("candidateId"), "system prompt should name candidateId");
-  assert.ok(request.body.messages[0].content.includes("EXAMPLE JSON"), "system prompt should include a JSON example");
+  assert.ok(!request.body.messages[0].content.includes("safest"), "system prompt should not provide tactical advice");
+  assert.ok(!request.body.messages[0].content.includes("high-clearance"), "system prompt should not provide tactical advice");
+  assert.ok(!request.body.messages[0].content.includes("clearest"), "system prompt should not provide tactical advice");
+  const userPayload = JSON.parse(request.body.messages[1].content);
+  assert.ok(userPayload.rules, "provider should receive bare rules");
+  assert.ok(Array.isArray(userPayload.legalActions), "provider should receive legal actions");
+  assert.ok(userPayload.legalActions.some((action) => action.action === "reroll"), "provider should be allowed to reroll");
+  assert.ok(!JSON.stringify(userPayload).includes("score"), "provider payload should not expose local scores");
+  assert.ok(!JSON.stringify(userPayload).includes("hitEnemy"), "provider payload should not expose simulated hit outcomes");
 }
 
 function testRealDeepSeekSmokeScriptIsDiscoverable() {

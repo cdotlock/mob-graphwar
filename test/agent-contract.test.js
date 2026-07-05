@@ -17,6 +17,22 @@ function testCandidateExportIsSafe() {
   assert.ok(candidates.every((candidate) => candidate.mapFit === undefined), "candidate should not expose simulated map fit");
   assert.ok(candidates.every((candidate) => candidate.score === undefined), "candidate should not expose local score");
   assert.ok(candidates.every((candidate) => candidate.resultLabel === undefined), "candidate should not expose simulated result");
+  assert.ok(candidates.every((candidate) => candidate.action === "shot"), "candidate should expose the legal shot action");
+}
+
+function testRulesPayloadIsBareGameStateAndLegalActions() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const payload = Contract.buildRulesPayload(state, "A", "human prompt only");
+  const serialized = JSON.stringify(payload);
+  assert.strictEqual(payload.objective, "eliminate opposing team while avoiding allied units");
+  assert.strictEqual(payload.team, "A");
+  assert.ok(payload.allyIds.includes("A2"), "payload should identify allies");
+  assert.ok(payload.opponentIds.includes("B1") && payload.opponentIds.includes("B2"), "payload should identify opponents");
+  assert.ok(payload.hand.cards.length === Sim.CONFIG.handSize, "payload should include the retained current hand");
+  assert.ok(payload.legalActions.some((action) => action.action === "reroll"), "payload should include reroll as a legal model action");
+  assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should include shot as a legal model action");
+  assert.ok(!serialized.includes("score"), "payload should not expose local scoring");
+  assert.ok(!serialized.includes("hitEnemy"), "payload should not expose simulated outcomes");
 }
 
 function testDecisionValidation() {
@@ -24,6 +40,17 @@ function testDecisionValidation() {
   const candidates = Contract.listPublicShotCandidates(state, "A", "hit B2 high");
   const valid = Contract.validateAgentDecision({ candidateId: candidates[0].candidateId, publicReason: "High arc." }, candidates);
   assert.strictEqual(valid.ok, true);
+
+  const payload = Contract.buildRulesPayload(state, "A", "hit B2 high");
+  const reroll = Contract.validateAgentDecision({ action: "reroll", publicReason: "Need a better hand." }, payload.legalActions);
+  assert.strictEqual(reroll.ok, true);
+
+  const noReroll = Contract.validateAgentDecision(
+    { action: "reroll", publicReason: "Need a better hand." },
+    payload.legalActions.filter((action) => action.action !== "reroll")
+  );
+  assert.strictEqual(noReroll.ok, false);
+  assert.strictEqual(noReroll.reason, "reroll_limit_reached");
 
   const invalid = Contract.validateAgentDecision({ candidateId: "missing", publicReason: "Nope." }, candidates);
   assert.strictEqual(invalid.ok, false);
@@ -43,6 +70,7 @@ function testSecretRedaction() {
 }
 
 testCandidateExportIsSafe();
+testRulesPayloadIsBareGameStateAndLegalActions();
 testDecisionValidation();
 testSecretRedaction();
 

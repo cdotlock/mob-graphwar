@@ -1,0 +1,599 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Orbitron:wght@700;900&display=swap");
+
+:root {
+  color-scheme: dark;
+  --bg: #070912;
+  --panel: rgba(13, 18, 31, 0.88);
+  --panel-strong: rgba(21, 30, 48, 0.94);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #f4f7fb;
+  --muted: #9ba7ba;
+  --acid: #d9ff47;
+  --cyan: #58d4ff;
+  --red: #ff5e68;
+  --green: #4df0a0;
+  --gold: #ffc857;
+  --violet: #a991ff;
+  --shadow: rgba(0, 0, 0, 0.42);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(90deg, rgba(88, 212, 255, 0.08) 0 1px, transparent 1px 84px),
+    linear-gradient(0deg, rgba(217, 255, 71, 0.05) 0 1px, transparent 1px 70px),
+    linear-gradient(135deg, rgba(88, 212, 255, 0.12), transparent 42%),
+    linear-gradient(225deg, rgba(255, 94, 104, 0.1), transparent 48%),
+    #070912;
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(28, 39, 61, 0.96), rgba(10, 14, 24, 0.96));
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 900;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--acid);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(3, 7, 14, 0.88);
+  color: var(--text);
+}
+
+input,
+select {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+textarea {
+  min-height: 88px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.arena-shell {
+  width: min(1640px, calc(100vw - 24px));
+  margin: 0 auto;
+  padding: 16px 0 28px;
+}
+
+.hero-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+
+.brand-zone,
+.rank-chip,
+.game-panel {
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 32%),
+    var(--panel);
+  box-shadow: 0 22px 60px var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.brand-zone {
+  padding: 18px;
+  position: relative;
+  overflow: hidden;
+}
+
+.brand-zone::after {
+  content: "RANKED 2V2 / MODEL WAR / FUNCTION CARDS";
+  position: absolute;
+  right: -90px;
+  bottom: 12px;
+  color: rgba(217, 255, 71, 0.14);
+  font-family: "Orbitron", sans-serif;
+  font-size: 34px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.kicker {
+  color: var(--acid);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+h1 {
+  margin: 5px 0 8px;
+  max-width: 980px;
+  font-family: "Orbitron", sans-serif;
+  font-size: 68px;
+  line-height: 0.96;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.rank-chip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+.rank-chip svg {
+  color: var(--gold);
+}
+
+.rank-chip span,
+.battle-header span,
+.panel-title,
+label,
+.seat span,
+.match-status span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rank-chip strong {
+  display: block;
+  font-family: "Orbitron", sans-serif;
+  font-size: 34px;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr) 360px;
+  gap: 12px;
+  align-items: start;
+}
+
+.game-panel {
+  min-width: 0;
+  padding: 12px;
+}
+
+.lobby-panel,
+.tactical-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.login-card,
+.match-card,
+.roster-card,
+.hand-rack,
+.timeline-card,
+.shot-intel {
+  display: grid;
+  gap: 10px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--acid);
+}
+
+label {
+  display: grid;
+  gap: 5px;
+}
+
+.match-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(3, 7, 14, 0.68);
+}
+
+.match-status strong {
+  color: var(--green);
+}
+
+.seat {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(3, 7, 14, 0.62);
+}
+
+.seat strong {
+  display: block;
+  margin: 3px 0;
+}
+
+.seat small {
+  color: var(--muted);
+}
+
+.seat-a {
+  border-left: 4px solid var(--cyan);
+}
+
+.seat-b {
+  border-left: 4px solid var(--red);
+}
+
+.battle-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.battle-header {
+  display: grid;
+  grid-template-columns: 90px 100px minmax(160px, 1fr) minmax(220px, 1.2fr);
+  gap: 8px;
+}
+
+.battle-header div {
+  min-height: 68px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(3, 7, 14, 0.62);
+}
+
+.battle-header strong {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.battlefield {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  border: 2px solid rgba(88, 212, 255, 0.24);
+  border-radius: 8px;
+  background: #071018;
+  box-shadow: inset 0 0 50px rgba(88, 212, 255, 0.08);
+}
+
+.grid-line {
+  stroke: rgba(142, 209, 220, 0.14);
+  stroke-width: 1;
+}
+
+.terrain {
+  fill: url("#arenaGround");
+}
+
+.obstacle {
+  fill: rgba(124, 133, 132, 0.82);
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1.2;
+}
+
+.shot-path {
+  fill: none;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+.shot-path.team-a {
+  stroke: var(--cyan);
+}
+
+.shot-path.team-b {
+  stroke: var(--red);
+}
+
+.unit circle {
+  stroke: #071018;
+  stroke-width: 4;
+}
+
+.unit.team-a circle {
+  fill: var(--cyan);
+}
+
+.unit.team-b circle {
+  fill: var(--red);
+}
+
+.unit.dead {
+  opacity: 0.38;
+}
+
+.unit text {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: #071018;
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+
+.command-console {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(3, 7, 14, 0.68);
+}
+
+.console-copy {
+  display: flex;
+  gap: 10px;
+}
+
+.console-copy svg {
+  color: var(--acid);
+  flex: 0 0 auto;
+}
+
+.console-copy strong {
+  display: block;
+}
+
+.console-copy span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.command-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fire-button {
+  border-color: rgba(217, 255, 71, 0.75);
+  background: linear-gradient(180deg, rgba(109, 137, 27, 0.96), rgba(36, 54, 13, 0.96));
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.battle-card {
+  min-height: 154px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(217, 255, 71, 0.1), transparent 28%),
+    rgba(3, 7, 14, 0.72);
+}
+
+.battle-card span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.battle-card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 5px 0 7px;
+  font-size: 16px;
+}
+
+.battle-card b {
+  color: var(--gold);
+}
+
+.battle-card p {
+  min-height: 48px;
+  font-size: 12px;
+}
+
+.battle-card small {
+  display: inline-block;
+  margin: 6px 4px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--acid);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tick {
+  display: grid;
+  place-items: center;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(3, 7, 14, 0.72);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tick.active {
+  color: #111400;
+  background: var(--acid);
+}
+
+.tick.hitEnemy {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.tick.blocked,
+.tick.ground,
+.tick.out,
+.tick.miss {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.intel-list {
+  display: grid;
+  gap: 8px;
+}
+
+.intel-list span,
+.final-score {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+}
+
+code {
+  display: block;
+  max-height: 90px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  color: #d7f7ff;
+  background: rgba(0, 0, 0, 0.24);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.empty-copy {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 1240px) {
+  h1 {
+    font-size: 54px;
+  }
+
+  .game-grid {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .lobby-panel {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  h1 {
+    font-size: 42px;
+  }
+
+  .arena-shell {
+    width: calc(100vw - 16px);
+    padding-top: 8px;
+  }
+
+  .hero-band,
+  .game-grid,
+  .lobby-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .battle-header {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .card-grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+
+  .battle-card {
+    flex: 0 0 220px;
+    scroll-snap-align: start;
+  }
+}
+
+@media (max-width: 520px) {
+  h1 {
+    font-size: 31px;
+  }
+
+  .hero-band {
+    gap: 8px;
+  }
+
+  .brand-zone,
+  .rank-chip,
+  .game-panel {
+    padding: 10px;
+  }
+
+  .battle-header,
+  .command-actions {
+    grid-template-columns: 1fr;
+  }
+}

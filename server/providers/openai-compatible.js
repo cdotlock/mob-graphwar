@@ -2,6 +2,18 @@
 
 function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const isDeepSeek = provider.id === "deepseek";
+  const rulesPayload =
+    payload.rulesPayload || {
+      rules: {
+        actionLimit: "choose exactly one legal action from legalActions",
+        output: "return JSON only"
+      },
+      command: payload.command,
+      state: payload.stateSummary,
+      legalActions: [{ action: "reroll", rerollsRemaining: 3 }].concat(
+        (payload.candidates || []).map((candidate) => ({ action: "shot", ...candidate }))
+      )
+    };
   const body = {
     model: payload.model || provider.defaultModel,
     temperature: 0.2,
@@ -11,16 +23,12 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
       {
         role: "system",
         content:
-          "Choose exactly one legal Mob Graphwar candidate. Return only valid JSON with candidateId and publicReason. " +
-          'EXAMPLE JSON: {"candidateId":"A-0-0-B2-arc","publicReason":"Chose the safest legal high-clearance curve."}'
+          'Return only valid JSON. For a shot, return {"action":"shot","candidateId":"...","publicReason":"..."}. ' +
+          'For a reroll, return {"action":"reroll","publicReason":"..."}. Use only legalActions from the user payload.'
       },
       {
         role: "user",
-        content: JSON.stringify({
-          command: payload.command,
-          state: payload.stateSummary,
-          candidates: payload.candidates
-        })
+        content: JSON.stringify(rulesPayload)
       }
     ]
   };

@@ -1,25 +1,37 @@
 # Provider Architecture
 
-The current game defaults to the deterministic local agent. Hosted provider
-support is intentionally a thin optional layer.
+Mob Graphwar Arena supports local AI seats plus BYOK hosted providers. The
+hosted layer is intentionally narrow: providers choose from legal actions; they
+do not submit arbitrary functions.
 
 ## Contract
 
-1. The game creates a bounded list of legal shot candidates.
-2. The provider receives compact battle state, command text, and candidate IDs.
-   Public candidates include target, cards, cost, combo identity, and expression.
-   They do not include local simulation score or final hit/miss result.
+1. The game creates a bare rules payload for the active turn.
+2. The provider receives rules, map, unit positions, current hand, reroll count,
+   command text, and legal actions. Shot actions include target, cards, cost,
+   combo identity, and expression. They do not include local simulation score or
+   final hit/miss result.
 3. The provider returns JSON:
 
 ```json
 {
+  "action": "shot",
   "candidateId": "A-3-0-B2-card.card",
-  "publicReason": "High clearance over the central wall."
+  "publicReason": "Selected a legal curve."
 }
 ```
 
-4. The server validates `candidateId` against the legal list.
-5. The game executes the already-known legal candidate.
+or:
+
+```json
+{
+  "action": "reroll",
+  "publicReason": "Need a different hand."
+}
+```
+
+4. The server validates the action against the legal list.
+5. The game executes the already-known legal shot or applies the legal reroll.
 
 Models never output arbitrary functions, JavaScript, or card IDs that were not
 offered by the game.
@@ -30,24 +42,23 @@ offered by the game.
 
 - `GET /healthz`
 - `GET /api/providers`
+- `POST /api/session`
+- `POST /api/match/join`
+- `POST /api/match/:id/resolve`
 - `POST /api/agent/shot`
 
 The provider execution endpoint calls the selected provider, normalizes its
-JSON, validates the returned `candidateId`, then returns the verified candidate
-to the browser. The browser applies that candidate through the same one-shot
-simulation path used by the local agent.
+JSON, validates the selected legal action, then returns the verified action to
+the browser. The browser applies that shot or reroll through the same simulation
+path used by local AI.
 
 OpenAI-compatible providers use JSON mode. DeepSeek defaults to
 `deepseek-v4-flash`, caps output tokens for the candidate-selection response,
 and disables thinking mode for this narrow JSON selection task.
 
-The UI defaults to local deterministic play. The Agent Source panel enables
-live provider mode per shot. Run Battle and Auto stay disabled while live mode
-is active to avoid accidental multi-call spending.
-
-User-supplied API keys are sent only in the `/api/agent/shot` request body and
-are not returned in responses or exported traces. Server environment keys can be
-used instead.
+The UI lets the player choose provider and model during session creation. A
+user-supplied key is sent only with the provider request and is never returned
+in session, provider, trace, or rank responses.
 
 ## Railway
 

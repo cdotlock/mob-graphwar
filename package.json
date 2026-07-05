@@ -1,12 +1,30 @@
 {
-  "name": "ai-graphwar-demo",
+  "name": "mob-graphwar-arena",
   "version": "0.1.0",
   "private": true,
-  "description": "A deterministic prototype for resource-limited AI Graphwar battles.",
+  "description": "A ranked AI-command function artillery arena.",
   "scripts": {
+    "sync:public-sim": "node scripts/sync-public-sim.js",
+    "predev": "npm run sync:public-sim",
+    "dev": "vite --host 0.0.0.0",
+    "prebuild": "npm run sync:public-sim",
+    "build": "vite build",
     "start": "node server/index.js",
     "test": "node test/sim-core.test.js && node test/agent-contract.test.js && node test/provider-catalog.test.js && node test/server.test.js",
     "test:real:deepseek": "node test/real-deepseek-smoke.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.3"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "^1.1.4",
+    "lightningcss-linux-x64-gnu": "^1.32.0"
+  }
 }

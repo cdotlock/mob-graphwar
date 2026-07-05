@@ -115,6 +115,31 @@ function testUiOffersOneClickRankedAutoDuel() {
   assert.ok(css.includes(".auto-duel-summary"), "CSS should style auto-duel summary stats");
 }
 
+function testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState() {
+  assert.ok(main.includes("battlePlayback"), "UI should keep battle playback state separate from final match state");
+  assert.ok(main.includes("playAutoBattleFrames"), "UI should animate server-supplied auto duel frames");
+  assert.ok(main.includes("payload.autoBattle?.frames"), "UI should consume replay frames returned by the auto duel endpoint");
+  assert.ok(main.includes('data-testid="battle-playback"'), "battle playback HUD should be selectable for browser verification");
+  assert.ok(main.includes("window.setTimeout"), "frame playback should advance visibly instead of jumping directly to the final state");
+  assert.ok(css.includes(".battle-playback"), "CSS should style the battle playback HUD");
+  assert.ok(css.includes(".playback-bar"), "CSS should style frame playback progress");
+}
+
+function testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels() {
+  assert.ok(
+    main.indexOf("<Battlefield") < main.indexOf("<DuelCommanders"),
+    "battlefield should render before secondary commander panels so the game map appears earlier"
+  );
+  assert.ok(css.includes(".mobile-game-compact"), "mobile CSS should include compact game-first rules");
+  assert.ok(css.includes("grid-template-columns: repeat(2, minmax(0, 1fr));"), "mobile battle header should remain compact in two columns");
+}
+
+function testBattleHeaderDoesNotCallDrawAWin() {
+  assert.ok(main.includes("resultLabel"), "battle header should compute a readable result label");
+  assert.ok(main.includes('winner === "draw" ? "Draw"'), "draw results should be labeled as draws");
+  assert.ok(!main.includes('`${state.winner} wins`'), "battle header should not render 'draw wins'");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
@@ -126,5 +151,8 @@ testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
 testUiExplainsRetainedHandsAndSwapAction();
 testUiOffersOneClickRankedAutoDuel();
+testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState();
+testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels();
+testBattleHeaderDoesNotCallDrawAWin();
 
 console.log("ui-source tests passed");

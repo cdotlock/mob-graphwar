@@ -747,6 +747,69 @@ label {
   white-space: nowrap;
 }
 
+.battle-playback {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 2fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(88, 212, 255, 0.28);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background:
+    linear-gradient(90deg, rgba(88, 212, 255, 0.12), transparent 46%, rgba(255, 94, 104, 0.1)),
+    rgba(3, 7, 14, 0.72);
+}
+
+.battle-playback.playing {
+  border-color: rgba(217, 255, 71, 0.46);
+  box-shadow: inset 0 0 24px rgba(217, 255, 71, 0.08);
+}
+
+.battle-playback div {
+  min-width: 0;
+}
+
+.battle-playback span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.battle-playback strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.playback-bar {
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(217, 255, 71, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.playback-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cyan), var(--acid), var(--red));
+  box-shadow: 0 0 18px rgba(217, 255, 71, 0.32);
+  transition: width 220ms ease;
+}
+
 .battlefield-frame {
   overflow: hidden;
   border: 2px solid rgba(88, 212, 255, 0.24);
@@ -1566,6 +1629,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .battle-playback {
+    grid-template-columns: 1fr;
+  }
+
   .commander-board {
     grid-template-columns: 1fr;
   }
@@ -1588,11 +1655,17 @@ code {
 
 @media (max-width: 520px) {
   h1 {
-    font-size: 31px;
+    font-size: 24px;
   }
 
   .hero-band {
+    grid-template-columns: minmax(0, 1fr) 96px;
     gap: 8px;
+  }
+
+  .mobile-game-compact .brand-zone p,
+  .mobile-game-compact .brand-zone::after {
+    display: none;
   }
 
   .brand-zone,
@@ -1601,16 +1674,49 @@ code {
     padding: 10px;
   }
 
-  .battle-header,
+  .rank-chip {
+    gap: 6px;
+  }
+
+  .rank-chip strong {
+    font-size: 20px;
+  }
+
   .command-actions,
   .match-actions,
   .map-intel-strip,
-  .spectator-hud,
   .profile-vault,
   .leaderboard-row,
   .commander-names,
   .commander-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .battle-header,
+  .spectator-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .battle-header div {
+    min-height: 54px;
+    padding: 8px;
+  }
+
+  .spectator-hud div {
+    padding: 8px;
+  }
+
+  .spectator-hud strong {
+    font-size: 12px;
+  }
+
+  .battle-playback {
+    grid-template-columns: minmax(0, 1fr) minmax(74px, 1.2fr) minmax(0, 1fr);
+    padding: 8px;
+  }
+
+  .battle-playback strong {
+    font-size: 11px;
   }
 
   .commander-metrics {

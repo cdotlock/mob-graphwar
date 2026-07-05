@@ -473,13 +473,22 @@ async function advanceMatchToResolution(match, options) {
     const turn = autoResolveCommandsForTurn(match, opts);
     const resolved = await autoResolveDecisionForTurn(match, turn, opts);
     if (isSwapAction(resolved.decision.action)) {
-      Sim.applyTurn(match.state, {}, {
+      const rerollResult = Sim.applyTurn(match.state, {}, {
         action: "swap_hand",
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
       });
+      pushPlaybackFrame(opts.frames, match, {
+        action: "swap_hand",
+        team: turn.team,
+        provider: resolved.providerLabel,
+        publicReason: resolved.decision.publicReason,
+        swapsUsed: rerollResult.swapsUsed,
+        swapsRemaining: rerollResult.swapsRemaining
+      });
       continue;
     }
+    const beforeEventCount = match.state.events.length;
     Sim.applyTurn(
       match.state,
       { [turn.team]: resolved.command },
@@ -489,6 +498,16 @@ async function advanceMatchToResolution(match, options) {
         providerReason: resolved.decision.publicReason
       }
     );
+    const event = match.state.events[beforeEventCount] || match.state.events[match.state.events.length - 1] || null;
+    pushPlaybackFrame(opts.frames, match, {
+      action: "shot",
+      team: turn.team,
+      provider: resolved.providerLabel,
+      publicReason: resolved.decision.publicReason,
+      candidateId: resolved.decision.candidateId || null,
+      resultLabel: event ? event.resultLabel : match.state.reason || null,
+      event: publicEventSummary(event)
+    });
   }
   match.status = "resolved";
   return match.state;
@@ -509,7 +528,63 @@ function publicEventSummary(event) {
   };
 }
 
-function buildAutoBattleSummary(match, startedTurn, playerTeam, mode) {
+function clonePublic(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function publicPlaybackState(state) {
+  return {
+    seed: state.seed,
+    config: clonePublic(state.config || null),
+    turn: state.turn,
+    mapMeta: clonePublic(state.mapMeta || null),
+    obstacles: clonePublic(state.obstacles || []),
+    units: (state.units || []).map((unit) => ({
+      id: unit.id,
+      team: unit.team,
+      name: unit.name,
+      x: unit.x,
+      y: unit.y,
+      hp: unit.hp
+    })),
+    events: clonePublic(state.events || []),
+    paths: clonePublic(state.paths || []),
+    hands: clonePublic(state.hands || null),
+    winner: state.winner || null,
+    reason: state.reason || null,
+    score: clonePublic(state.score || null)
+  };
+}
+
+function buildPlaybackFrame(match, action) {
+  const publicAction = action || { action: "state", provider: "Battle Engine" };
+  return {
+    index: 0,
+    turn: match.state.turn,
+    winner: match.state.winner || null,
+    action: {
+      action: publicAction.action || "state",
+      team: publicAction.team || getActiveTeam(match.state) || "-",
+      provider: publicAction.provider || "Battle Engine",
+      publicReason: publicAction.publicReason || "",
+      resultLabel: publicAction.resultLabel || null,
+      candidateId: publicAction.candidateId || null,
+      swapsUsed: Number.isFinite(Number(publicAction.swapsUsed)) ? Number(publicAction.swapsUsed) : null,
+      swapsRemaining: Number.isFinite(Number(publicAction.swapsRemaining)) ? Number(publicAction.swapsRemaining) : null,
+      event: publicAction.event || null
+    },
+    state: publicPlaybackState(match.state)
+  };
+}
+
+function pushPlaybackFrame(frames, match, action) {
+  if (!Array.isArray(frames)) return;
+  const frame = buildPlaybackFrame(match, action);
+  frame.index = frames.length;
+  frames.push(frame);
+}
+
+function buildAutoBattleSummary(match, startedTurn, playerTeam, mode, frames) {
   const start = Math.max(0, Math.min(match.state.events.length, Number(startedTurn) || 0));
   const playedEvents = match.state.events.slice(start);
   const providers = Array.from(new Set(playedEvents.map((event) => event.provider || "Local AI")));
@@ -522,7 +597,8 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode) {
     winner: match.state.winner || "draw",
     score: match.state.score,
     providers,
-    finalEvent: publicEventSummary(match.state.events[match.state.events.length - 1])
+    finalEvent: publicEventSummary(match.state.events[match.state.events.length - 1]),
+    frames: Array.isArray(frames) ? frames : []
   };
 }
 
@@ -530,12 +606,20 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
   const opts = options || {};
   const startedTurn = match.state.events.length;
   const playerTeam = playerSeat ? playerSeat.team : "A";
+  const frames = [];
+  pushPlaybackFrame(frames, match, {
+    action: "start",
+    team: getActiveTeam(match.state) || playerTeam,
+    provider: "Battle Engine",
+    publicReason: "Pre-duel ranked state."
+  });
   const finalState = await advanceMatchToResolution(match, {
     env,
     fetchFn,
     playerId: player.id,
     playerTeam,
-    command: opts.command
+    command: opts.command,
+    frames
   });
   let settlement = match.rankSettlements[player.id];
   if (!settlement) {
@@ -552,7 +636,7 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
     player: publicPlayer(player),
     rankDelta: settlement.rankDelta,
     score: finalState.score,
-    autoBattle: buildAutoBattleSummary(match, opts.startedTurn ?? startedTurn, playerTeam, opts.mode || "auto_duel")
+    autoBattle: buildAutoBattleSummary(match, opts.startedTurn ?? startedTurn, playerTeam, opts.mode || "auto_duel", frames)
   };
 }
 

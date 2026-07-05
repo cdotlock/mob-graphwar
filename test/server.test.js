@@ -350,6 +350,20 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.ok(autoDuel.json.autoBattle.finalEvent && autoDuel.json.autoBattle.finalEvent.resultLabel);
   assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve A"));
   assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve B"));
+  assert.ok(Array.isArray(autoDuel.json.autoBattle.frames), "auto duel should return replayable battle frames");
+  assert.ok(autoDuel.json.autoBattle.frames.length >= autoDuel.json.autoBattle.resolvedTurns + 1, "frames should include the starting state and every model action");
+  assert.strictEqual(autoDuel.json.autoBattle.frames[0].action.action, "start", "first frame should represent the pre-duel state");
+  assert.strictEqual(autoDuel.json.autoBattle.frames[0].state.events.length, 0, "first frame should not already contain resolved shots");
+  assert.strictEqual(
+    autoDuel.json.autoBattle.frames[autoDuel.json.autoBattle.frames.length - 1].state.winner,
+    autoDuel.json.match.state.winner,
+    "last frame should match the resolved battle winner"
+  );
+  assert.ok(
+    autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "shot"),
+    "playback frames should expose shot actions for the spectator timeline"
+  );
+  assert.ok(!JSON.stringify(autoDuel.json.autoBattle.frames).includes("secret"), "playback frames should not leak stored API keys");
 }
 
 async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
@@ -421,6 +435,14 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   assert.ok(
     autoDuel.json.autoBattle.providers.some((provider) => provider.includes("Provider Pilot / gpt-auto")),
     "auto duel summary should expose the configured provider label"
+  );
+  assert.ok(
+    autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "swap_hand"),
+    "auto duel frames should expose provider swap_hand decisions before the shot"
+  );
+  assert.ok(
+    autoDuel.json.autoBattle.frames.some((frame) => frame.action.provider.includes("Provider Pilot / gpt-auto")),
+    "auto duel frames should preserve the visible provider label for replay"
   );
   assert.ok(!autoDuel.text.includes("auto-provider-secret"), "auto duel should not leak stored API keys");
 }

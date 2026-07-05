@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -115,6 +115,11 @@ function teamHealth(state, team) {
   return { hp, max: units.length * 100, alive: units.filter((unit) => unit.hp > 0).length };
 }
 
+function battleResultLabel(winner) {
+  if (!winner) return "";
+  return winner === "draw" ? "Draw" : `Team ${winner} wins`;
+}
+
 function eventDecision(event) {
   if (!event) return null;
   return {
@@ -126,10 +131,26 @@ function eventDecision(event) {
   };
 }
 
+function frameDecision(frame) {
+  if (!frame || !frame.action) return null;
+  return {
+    action: frame.action.action,
+    team: frame.action.team,
+    provider: frame.action.provider,
+    result: frame.action.resultLabel,
+    publicReason: frame.action.publicReason || frame.action.event?.resultLabel || frame.action.candidateId
+  };
+}
+
+function delayFrame(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function App() {
   const [profile, setProfile] = useState(null);
   const [match, setMatch] = useState(null);
   const [battleState, setBattleState] = useState(createExhibitionBattle);
+  const [battlePlayback, setBattlePlayback] = useState(null);
   const [login, setLogin] = useState({
     displayName: "Clock",
     provider: "deepseek",
@@ -145,6 +166,7 @@ function App() {
   const [leagueResult, setLeagueResult] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [autoBattle, setAutoBattle] = useState(null);
+  const playbackToken = useRef(0);
 
   const latestEvent = battleState.events[battleState.events.length - 1];
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
@@ -223,11 +245,13 @@ function App() {
 
   async function syncMatchRoom(matchId = match?.id, playerId = profile?.id) {
     if (!matchId || !playerId) return null;
+    playbackToken.current += 1;
     const response = await fetch(`/api/match/${matchId}?playerId=${playerId}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "room_sync_failed");
     setMatch(payload.match);
     setBattleState(payload.match.state);
+    setBattlePlayback(null);
     setLastDecision(null);
     setQueueState(null);
     setAutoBattle(null);
@@ -287,8 +311,10 @@ function App() {
         return;
       }
       if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
+      playbackToken.current += 1;
       setMatch(payload.match);
       setBattleState(payload.match.state);
+      setBattlePlayback(null);
       setLastDecision(null);
       setQueueState(null);
       setAutoBattle(null);
@@ -344,6 +370,40 @@ function App() {
     }
   }
 
+  async function playAutoBattleFrames(frames, finalMatch, summary) {
+    const frameList = Array.isArray(frames) && frames.length ? frames : [];
+    const token = playbackToken.current + 1;
+    playbackToken.current = token;
+    if (!frameList.length) {
+      setBattleState(finalMatch.state);
+      setBattlePlayback(null);
+      return;
+    }
+    for (let index = 0; index < frameList.length; index += 1) {
+      if (playbackToken.current !== token) return;
+      const frame = frameList[index];
+      setBattleState(frame.state);
+      setLastDecision(frameDecision(frame));
+      setBattlePlayback({
+        active: true,
+        index: index + 1,
+        total: frameList.length,
+        action: frame.action,
+        winner: frame.state.winner || null
+      });
+      await delayFrame(index === 0 ? 240 : 520);
+    }
+    if (playbackToken.current !== token) return;
+    setBattleState(finalMatch.state);
+    setBattlePlayback({
+      active: false,
+      index: frameList.length,
+      total: frameList.length,
+      action: frameList[frameList.length - 1].action,
+      winner: summary?.winner || finalMatch.state.winner || "draw"
+    });
+  }
+
   async function runAutoDuel() {
     if (!profile || !match || busy) return;
     setBusy(true);
@@ -357,9 +417,9 @@ function App() {
       if (!response.ok) throw new Error(payload.error || "auto_duel_failed");
       setProfile(payload.player);
       setMatch(payload.match);
-      setBattleState(payload.match.state);
       setAutoBattle(payload.autoBattle);
       window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+      await playAutoBattleFrames(payload.autoBattle?.frames, payload.match, payload.autoBattle);
       await loadLeaderboard();
       setLastDecision({
         action: "auto duel",
@@ -377,7 +437,7 @@ function App() {
   }
 
   return (
-    <main className="arena-shell battle-priority-layout" data-ui-version="react-arena-v2">
+    <main className="arena-shell battle-priority-layout mobile-game-compact" data-ui-version="react-arena-v2">
       <section className="hero-band">
         <div className="brand-zone">
           <span className="kicker">MOB GRAPHWAR ARENA</span>
@@ -416,11 +476,12 @@ function App() {
         <section className="battle-panel game-panel">
           <BattleHeader state={battleState} activeTeam={activeTeam} message={message} />
           <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
+          <BattlePlaybackHud playback={battlePlayback} />
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
-            <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
             <Battlefield state={battleState} latestEvent={latestEvent} />
             <BattleReplayRail state={battleState} />
+            <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
           </section>
           <CommandConsole
             activeTeam={activeTeam}
@@ -624,6 +685,7 @@ function VersusBanner({ state, match, activeTeam }) {
   };
   const a = side("A");
   const b = side("B");
+  const resultLabel = battleResultLabel(state.winner);
   return (
     <div className="versus-banner" data-testid="versus-banner">
       <div className={`versus-side team-a ${activeTeam === "A" ? "active" : ""}`}>
@@ -633,7 +695,7 @@ function VersusBanner({ state, match, activeTeam }) {
       </div>
       <div className="versus-core">
         <b>VS</b>
-        <span>{state.winner ? `${state.winner} wins` : `Turn ${state.turn + 1}`}</span>
+        <span>{resultLabel || `Turn ${state.turn + 1}`}</span>
       </div>
       <div className={`versus-side team-b ${activeTeam === "B" ? "active" : ""}`}>
         <span>Team B</span>
@@ -645,12 +707,14 @@ function VersusBanner({ state, match, activeTeam }) {
 }
 
 function BattleHeader({ state, activeTeam, message }) {
+  const resultLabel = battleResultLabel(state.winner);
+  const statusLabel = resultLabel && message ? `${resultLabel} · ${message}` : resultLabel || message;
   return (
     <div className="battle-header">
       <div><span>Turn</span><strong>{state.turn}/{Sim.CONFIG.maxTurns}</strong></div>
       <div><span>Active</span><strong>Team {activeTeam}</strong></div>
       <div><span>Map</span><strong>{state.mapMeta.name} {state.mapMeta.difficulty}</strong></div>
-      <div><span>Status</span><strong>{state.winner ? `${state.winner} wins` : message}</strong></div>
+      <div><span>Status</span><strong>{statusLabel}</strong></div>
     </div>
   );
 }
@@ -669,6 +733,26 @@ function SpectatorHud({ state, activeTeam, match }) {
       <div>
         <span>Viewer state</span>
         <strong>{state.winner ? "settled" : activeTeam === "-" ? "standby" : "watch only"}</strong>
+      </div>
+    </div>
+  );
+}
+
+function BattlePlaybackHud({ playback }) {
+  const progress = playback?.total ? Math.min(100, Math.max(0, (playback.index / playback.total) * 100)) : 0;
+  const action = playback?.action || null;
+  return (
+    <div className={`battle-playback ${playback?.active ? "playing" : ""}`} data-testid="battle-playback">
+      <div>
+        <span>{playback?.active ? "Live playback" : "Playback"}</span>
+        <strong>{action ? `${action.action} · Team ${action.team}` : "standby"}</strong>
+      </div>
+      <div className="playback-bar" aria-label="Battle playback progress">
+        <i style={{ width: `${progress}%` }} />
+      </div>
+      <div>
+        <span>{playback?.total ? `${playback.index}/${playback.total} frames` : "0/0 frames"}</span>
+        <strong>{action?.provider || playback?.winner || "waiting"}</strong>
       </div>
     </div>
   );

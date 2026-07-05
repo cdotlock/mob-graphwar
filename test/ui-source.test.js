@@ -4,6 +4,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const main = fs.readFileSync(path.join(root, "src", "main.jsx"), "utf8");
 const css = fs.readFileSync(path.join(root, "src", "arena.css"), "utf8");
 
@@ -46,6 +47,23 @@ function testGameGradeHudStylesExist() {
   assert.ok(css.includes(".versus-banner"), "CSS should style a game-grade versus banner");
   assert.ok(css.includes(".battle-replay-rail"), "CSS should style an event replay rail");
   assert.ok(css.includes("grid-template-areas"), "responsive layout should prioritize the battlefield with grid areas");
+}
+
+function testArenaDirectorHudMakesBattleReadAsLiveGame() {
+  assert.ok(packageJson.includes('"framer-motion"'), "the React game shell should use a motion framework for game-grade state transitions");
+  assert.ok(main.includes('from "framer-motion"'), "main UI should import framer-motion primitives");
+  assert.ok(main.includes("ArenaDirectorHud"), "battle stage should include a named arena director HUD");
+  assert.ok(main.includes('data-testid="arena-director-hud"'), "arena director HUD should be selectable for browser verification");
+  assert.ok(main.includes("battleStats"), "HUD should compute battle stats from real events");
+  assert.ok(main.includes("currentActorLabel"), "HUD should expose the active or last AI actor");
+  assert.ok(main.includes("rankDelta"), "HUD should surface ranked stake after auto duel settlement");
+  assert.ok(main.includes("routePressure"), "HUD should expose map route pressure in the game chrome");
+  assert.ok(main.includes("<AnimatePresence"), "latest model action should animate as the feed changes");
+  assert.ok(main.indexOf("<ArenaDirectorHud") < main.indexOf("<Battlefield"), "director HUD should appear before the battlefield inside the stage");
+  assert.ok(css.includes(".arena-director-hud"), "CSS should style the director HUD as first-class game chrome");
+  assert.ok(css.includes(".director-callout"), "CSS should style the live actor callout");
+  assert.ok(css.includes(".director-rank-stake"), "CSS should style ranked stake information");
+  assert.ok(css.includes(".director-feed"), "CSS should style live model action feed");
 }
 
 function testStaticEntrypointLoadsSimBeforeReactBundle() {
@@ -189,7 +207,9 @@ function testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels() {
     "battlefield should render before secondary commander panels so the game map appears earlier"
   );
   assert.ok(css.includes(".mobile-game-compact"), "mobile CSS should include compact game-first rules");
-  assert.ok(css.includes("grid-template-columns: repeat(2, minmax(0, 1fr));"), "mobile battle header should remain compact in two columns");
+  assert.ok(css.includes("grid-template-columns: repeat(3, minmax(0, 1fr));"), "mobile battle header should remain compact in a dense HUD grid");
+  assert.ok(main.includes('!playback ? "idle"'), "empty playback HUD should expose an idle class for compact mobile layout");
+  assert.ok(css.includes(".battle-playback.idle"), "mobile CSS should be able to hide idle playback chrome");
 }
 
 function testBattleHeaderDoesNotCallDrawAWin() {
@@ -202,6 +222,7 @@ testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testFourSeatAgentBattleMatrixExists();
 testGameGradeHudStylesExist();
+testArenaDirectorHudMakesBattleReadAsLiveGame();
 testStaticEntrypointLoadsSimBeforeReactBundle();
 testUiKeepsRankedDuelSpectatorOnly();
 testGameSurfacesMatchmakingAndLeagueSimulation();

@@ -621,6 +621,150 @@ label {
   line-height: 0.9;
 }
 
+.arena-director-hud {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) minmax(120px, 0.65fr) minmax(150px, 0.8fr) minmax(190px, 1.1fr);
+  gap: 8px;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(217, 255, 71, 0.34);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(90deg, rgba(88, 212, 255, 0.14), transparent 40%, rgba(255, 94, 104, 0.12)),
+    rgba(3, 7, 14, 0.82);
+  box-shadow:
+    inset 0 0 30px rgba(217, 255, 71, 0.06),
+    0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.arena-director-hud.team-a {
+  border-color: rgba(88, 212, 255, 0.42);
+}
+
+.arena-director-hud.team-b {
+  border-color: rgba(255, 94, 104, 0.42);
+}
+
+.director-callout,
+.director-scoreline,
+.director-map-pressure,
+.director-rank-stake,
+.director-feed {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 42%),
+    rgba(2, 6, 13, 0.72);
+}
+
+.director-callout {
+  border-left: 4px solid var(--acid);
+}
+
+.director-callout span,
+.director-callout small,
+.director-map-pressure span,
+.director-map-pressure small,
+.director-rank-stake span,
+.director-rank-stake small,
+.director-feed span,
+.director-feed small,
+.director-scoreline span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.director-callout strong,
+.director-map-pressure strong,
+.director-rank-stake strong,
+.director-feed strong {
+  display: block;
+  overflow: hidden;
+  margin: 4px 0;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 18px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.director-scoreline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.director-scoreline span {
+  text-align: center;
+}
+
+.director-scoreline b {
+  display: block;
+  color: var(--acid);
+  font-family: "Russo One", sans-serif;
+  font-size: 24px;
+}
+
+.director-scoreline i {
+  display: block;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cyan), var(--acid), var(--red));
+  box-shadow: 0 0 18px rgba(217, 255, 71, 0.26);
+}
+
+.director-map-pressure strong {
+  color: var(--gold);
+  font-size: 26px;
+}
+
+.director-rank-stake {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+}
+
+.director-rank-stake svg {
+  grid-row: 1 / span 3;
+  color: var(--gold);
+}
+
+.director-rank-stake strong,
+.director-rank-stake small {
+  margin: 0;
+}
+
+.director-feed {
+  border-left: 4px solid var(--line);
+}
+
+.director-feed.team-a {
+  border-left-color: var(--cyan);
+}
+
+.director-feed.team-b {
+  border-left-color: var(--red);
+}
+
+.director-feed strong {
+  color: var(--acid);
+  font-size: 16px;
+}
+
 .commander-board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1882,6 +2026,15 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .arena-director-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .director-callout,
+  .director-feed {
+    grid-column: 1 / -1;
+  }
+
   .playback-controls {
     justify-content: stretch;
   }
@@ -1965,9 +2118,16 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .battle-header,
+  .battle-header {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .battle-header div:nth-child(4) {
+    display: none;
+  }
+
   .spectator-hud {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .battle-header div {
@@ -1983,9 +2143,60 @@ code {
     font-size: 12px;
   }
 
+  .battle-playback.idle {
+    display: none;
+  }
+
   .battle-playback {
     grid-template-columns: 1fr;
     padding: 8px;
+  }
+
+  .arena-director-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 7px;
+  }
+
+  .arena-director-hud .director-callout,
+  .arena-director-hud .director-feed {
+    grid-column: auto;
+  }
+
+  .director-callout,
+  .director-scoreline,
+  .director-map-pressure,
+  .director-rank-stake,
+  .director-feed {
+    padding: 8px;
+  }
+
+  .director-scoreline {
+    grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
+  }
+
+  .director-scoreline b {
+    font-size: 18px;
+  }
+
+  .director-map-pressure strong {
+    font-size: 21px;
+  }
+
+  .versus-banner {
+    grid-template-columns: minmax(0, 1fr) 54px minmax(0, 1fr);
+  }
+
+  .versus-side,
+  .versus-core {
+    padding: 8px;
+  }
+
+  .versus-side strong {
+    font-size: 12px;
+  }
+
+  .versus-core b {
+    font-size: 22px;
   }
 
   .battle-playback strong {

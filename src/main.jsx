@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   Bot,
@@ -118,6 +119,26 @@ function teamHealth(state, team) {
   return { hp, max: units.length * 100, alive: units.filter((unit) => unit.hp > 0).length };
 }
 
+function battleStats(state) {
+  const events = state.events || [];
+  const failures = events.filter((event) => ["blocked", "ground", "out", "miss", "invalid"].includes(event.result)).length;
+  return {
+    shots: events.length,
+    enemyHits: events.filter((event) => event.result === "hitEnemy").length,
+    allyHits: events.filter((event) => event.result === "hitAlly").length,
+    failures,
+    damage: events.reduce((sum, event) => sum + (Number(event.damage) || 0), 0)
+  };
+}
+
+function currentActorLabel(state, activeUnitId, latestEvent) {
+  if (state.winner) {
+    const unit = latestEvent?.unitId || latestEvent?.shooterId || "final";
+    return `${unit} settled`;
+  }
+  return activeUnitId === "-" ? "standby" : `${activeUnitId} resolving`;
+}
+
 function battleResultLabel(winner) {
   if (!winner) return "";
   return winner === "draw" ? "Draw" : `Team ${winner} wins`;
@@ -128,6 +149,7 @@ function eventDecision(event) {
   return {
     action: "shot",
     team: event.team,
+    unitId: event.unitId || event.shooterId,
     provider: event.provider || "Exhibition AI",
     result: event.resultLabel,
     publicReason: event.combo ? `${event.combo.name} into ${event.targetId}` : event.targetId
@@ -139,6 +161,7 @@ function frameDecision(frame) {
   return {
     action: frame.action.action,
     team: frame.action.team,
+    unitId: frame.action.unitId,
     provider: frame.action.provider,
     result: frame.action.resultLabel,
     publicReason: frame.action.publicReason || frame.action.event?.resultLabel || frame.action.candidateId
@@ -525,7 +548,7 @@ function App() {
       if (!response.ok) throw new Error(payload.error || "auto_duel_failed");
       setProfile(payload.player);
       setMatch(payload.match);
-      setAutoBattle(payload.autoBattle);
+      setAutoBattle({ ...payload.autoBattle, rankDelta: payload.rankDelta, rating: payload.player.rank.rating });
       window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
       await playAutoBattleFrames(payload.autoBattle?.frames, payload.match, payload.autoBattle);
       await loadLeaderboard();
@@ -595,6 +618,16 @@ function App() {
           />
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
+            <ArenaDirectorHud
+              state={battleState}
+              match={match}
+              profile={profile}
+              activeTeam={activeTeam}
+              activeUnitId={activeUnitId}
+              latestEvent={latestEvent}
+              autoBattle={autoBattle}
+              playback={battlePlayback}
+            />
             <Battlefield state={battleState} latestEvent={latestEvent} />
             <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
             <BattleReplayRail state={battleState} />
@@ -820,6 +853,66 @@ function VersusBanner({ state, match, activeTeam }) {
   );
 }
 
+function ArenaDirectorHud({ state, match, profile, activeTeam, activeUnitId, latestEvent, autoBattle, playback }) {
+  const stats = battleStats(state);
+  const complexity = state.mapMeta?.complexity || {};
+  const teamA = teamHealth(state, "A");
+  const teamB = teamHealth(state, "B");
+  const actor = currentActorLabel(state, activeUnitId, latestEvent);
+  const rankDelta = Number.isFinite(Number(autoBattle?.rankDelta)) ? Number(autoBattle.rankDelta) : null;
+  const rankText = rankDelta === null ? `${profile?.rank?.rating || 1000} rating` : `${rankDelta > 0 ? "+" : ""}${rankDelta} / ${autoBattle?.rating || profile?.rank?.rating || 1000}`;
+  const resultLabel = battleResultLabel(state.winner);
+  const latestKey = latestEvent ? `${latestEvent.turn}-${latestEvent.unitId || latestEvent.shooterId}-${latestEvent.result}` : "pre-battle";
+  const pressure = complexity.routePressure || 0;
+  const tempo = playback?.active ? "live replay" : state.winner ? "settled" : match ? "models armed" : "exhibition";
+  const hudTeam = activeTeam !== "-" ? activeTeam : latestEvent?.team || "A";
+  return (
+    <motion.section
+      className={`arena-director-hud team-${String(hudTeam).toLowerCase()} ${state.winner ? "settled" : "live"}`}
+      data-testid="arena-director-hud"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+    >
+      <div className="director-callout">
+        <span>{tempo}</span>
+        <strong>{actor}</strong>
+        <small>{resultLabel || `Team ${hudTeam} has initiative`}</small>
+      </div>
+      <div className="director-scoreline">
+        <span><b>{teamA.hp}</b> Team A HP</span>
+        <i aria-hidden="true" />
+        <span><b>{teamB.hp}</b> Team B HP</span>
+      </div>
+      <div className="director-map-pressure">
+        <span>routePressure</span>
+        <strong>{pressure}</strong>
+        <small>{complexity.obstacleCount || 0} blockers / {complexity.layerCount || 0} layers</small>
+      </div>
+      <div className="director-rank-stake">
+        <Trophy size={18} />
+        <span>rank stake</span>
+        <strong>{rankText}</strong>
+        <small>{state.score ? `${state.score.rank} ${state.score.value}` : `${profile?.rank?.tier || "Bronze"} queue`}</small>
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          className={`director-feed team-${String(latestEvent?.team || hudTeam).toLowerCase()}`}
+          key={latestKey}
+          initial={{ opacity: 0, x: 14 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -14 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+        >
+          <span>{latestEvent ? `T${latestEvent.turn + 1} ${latestEvent.unitId || latestEvent.shooterId}` : "pre-battle"}</span>
+          <strong>{latestEvent ? latestEvent.resultLabel : "waiting for first shot"}</strong>
+          <small>{stats.enemyHits} hits / {stats.failures} failed lines / {stats.damage} dmg</small>
+        </motion.div>
+      </AnimatePresence>
+    </motion.section>
+  );
+}
+
 function AgentBattleMatrix({ state, match, activeTeam, activeUnitId, lastDecision }) {
   const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
   const events = state.events || [];
@@ -911,7 +1004,7 @@ function BattlePlaybackHud({ playback, paused, speed, canControl, onToggle, onSt
   const playLabel = paused || playback?.active === false ? "Play replay" : "Pause replay";
   const stateLabel = paused ? "Paused replay" : playback?.active ? "Live playback" : "Playback";
   return (
-    <div className={`battle-playback ${playback?.active && !paused ? "playing" : ""} ${paused ? "paused" : ""}`} data-testid="battle-playback">
+    <div className={`battle-playback ${playback?.active && !paused ? "playing" : ""} ${paused ? "paused" : ""} ${!playback ? "idle" : ""}`} data-testid="battle-playback">
       <div>
         <span>{stateLabel}</span>
         <strong>{action ? `${action.action} · Team ${action.team}` : "standby"}</strong>

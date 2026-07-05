@@ -268,4 +268,214 @@
     }
     const team = state.turn % 2 === 0 ? "A" : "B";
     const hand = Sim.dealHand(state.seed, state.turn, team);
-    handTitle.textContent = `Cu
+    handTitle.textContent = `Current Hand - Team ${team}`;
+    handHint.textContent = `${Sim.getEnergy(state.turn)} energy before lock-in`;
+    handCards.innerHTML = hand.map((card) => cardMarkup(card, false)).join("");
+  }
+
+  function renderThinking(event) {
+    const thinking = event.thinking || {};
+    const targets = (thinking.targetPriority || []).map((target) => `${target.id}(${target.hp})`).join(" -> ");
+    thinkingPanel.innerHTML = [
+      thinkingRow("Intent", thinking.intent || "balanced shot"),
+      thinkingRow("Rules", thinking.commandRules || "soft guidance only", true),
+      thinkingRow("Targets", targets || event.targetId),
+      thinkingRow("Hand", thinking.handConstraint || `${event.hand.length} cards`),
+      thinkingRow(
+        "Combo",
+        `${thinking.comboName || "Mixed Curve"} - ${
+          thinking.selectedCombo || event.components.map((component) => component.label).join(" + ") || "baseline"
+        }`,
+        true
+      ),
+      thinkingRow("Trait", thinking.comboNote || comboSummary(event)),
+      thinking.providerReason ? thinkingRow("Provider", thinking.providerReason, true) : "",
+      thinkingRow("Risk", thinking.risk || "none"),
+      thinkingRow("Reason", thinking.publicReason || "Local deterministic agent selected the highest scoring legal shot.")
+    ].join("");
+  }
+
+  function thinkingRow(label, value, featured) {
+    return `<div class="thinking-row${featured ? " thinking-rule" : ""}"><span>${esc(label)}</span><strong>${esc(
+      value
+    )}</strong></div>`;
+  }
+
+  function renderLog() {
+    const items = state.events
+      .slice()
+      .reverse()
+      .map((event) => {
+        const cls = event.team === "A" ? "log-a" : "log-b";
+        return `
+          <li class="${cls}">
+            <strong>Turn ${event.turn} - Team ${event.team} - ${esc(event.resultLabel)}</strong>
+            <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} using ${event.cost}/${event.energy} energy.</div>
+            <div>${esc(event.combo ? event.combo.name : "Mixed Curve")} - ${esc(
+              event.components.map((component) => component.label).join(" + ") || "baseline"
+            )}</div>
+          </li>`;
+      })
+      .join("");
+    eventLog.innerHTML = items || `<li>No events yet.</li>`;
+  }
+
+  function render() {
+    updateCommandCounts();
+    renderStatus();
+    renderBattlefield();
+    renderShotSummary();
+    renderLog();
+    const live = providerEnabled.checked;
+    nextBtn.disabled = Boolean(state.winner) || busy;
+    runBtn.disabled = Boolean(state.winner) || busy || live;
+    autoBtn.disabled = busy || live;
+  }
+
+  function reset() {
+    stopAuto();
+    state = Sim.createInitialState({ seed: Number(seedInput.value) });
+    render();
+  }
+
+  async function loadProviders() {
+    try {
+      const response = await fetch("/api/providers");
+      if (!response.ok) throw new Error("provider_catalog_unavailable");
+      const data = await response.json();
+      const providers = data.providers || [];
+      providerSelect.innerHTML = providers
+        .map((provider) => `<option value="${esc(provider.id)}" data-model="${esc(provider.model || "")}">${esc(provider.label)}</option>`)
+        .join("");
+      updateProviderModel();
+      providerStatus.textContent = providers.length ? "Local" : "Local only";
+    } catch (err) {
+      providerSelect.innerHTML = `<option value="openai">OpenAI</option>`;
+      providerStatus.textContent = "Local only";
+    }
+  }
+
+  function updateProviderModel() {
+    const selected = providerSelect.options[providerSelect.selectedIndex];
+    providerModel.placeholder = selected ? selected.getAttribute("data-model") || "" : "";
+  }
+
+  function activeProviderLabel() {
+    const selected = providerSelect.options[providerSelect.selectedIndex];
+    return selected ? selected.textContent : providerSelect.value;
+  }
+
+  async function requestProviderShot(team, command) {
+    const response = await fetch("/api/agent/shot", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: providerSelect.value,
+        apiKey: providerKey.value,
+        model: providerModel.value.trim() || undefined,
+        state,
+        team,
+        command
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "provider_error");
+    return payload;
+  }
+
+  async function nextTurn() {
+    if (state.winner || busy) return;
+    const team = state.turn % 2 === 0 ? "A" : "B";
+    const currentCommands = commands();
+    busy = true;
+    providerStatus.textContent = providerEnabled.checked ? "Thinking" : "Local";
+    render();
+    try {
+      if (providerEnabled.checked) {
+        const result = await requestProviderShot(team, currentCommands[team]);
+        Sim.applyTurn(state, currentCommands, {
+          candidateId: result.decision.candidateId,
+          provider: `${activeProviderLabel()}${result.model ? ` / ${result.model}` : ""}`,
+          providerReason: result.decision.publicReason
+        });
+        providerStatus.textContent = "Live";
+      } else {
+        Sim.applyTurn(state, currentCommands);
+        providerStatus.textContent = "Local";
+      }
+    } catch (err) {
+      providerStatus.textContent = err.message || "Provider error";
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  function runBattle() {
+    if (providerEnabled.checked) return;
+    while (!state.winner) {
+      Sim.applyTurn(state, commands());
+    }
+    render();
+  }
+
+  function stopAuto() {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+      autoBtn.textContent = "Auto";
+    }
+  }
+
+  function toggleAuto() {
+    if (autoTimer) {
+      stopAuto();
+      return;
+    }
+    autoBtn.textContent = "Stop";
+    autoTimer = setInterval(() => {
+      if (state.winner) {
+        stopAuto();
+        render();
+        return;
+      }
+      nextTurn();
+    }, 700);
+  }
+
+  async function copyTrace() {
+    const trace = JSON.stringify(Sim.exportTrace(state), null, 2);
+    try {
+      await navigator.clipboard.writeText(trace);
+      copyTraceBtn.textContent = "Copied";
+      copyTraceBtn.classList.add("copy-ok");
+      setTimeout(() => {
+        copyTraceBtn.textContent = "Copy Trace";
+        copyTraceBtn.classList.remove("copy-ok");
+      }, 900);
+    } catch (err) {
+      console.log(trace);
+      copyTraceBtn.textContent = "Logged";
+      setTimeout(() => {
+        copyTraceBtn.textContent = "Copy Trace";
+      }, 900);
+    }
+  }
+
+  resetBtn.addEventListener("click", reset);
+  nextBtn.addEventListener("click", nextTurn);
+  runBtn.addEventListener("click", runBattle);
+  autoBtn.addEventListener("click", toggleAuto);
+  copyTraceBtn.addEventListener("click", copyTrace);
+  providerEnabled.addEventListener("change", render);
+  providerSelect.addEventListener("change", () => {
+    updateProviderModel();
+    render();
+  });
+  seedInput.addEventListener("change", reset);
+  commandA.addEventListener("input", render);
+  commandB.addEventListener("input", render);
+
+  loadProviders();
+  render();
+})();

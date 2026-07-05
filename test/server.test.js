@@ -38,4 +38,72 @@ async function testInvalidProviderFails() {
 async function testProviderShotUsesByokAndValidatesCandidate() {
   let captured;
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
-  const fetchMock = async (
+  const fetchMock = async (url, options) => {
+    captured = { url, options };
+    const payload = JSON.parse(options.body);
+    const candidates = JSON.parse(payload.messages[1].content).candidates;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                candidateId: candidates[0].candidateId,
+                publicReason: "Provider chose the clearest legal combo."
+              })
+            }
+          }
+        ]
+      })
+    };
+  };
+
+  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/agent/shot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "openai",
+      apiKey: "sk-live-user",
+      state,
+      team: "A",
+      command: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。"
+    })
+  });
+
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.json.provider, "openai");
+  assert.ok(result.json.decision.candidateId, "response should include selected candidate id");
+  assert.ok(result.json.candidate.combo.name, "response should include selected combo");
+  assert.ok(captured.url.endsWith("/chat/completions"), "OpenAI-compatible adapter should call chat completions");
+  assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
+  assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
+}
+
+async function testProviderShotRequiresKey() {
+  const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
+  const result = await request(createServer({ env: {} }), "/api/agent/shot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "openai",
+      state,
+      team: "A",
+      command: "hit B2 high"
+    })
+  });
+  assert.strictEqual(result.status, 400);
+  assert.strictEqual(result.json.error, "missing_api_key");
+}
+
+(async () => {
+  await testHealthAndProviders();
+  await testInvalidProviderFails();
+  await testProviderShotUsesByokAndValidatesCandidate();
+  await testProviderShotRequiresKey();
+  console.log("server tests passed");
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

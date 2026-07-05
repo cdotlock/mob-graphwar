@@ -29,4 +29,6 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   };
 }
 
-module.expor
+module.exports = {
+  buildOpenAICompatibleRequest
+};

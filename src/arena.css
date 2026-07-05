@@ -939,6 +939,142 @@ label {
   font-size: 16px;
 }
 
+.live-model-telemetry {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.55fr) minmax(0, 1.45fr);
+  gap: 8px;
+  border: 1px solid rgba(88, 212, 255, 0.3);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(90deg, rgba(88, 212, 255, 0.1), transparent 46%, rgba(255, 94, 104, 0.1)),
+    rgba(3, 7, 14, 0.78);
+}
+
+.model-signal-spine {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(217, 255, 71, 0.14), transparent 54%),
+    rgba(2, 6, 13, 0.78);
+}
+
+.model-signal-spine span,
+.model-signal-spine small {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.model-signal-spine b {
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 13px;
+}
+
+.model-signal-spine b.active {
+  border-color: var(--acid);
+  color: var(--acid);
+  box-shadow: 0 0 16px rgba(217, 255, 71, 0.2);
+}
+
+.telemetry-seat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.telemetry-seat {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), transparent 40%),
+    rgba(2, 6, 13, 0.72);
+}
+
+.telemetry-seat.team-a {
+  border-top: 3px solid var(--cyan);
+}
+
+.telemetry-seat.team-b {
+  border-top: 3px solid var(--red);
+}
+
+.telemetry-seat.active {
+  border-color: var(--acid);
+  transform: translateY(-1px);
+}
+
+.telemetry-seat.offline {
+  opacity: 0.52;
+}
+
+.telemetry-seat div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+}
+
+.telemetry-seat span,
+.telemetry-seat small,
+.telemetry-provider {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.telemetry-seat strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.telemetry-action-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(217, 255, 71, 0.18), rgba(88, 212, 255, 0.09)),
+    rgba(3, 7, 14, 0.8);
+  color: var(--acid);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
 .commander-board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2266,6 +2402,22 @@ code {
 
   .arena-director-hud {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .live-model-telemetry {
+    grid-template-columns: 1fr;
+  }
+
+  .telemetry-seat-grid {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .telemetry-seat {
+    flex: 0 0 220px;
+    scroll-snap-align: start;
   }
 
   .director-callout,

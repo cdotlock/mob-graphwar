@@ -730,6 +730,13 @@ function App() {
               autoBattle={autoBattle}
               playback={battlePlayback}
             />
+            <LiveModelTelemetryPanel
+              state={battleState}
+              match={match}
+              playback={battlePlayback}
+              lastDecision={visibleDecision}
+              activeUnitId={activeUnitId}
+            />
             <Battlefield state={battleState} latestEvent={latestEvent} />
             <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
             <BattleReplayRail state={battleState} />
@@ -1104,6 +1111,57 @@ function ArenaDirectorHud({ state, match, profile, activeTeam, activeUnitId, lat
         </motion.div>
       </AnimatePresence>
     </motion.section>
+  );
+}
+
+function LiveModelTelemetryPanel({ state, match, playback, lastDecision, activeUnitId }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const events = state.events || [];
+  const turnOrder = state.turnOrder || ["A1", "B1", "A2", "B2"];
+  const playbackAction = playback?.action || null;
+  const latestForSeat = (unitId) => [...events].reverse().find((event) => event.unitId === unitId || event.shooterId === unitId) || null;
+  const telemetryReason = (seat, event, isActive) => {
+    if (playbackAction?.unitId === seat.unitId) return playbackAction.publicReason || playbackAction.resultLabel || playbackAction.result || "frame action";
+    if (lastDecision?.unitId === seat.unitId || (isActive && lastDecision?.team === seat.team)) return lastDecision.publicReason || lastDecision.result || "model decision";
+    if (event) return event.resultLabel || event.combo?.name || "resolved shot";
+    return "waiting for model turn";
+  };
+  const actionForSeat = (seat, event, isActive) => {
+    if (playbackAction?.unitId === seat.unitId) return playbackAction.action || "frame";
+    if (lastDecision?.unitId === seat.unitId || (isActive && lastDecision?.team === seat.team)) return lastDecision.action || "thinking";
+    if (event) return event.result || event.resultLabel || "shot";
+    return isActive ? "thinking" : "standby";
+  };
+  return (
+    <section className="live-model-telemetry" data-testid="live-model-telemetry" aria-label="Live model telemetry">
+      <div className="model-signal-spine">
+        <span>turn order</span>
+        {turnOrder.map((unitId) => (
+          <b className={unitId === activeUnitId ? "active" : ""} key={unitId}>{unitId}</b>
+        ))}
+        <small>{playback?.active ? `frame ${playback.index}/${playback.total}` : state.winner ? "resolved" : "live decision loop"}</small>
+      </div>
+      <div className="telemetry-seat-grid">
+        {roster.map((seat) => {
+          const unit = state.units.find((item) => item.id === seat.unitId) || { hp: 0 };
+          const event = latestForSeat(seat.unitId);
+          const isActive = activeUnitId === seat.unitId && !state.winner;
+          const action = actionForSeat(seat, event, isActive);
+          const reason = telemetryReason(seat, event, isActive);
+          return (
+            <article className={`telemetry-seat team-${seat.team.toLowerCase()} ${isActive ? "active" : ""} ${unit.hp <= 0 ? "offline" : ""}`} key={seat.unitId}>
+              <div>
+                <span>{seat.unitId}</span>
+                <strong>{seat.displayName}</strong>
+              </div>
+              <small className="telemetry-provider">{seat.provider}{seat.model ? ` / ${seat.model}` : ""}</small>
+              <b className="telemetry-action-chip">{action}</b>
+              <small>{reason}</small>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

@@ -199,6 +199,21 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
 }
 
+function testLiveModelTelemetryMakesAiDuelVisible() {
+  assert.ok(main.includes("LiveModelTelemetryPanel"), "battle stage should include a named live model telemetry panel");
+  assert.ok(main.includes('data-testid="live-model-telemetry"'), "live model telemetry should be selectable for browser verification");
+  assert.ok(main.includes("model-signal-spine"), "telemetry should include a visible turn-order signal spine");
+  assert.ok(main.includes("telemetry-seat-grid"), "telemetry should show all AI seats as active combatants");
+  assert.ok(main.includes("telemetry-action-chip"), "telemetry should expose each model's latest action");
+  assert.ok(main.includes("telemetry-provider"), "telemetry should expose provider/model identity during the duel");
+  assert.ok(main.includes("telemetryReason"), "telemetry should derive a public model reason/result for spectators");
+  assert.ok(main.includes("playback?.action"), "telemetry should follow replay frames, not just final state");
+  assert.ok(css.includes(".live-model-telemetry"), "CSS should style live model telemetry as first-class game HUD");
+  assert.ok(css.includes(".model-signal-spine"), "CSS should style the turn-order signal spine");
+  assert.ok(css.includes(".telemetry-seat-grid"), "CSS should style the four-model telemetry grid");
+  assert.ok(css.includes(".telemetry-action-chip"), "CSS should style model action chips");
+}
+
 function testUiExplainsRetainedHandsAndSwapAction() {
   assert.ok(main.includes("Retained Hand"), "hand panel should use retained-hand game language");
   assert.ok(main.includes("Swap Hand x3"), "hand panel should explain the active model can swap hand up to three times");
@@ -275,6 +290,7 @@ testUiExposesBareRulesPacketForModels();
 testMobileHasGameDockForWatchOnlyLoop();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
+testLiveModelTelemetryMakesAiDuelVisible();
 testUiExplainsRetainedHandsAndSwapAction();
 testUiAutoStartsRankedAutoDuel();
 testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState();

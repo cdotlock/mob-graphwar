@@ -422,4 +422,558 @@ function App() {
             <Battlefield state={battleState} latestEvent={latestEvent} />
             <BattleReplayRail state={battleState} />
           </section>
-          <Co
+          <CommandConsole
+            activeTeam={activeTeam}
+            order={battleOrder}
+            setOrder={setBattleOrder}
+            onAutoDuel={runAutoDuel}
+            busy={busy}
+            canRun={Boolean(profile && match && !battleState.winner)}
+          />
+        </section>
+
+        <aside className="tactical-panel game-panel">
+          <HandRack hand={activeHand} activeTeam={displayTeam} />
+          <Timeline state={battleState} />
+          <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
+          <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
+          <ModelWarFeed state={battleState} lastDecision={visibleDecision} />
+          <ShotIntel event={latestEvent} state={battleState} />
+          <LeagueLab result={leagueResult} busy={leagueBusy} onRun={runLeague} />
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+function DuelCommanders({ state, match, activeTeam, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  return (
+    <section className="commander-board" data-testid="commander-board" aria-label="AI commanders">
+      {["A", "B"].map((team) => {
+        const health = teamHealth(state, team);
+        const seats = roster.filter((seat) => seat.team === team);
+        const active = activeTeam === team;
+        const testId = team === "A" ? "team-a-commander" : "team-b-commander";
+        return (
+          <article className={`commander-card commander-${team.toLowerCase()} ${active ? "active" : ""}`} data-testid={testId} key={team}>
+            <div className="commander-topline">
+              <span>Team {team}</span>
+              <b>{active ? "ACTIVE MODEL" : "STANDBY"}</b>
+            </div>
+            <div className="commander-names">
+              {seats.map((seat) => (
+                <strong key={seat.unitId}>{seat.unitId} {seat.displayName}</strong>
+              ))}
+            </div>
+            <div className="hp-track" aria-label={`Team ${team} HP`}>
+              <i style={{ width: `${health.max ? Math.max(0, (health.hp / health.max) * 100) : 0}%` }} />
+            </div>
+            <div className="commander-metrics">
+              <span>{health.hp}/{health.max} HP</span>
+              <span>{health.alive} online</span>
+              <span>{seats.map((seat) => seat.provider).join(" + ")}</span>
+            </div>
+            {lastDecision?.team === team ? <p className="commander-last">{lastDecision.action} · {lastDecision.result || lastDecision.publicReason}</p> : null}
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+function LaunchBay({
+  login,
+  setLogin,
+  profile,
+  match,
+  queueState,
+  busy,
+  canAutoDuel,
+  onSubmit,
+  onRestore,
+  onJoin,
+  onSync,
+  onAutoDuel
+}) {
+  const readySteps = [
+    { label: "Profile", value: profile ? profile.displayName : "Guest" },
+    { label: "Model", value: login.apiKey.trim() ? login.model : "Local fallback" },
+    { label: "Room", value: match ? match.status : queueState ? "queued" : "not matched" }
+  ];
+  return (
+    <section className="launch-bay" data-testid="launch-bay">
+      <div className="launch-header">
+        <div>
+          <span>Ranked launch bay</span>
+          <strong>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : "Login to arm model"}</strong>
+        </div>
+        <b>{match?.filledByAi ? "AI FILL" : match ? "2V2" : "READY"}</b>
+      </div>
+      <div className="launch-steps">
+        {readySteps.map((step) => (
+          <span key={step.label}><b>{step.label}</b>{step.value}</span>
+        ))}
+      </div>
+      <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={onSubmit} onRestore={onRestore} />
+      <MatchCard
+        profile={profile}
+        match={match}
+        queueState={queueState}
+        busy={busy}
+        canAutoDuel={canAutoDuel}
+        onJoin={onJoin}
+        onSync={onSync}
+        onAutoDuel={onAutoDuel}
+      />
+    </section>
+  );
+}
+
+function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
+  return (
+    <form className="login-card" onSubmit={onSubmit}>
+      <div className="panel-title"><LogIn size={18} /> Login / Model Key</div>
+      <label>Display name<input autoComplete="username" value={login.displayName} onChange={(e) => setLogin({ ...login, displayName: e.target.value })} /></label>
+      <label>Provider<select value={login.provider} onChange={(e) => setLogin({ ...login, provider: e.target.value })}>
+        <option value="deepseek">DeepSeek</option>
+        <option value="openai">OpenAI</option>
+        <option value="minimax">MiniMax</option>
+        <option value="zhipu">Zhipu</option>
+        <option value="anthropic">Anthropic</option>
+      </select></label>
+      <label>Model<input autoComplete="off" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })} /></label>
+      <label>API key<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
+      <div className="profile-vault">
+        <span>{profile ? `${profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked profile"}</span>
+        <button type="button" disabled={busy} onClick={onRestore}>Restore</button>
+      </div>
+      <button disabled={busy}>{profile ? "Update Session" : "Enter Arena"}</button>
+    </form>
+  );
+}
+
+function MatchCard({ profile, match, queueState, busy, canAutoDuel, onJoin, onSync, onAutoDuel }) {
+  const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id}` : "No room synced";
+  return (
+    <div className="match-card">
+      <div className="panel-title"><RadioTower size={18} /> Ranked Matchmaking</div>
+      <div className="match-status">
+        <span>{match ? match.mode : "No active match"}</span>
+        <strong>{match ? match.status : "waiting"}</strong>
+      </div>
+      <div className="queue-strip" data-testid="ranked-queue">
+        <Activity size={16} />
+        <span>{queueState ? `${queueState.queueSize}/4 humans queued` : match?.filledByAi ? "AI fallback active" : "Queue idle"}</span>
+      </div>
+      <div className="sync-strip" data-testid="room-sync">
+        <RefreshCw size={15} />
+        <span>{syncLabel}</span>
+        <button disabled={!profile || busy} onClick={onSync}>Sync</button>
+      </div>
+      <div className="match-actions">
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Wait for Humans</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Quick AI Fill</button>
+      </div>
+      <button className="auto-duel-button" disabled={busy || !canAutoDuel} onClick={onAutoDuel}><PlayCircle size={16} /> Start Auto Duel</button>
+    </div>
+  );
+}
+
+function RosterCard({ match }) {
+  const roster = match?.roster || [];
+  return (
+    <div className="roster-card">
+      <div className="panel-title"><Shield size={18} /> Seats</div>
+      {roster.length ? roster.map((seat) => (
+        <div className={`seat seat-${seat.team.toLowerCase()}`} key={seat.unitId}>
+          <span>{seat.unitId} / Team {seat.team}</span>
+          <strong>{seat.displayName}</strong>
+          <small>{seat.control} · {seat.provider}</small>
+        </div>
+      )) : <p className="empty-copy">Join matchmaking to fill your ally and rivals.</p>}
+    </div>
+  );
+}
+
+function LeaderboardPanel({ players, profile, onRefresh }) {
+  return (
+    <div className="leaderboard-panel" data-testid="leaderboard-panel">
+      <div className="panel-title"><ListOrdered size={18} /> Ranked Ladder</div>
+      <div className="leaderboard-list">
+        {players.length ? players.map((player, index) => (
+          <div className={`leaderboard-row ${profile?.id === player.id ? "you" : ""}`} key={player.id}>
+            <span>#{index + 1}</span>
+            <strong>{player.displayName}</strong>
+            <b>{player.rating}</b>
+            <small>{player.tier} · {player.games}G</small>
+          </div>
+        )) : <p className="empty-copy">Settle ranked matches to populate the ladder.</p>}
+      </div>
+      <button type="button" onClick={onRefresh}>Refresh Ladder</button>
+    </div>
+  );
+}
+
+function VersusBanner({ state, match, activeTeam }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const side = (team) => {
+    const health = teamHealth(state, team);
+    const names = roster.filter((seat) => seat.team === team).map((seat) => seat.displayName).join(" / ");
+    return { health, names: names || `Team ${team}` };
+  };
+  const a = side("A");
+  const b = side("B");
+  return (
+    <div className="versus-banner" data-testid="versus-banner">
+      <div className={`versus-side team-a ${activeTeam === "A" ? "active" : ""}`}>
+        <span>Team A</span>
+        <strong>{a.names}</strong>
+        <small>{a.health.hp}/{a.health.max} HP · {a.health.alive} online</small>
+      </div>
+      <div className="versus-core">
+        <b>VS</b>
+        <span>{state.winner ? `${state.winner} wins` : `Turn ${state.turn + 1}`}</span>
+      </div>
+      <div className={`versus-side team-b ${activeTeam === "B" ? "active" : ""}`}>
+        <span>Team B</span>
+        <strong>{b.names}</strong>
+        <small>{b.health.hp}/{b.health.max} HP · {b.health.alive} online</small>
+      </div>
+    </div>
+  );
+}
+
+function BattleHeader({ state, activeTeam, message }) {
+  return (
+    <div className="battle-header">
+      <div><span>Turn</span><strong>{state.turn}/{Sim.CONFIG.maxTurns}</strong></div>
+      <div><span>Active</span><strong>Team {activeTeam}</strong></div>
+      <div><span>Map</span><strong>{state.mapMeta.name} {state.mapMeta.difficulty}</strong></div>
+      <div><span>Status</span><strong>{state.winner ? `${state.winner} wins` : message}</strong></div>
+    </div>
+  );
+}
+
+function SpectatorHud({ state, activeTeam, match }) {
+  return (
+    <div className="spectator-hud" data-testid="spectator-hud">
+      <div>
+        <span>AI auto-battle</span>
+        <strong>{match ? "armed" : "offline"}</strong>
+      </div>
+      <div>
+        <span>Model action</span>
+        <strong>shot / swap_hand</strong>
+      </div>
+      <div>
+        <span>Viewer state</span>
+        <strong>{state.winner ? "settled" : activeTeam === "-" ? "standby" : "watch only"}</strong>
+      </div>
+    </div>
+  );
+}
+
+function BattlefieldBackdrop({ state }) {
+  const complexity = state.mapMeta?.complexity || {};
+  return (
+    <g className="battlefield-backdrop" aria-hidden="true">
+      <rect x="0" y="0" width="1000" height="600" fill="url(#skyField)" />
+      {Array.from({ length: 11 }, (_, i) => <line key={`x-${i}`} className="grid-line" x1={i * 100} y1="0" x2={i * 100} y2="600" />)}
+      {Array.from({ length: 7 }, (_, i) => <line key={`y-${i}`} className="grid-line" x1="0" y1={i * 100} x2="1000" y2={i * 100} />)}
+      <text className="field-watermark" x="34" y="64">DENSITY {complexity.density || "0.000"}</text>
+      <text className="field-watermark right" x="966" y="64" textAnchor="end">CHOKES {complexity.chokePoints || 0}</text>
+      <path className="terrain-ridge ridge-far" d={terrainLinePath(8)} />
+      <path className="terrain-ridge ridge-mid" d={terrainLinePath(4)} />
+    </g>
+  );
+}
+
+function renderObstacleFacets(obstacle, index) {
+  const showLabel = index % 4 === 0 || obstacle.h >= 30 || obstacle.y >= 38;
+  return (
+    <g key={obstacle.id} className="obstacle-cluster">
+      <polygon className="obstacle-shadow" points={obstacleFacetPoints(obstacle, "shadow")} />
+      <polygon className="obstacle-facet" points={obstacleFacetPoints(obstacle, "body")} />
+      <polygon className="obstacle-cap" points={obstacleFacetPoints(obstacle, "cap")} />
+      {showLabel ? (
+        <text className="obstacle-label" x={sx(obstacle.x + obstacle.w / 2)} y={sy(obstacle.y + obstacle.h) + 18} textAnchor="middle">
+          {obstacleLabel(obstacle)}
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
+function Battlefield({ state, latestEvent }) {
+  const complexity = state.mapMeta?.complexity || {};
+  const latestPath = state.paths[state.paths.length - 1];
+  const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
+  return (
+    <div className="battlefield-frame" data-testid="battlefield-frame">
+      <div className="map-intel-strip" data-testid="map-intel-strip">
+        <span><b>{state.mapMeta.name}</b> difficulty {state.mapMeta.difficulty}</span>
+        <span>{complexity.obstacleCount || 0} blockers</span>
+        <span>{complexity.tallCount || 0} towers</span>
+        <span>{complexity.ceilingCount || 0} ceilings</span>
+        <span>{complexity.suspendedShelves || 0} shelves</span>
+        <span className="route-pressure">{complexity.routePressure || 0} pressure</span>
+        <span className="battlefield-depth">{complexity.layerCount || 0} layers</span>
+      </div>
+      <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
+        <defs>
+          <linearGradient id="arenaGround" x1="0" x2="1">
+            <stop offset="0%" stopColor="#173b35" />
+            <stop offset="62%" stopColor="#2f5139" />
+            <stop offset="100%" stopColor="#121b21" />
+          </linearGradient>
+          <linearGradient id="skyField" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#071018" />
+            <stop offset="48%" stopColor="#081528" />
+            <stop offset="100%" stopColor="#100a14" />
+          </linearGradient>
+          <linearGradient id="obstacleFace" x1="0" x2="1">
+            <stop offset="0%" stopColor="#59646d" />
+            <stop offset="55%" stopColor="#2e3842" />
+            <stop offset="100%" stopColor="#151b24" />
+          </linearGradient>
+          <filter id="impactGlow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <BattlefieldBackdrop state={state} />
+        <path className="terrain" d={terrainPath()} />
+        <path className="terrain-ridge ridge-near" d={terrainLinePath(1.4)} />
+        <g className="obstacle-layer">
+          {state.obstacles.map(renderObstacleFacets)}
+        </g>
+        {state.paths.map((path, index) => (
+          <polyline key={`${path.turn}-${index}`} className={`shot-path team-${path.team.toLowerCase()} ${index === state.paths.length - 1 ? "latest" : ""}`} points={pointList(path.points)} />
+        ))}
+        {impactPoint ? (
+          <g className={`impact-burst team-${latestPath?.team?.toLowerCase() || "a"}`} filter="url(#impactGlow)">
+            <circle cx={sx(impactPoint.x)} cy={sy(impactPoint.y)} r="25" />
+            <circle cx={sx(impactPoint.x)} cy={sy(impactPoint.y)} r="8" />
+            <path d={`M${sx(impactPoint.x) - 34},${sy(impactPoint.y)} L${sx(impactPoint.x) + 34},${sy(impactPoint.y)} M${sx(impactPoint.x)},${sy(impactPoint.y) - 34} L${sx(impactPoint.x)},${sy(impactPoint.y) + 34}`} />
+          </g>
+        ) : null}
+        {state.units.map((unit) => (
+          <g key={unit.id} className={`unit team-${unit.team.toLowerCase()} ${unit.hp <= 0 ? "dead" : ""}`}>
+            <circle className="unit-aura" cx={sx(unit.x)} cy={sy(unit.y)} r={Sim.CONFIG.unitRadius * 14} />
+            <circle cx={sx(unit.x)} cy={sy(unit.y)} r={Sim.CONFIG.unitRadius * 10} />
+            <text x={sx(unit.x)} y={sy(unit.y) - 32} textAnchor="middle">{unit.id} {unit.hp}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function BattleReplayRail({ state }) {
+  const events = state.events.slice(-10);
+  return (
+    <div className="battle-replay-rail" data-testid="battle-replay-rail">
+      {events.length ? events.map((event) => (
+        <div className={`replay-chip team-${event.team.toLowerCase()} ${event.result}`} key={`${event.turn}-${event.team}-${event.candidateId || event.result}`}>
+          <span>T{event.turn + 1}</span>
+          <strong>{event.team} {event.resultLabel}</strong>
+          <small>{event.combo?.name || "Mixed Curve"}</small>
+        </div>
+      )) : <span className="empty-copy">No battle events yet.</span>}
+    </div>
+  );
+}
+
+function CommandConsole({ activeTeam, order, setOrder, onAutoDuel, busy, canRun }) {
+  return (
+    <div className="command-console">
+      <div className="console-copy">
+        <Crosshair size={18} />
+        <div>
+          <strong>Spectator standing order</strong>
+          <span>Give your AI one short instruction before the duel starts. After that, watch only.</span>
+        </div>
+      </div>
+      <textarea maxLength="80" value={order} onChange={(e) => setOrder(e.target.value)} placeholder="Optional 80-character standing order before auto duel" />
+      <div className="command-actions">
+        <button className="fire-button" disabled={busy || !canRun} onClick={onAutoDuel}><PlayCircle size={16} /> Watch Auto Duel</button>
+      </div>
+    </div>
+  );
+}
+
+function HandRack({ hand, activeTeam }) {
+  return (
+    <div className="hand-rack">
+      <div className="panel-title"><KeyRound size={18} /> Retained Hand</div>
+      <p className="hand-rule">Team {activeTeam} cards stay after shots. Active model may choose Swap Hand x3 before firing.</p>
+      <div className="card-grid">
+        {hand.map((card) => (
+          <article className={`battle-card ${card.rarity}`} key={card.instanceId}>
+            <span>{card.family}</span>
+            <h3>{card.label}<b>{card.cost}E</b></h3>
+            <p>{card.description}</p>
+            <div>{card.tags.map((tag) => <small key={tag}>{tag}</small>)}</div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Timeline({ state }) {
+  return (
+    <div className="timeline-card">
+      <div className="panel-title"><Swords size={18} /> Battle Timeline</div>
+      <div className="timeline-grid">
+        {Array.from({ length: Sim.CONFIG.maxTurns }, (_, turn) => {
+          const event = state.events.find((item) => item.turn === turn);
+          return <span key={turn} className={`tick ${event ? event.result : ""} ${turn === state.turn ? "active" : ""}`}>{turn + 1}</span>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AutoDuelPanel({ autoBattle, state }) {
+  const score = state.score;
+  const finalEvent = autoBattle?.finalEvent;
+  return (
+    <div className="auto-duel-panel" data-testid="auto-duel-panel">
+      <div className="panel-title"><PlayCircle size={18} /> Auto Duel</div>
+      <div className="auto-duel-summary">
+        <span><b>{autoBattle ? autoBattle.resolvedTurns : state.events.length}</b> turns</span>
+        <span><b>{state.winner || "live"}</b> result</span>
+        <span><b>{score ? score.rank : "-"}</b> rank</span>
+      </div>
+      {autoBattle ? (
+        <div className="auto-duel-result">
+          <strong>{autoBattle.mode} · Team {autoBattle.playerTeam}</strong>
+          <p>{finalEvent ? `${finalEvent.provider} finished with ${finalEvent.resultLabel}` : "Battle resolved."}</p>
+          <small>{(autoBattle.providers || []).join(" vs ")}</small>
+        </div>
+      ) : (
+        <p className="empty-copy">Start a ranked match, then let the AIs play the full fight while you watch the battlefield and feed.</p>
+      )}
+    </div>
+  );
+}
+
+function ModelDecisionStack({ state, lastDecision }) {
+  const events = state.events.slice(-6).reverse();
+  return (
+    <div className="model-decision-stack" data-testid="model-decision-stack">
+      <div className="panel-title"><Activity size={18} /> Decision Stack</div>
+      {lastDecision ? (
+        <div className={`decision-prime team-${String(lastDecision.team).toLowerCase()}`}>
+          <span>{lastDecision.provider || "Model"}</span>
+          <strong>{lastDecision.action}</strong>
+          <p>{lastDecision.publicReason || lastDecision.result}</p>
+        </div>
+      ) : null}
+      <div className="decision-list">
+        {events.length ? events.map((event, index) => (
+          <div className={`decision-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.candidateId || index}`}>
+            <i>{String(index + 1).padStart(2, "0")}</i>
+            <div>
+              <span>{event.provider || "Local AI"} · Team {event.team}</span>
+              <strong>{event.combo?.name || "Mixed Curve"}</strong>
+              <small>{event.resultLabel} into {event.targetId}</small>
+            </div>
+          </div>
+        )) : <p className="empty-copy">Model choices appear here after the duel starts.</p>}
+      </div>
+    </div>
+  );
+}
+
+function ModelWarFeed({ state, lastDecision }) {
+  const events = state.events.slice(-5).reverse();
+  return (
+    <div className="model-war-feed" data-testid="model-war-feed">
+      <div className="panel-title"><Bot size={18} /> Model War Feed</div>
+      {lastDecision ? (
+        <div className={`feed-prime team-${String(lastDecision.team).toLowerCase()}`}>
+          <span>{lastDecision.provider || "Model"}</span>
+          <strong>{lastDecision.action}</strong>
+          <p>{lastDecision.result || lastDecision.publicReason}</p>
+        </div>
+      ) : (
+        <div className="feed-prime idle">
+          <span>Pre-match</span>
+          <strong>awaiting command</strong>
+          <p>No model decision yet.</p>
+        </div>
+      )}
+      <div className="feed-list">
+        {events.length ? events.map((event) => (
+          <div className={`feed-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.candidateId}`}>
+            <span>T{event.turn + 1} · Team {event.team}</span>
+            <strong>{event.resultLabel}</strong>
+            <small>{event.provider || "Local AI"} · {event.combo?.name || "Mixed Curve"}</small>
+          </div>
+        )) : <p className="empty-copy">The duel feed will fill as models choose swap_hand or shot.</p>}
+      </div>
+    </div>
+  );
+}
+
+function ShotIntel({ event, state }) {
+  return (
+    <div className="shot-intel">
+      <div className="panel-title"><Bot size={18} /> AI Battle Read</div>
+      {event ? (
+        <div className="intel-list">
+          <span>Team <b>{event.team}</b></span>
+          <span>Result <b>{event.resultLabel}</b></span>
+          <span>Combo <b>{event.combo?.name || "Mixed Curve"}</b></span>
+          <span>Provider <b>{event.provider || "Local AI"}</b></span>
+          <code>{event.expression}</code>
+        </div>
+      ) : (
+        <p className="empty-copy">No shots yet. Login, match, then watch the auto duel.</p>
+      )}
+      {state.score ? <div className="final-score">Final {state.score.rank} · {state.score.value}</div> : null}
+    </div>
+  );
+}
+
+function LeagueLab({ result, busy, onRun }) {
+  const leaders = result?.leaderboard || [];
+  const matches = result?.matches || [];
+  return (
+    <div className="league-lab" data-testid="league-lab">
+      <div className="panel-title"><Cpu size={18} /> Model League Lab</div>
+      <div className="league-headline">
+        <div>
+          <strong>{leaders[0] ? leaders[0].label : "No league run yet"}</strong>
+          <span>{leaders[0] ? `${leaders[0].rating} rating leader` : "Run models through ranked seeds"}</span>
+        </div>
+        <button disabled={busy} onClick={onRun}><PlayCircle size={16} /> Run</button>
+      </div>
+      <div className="league-table">
+        {leaders.length ? leaders.map((row, index) => (
+          <div className="league-row" key={row.id}>
+            <span>#{index + 1}</span>
+            <strong>{row.label}</strong>
+            <b>{row.rating}</b>
+            <small>{row.wins}-{row.losses}-{row.draws}</small>
+          </div>
+        )) : <p className="empty-copy">This runs the same bare rules contract as live model turns, with API keys redacted from results.</p>}
+      </div>
+      {matches.length ? (
+        <div className="league-matches">
+          {matches.slice(0, 3).map((match) => (
+            <span key={match.id}>{match.id} · seed {match.seed} · {match.winner} · {match.events} turns</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")).render(<App />);

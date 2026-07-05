@@ -11,10 +11,13 @@
     width: 100,
     height: 60,
     viewPadding: 0,
-    maxTurns: 14,
-    handSize: 4,
+    maxTurns: 16,
+    handSize: 5,
     baseEnergy: 4,
-    maxEnergy: 7,
+    maxEnergy: 8,
+    maxCardsPerShot: 3,
+    maxShapeCards: 2,
+    maxModifierCards: 1,
     maxCommandLength: 80,
     sampleStep: 0.35,
     unitRadius: 2.4,
@@ -26,60 +29,270 @@
     arc: {
       id: "arc",
       label: "Arc",
+      family: "lift",
       cost: 2,
       rarity: "basic",
-      description: "Parabolic lift. Best for clearing towers."
+      tags: ["clearance", "stable"],
+      component: "arc",
+      amplitudes: [14, 20, 26, 32],
+      description: "Reliable parabolic lift for clearing towers."
+    },
+    low_lob: {
+      id: "low_lob",
+      label: "Low Lob",
+      family: "lift",
+      cost: 1,
+      rarity: "basic",
+      tags: ["cheap", "flat"],
+      component: "arc",
+      amplitudes: [7, 10, 13, -7],
+      description: "Cheap shallow lift when energy is tight."
+    },
+    sky_hook: {
+      id: "sky_hook",
+      label: "Sky Hook",
+      family: "lift",
+      cost: 3,
+      rarity: "rare",
+      tags: ["clearance", "high"],
+      component: "arc",
+      amplitudes: [28, 36, 44],
+      description: "Big over-wall lift with a high ceiling."
+    },
+    overpass: {
+      id: "overpass",
+      label: "Overpass",
+      family: "lift",
+      cost: 4,
+      rarity: "rare",
+      tags: ["clearance", "expensive"],
+      component: "arc",
+      amplitudes: [38, 46, 54],
+      description: "Huge arc that solves brutal central cover."
     },
     bend: {
       id: "bend",
       label: "Bend",
+      family: "bend",
       cost: 2,
       rarity: "basic",
+      tags: ["corner", "stable"],
+      component: "bend",
+      amplitudes: [10, 16, 22, -12],
       description: "Sharp triangular lift or dip."
+    },
+    knife_bend: {
+      id: "knife_bend",
+      label: "Knife Bend",
+      family: "bend",
+      cost: 3,
+      rarity: "rare",
+      tags: ["corner", "volatile", "damage"],
+      component: "bend",
+      amplitudes: [24, 31, -22],
+      effect: { damageBonus: 8, volatility: 16 },
+      description: "Hard bend with extra damage and extra risk."
+    },
+    tunnel: {
+      id: "tunnel",
+      label: "Tunnel",
+      family: "bend",
+      cost: 2,
+      rarity: "common",
+      tags: ["thread", "corner"],
+      component: "hook",
+      amplitudes: [12, 18, -12, -18],
+      description: "Asymmetric hook for threading around slots."
     },
     wave: {
       id: "wave",
       label: "Wave",
+      family: "wave",
       cost: 3,
       rarity: "rare",
+      tags: ["clearance", "smooth"],
+      component: "wave",
+      amplitudes: [18, 24, 32, 38],
       description: "Half sine wave for smooth high arcs."
     },
     sway: {
       id: "sway",
       label: "Sway",
+      family: "wave",
       cost: 3,
       rarity: "common",
+      tags: ["weave", "volatile"],
+      component: "sway",
+      amplitudes: [9, 15, 21, -15, -21],
       description: "Full sine wave for vertical weaving."
+    },
+    ripple: {
+      id: "ripple",
+      label: "Ripple",
+      family: "wave",
+      cost: 2,
+      rarity: "common",
+      tags: ["weave", "cheap"],
+      component: "ripple",
+      amplitudes: [6, 10, 14, -10, -14],
+      description: "Small oscillation for nudging a curve."
+    },
+    wobble: {
+      id: "wobble",
+      label: "Wobble",
+      family: "risk",
+      cost: 1,
+      rarity: "common",
+      tags: ["volatile", "cheap"],
+      component: "ripple",
+      amplitudes: [12, 18, -12, -18],
+      effect: { volatility: 12 },
+      description: "Cheap unstable correction with odd misses."
     },
     cubic: {
       id: "cubic",
       label: "Cubic",
+      family: "control",
       cost: 3,
       rarity: "rare",
+      tags: ["dive", "control"],
+      component: "cubic",
+      amplitudes: [12, 20, 28, -12, -20, -28],
       description: "Early rise and late dive, or the reverse."
     },
     clamp: {
       id: "clamp",
       label: "Clamp",
+      family: "control",
       cost: 1,
       rarity: "common",
+      tags: ["shelf", "cheap"],
+      component: "clamp",
+      amplitudes: [5, 9, -5, -9],
       description: "Flattens the middle of a shot."
+    },
+    shelf: {
+      id: "shelf",
+      label: "Shelf",
+      family: "control",
+      cost: 2,
+      rarity: "common",
+      tags: ["shelf", "precision"],
+      component: "shelf",
+      amplitudes: [10, 16, -10, -16],
+      effect: { precisionBonus: 18 },
+      description: "Holds the mid-curve steady near ledges."
+    },
+    late_dive: {
+      id: "late_dive",
+      label: "Late Dive",
+      family: "risk",
+      cost: 2,
+      rarity: "common",
+      tags: ["dive", "volatile"],
+      component: "dive",
+      amplitudes: [-8, -14, -20, 10],
+      effect: { volatility: 10 },
+      description: "Drops late to punish elevated targets."
+    },
+    booster: {
+      id: "booster",
+      label: "Booster",
+      family: "risk",
+      cost: 2,
+      rarity: "rare",
+      tags: ["damage", "volatile"],
+      component: "arc",
+      amplitudes: [18, 28, 38, -18],
+      effect: { damageBonus: 12, volatility: 18 },
+      description: "Adds force, damage, and risk."
+    },
+    needle: {
+      id: "needle",
+      label: "Needle",
+      family: "modifier",
+      cost: 2,
+      rarity: "common",
+      tags: ["precision", "thread"],
+      component: "spike",
+      amplitudes: [10, 16, 22, -10],
+      effect: { precisionBonus: 24 },
+      description: "Narrow mid-flight correction for tight shots."
+    },
+    anchor: {
+      id: "anchor",
+      label: "Anchor",
+      family: "modifier",
+      cost: 1,
+      rarity: "basic",
+      tags: ["precision", "cheap"],
+      component: "clamp",
+      amplitudes: [4, 7, -4, -7],
+      effect: { precisionBonus: 12 },
+      description: "Small stabilizer that favors clean paths."
+    },
+    prism: {
+      id: "prism",
+      label: "Prism",
+      family: "modifier",
+      cost: 3,
+      rarity: "rare",
+      tags: ["thread", "precision"],
+      component: "hook",
+      amplitudes: [18, 24, -18, -24],
+      effect: { precisionBonus: 16 },
+      description: "Late hook for side-door angles."
+    },
+    mortar: {
+      id: "mortar",
+      label: "Mortar",
+      family: "risk",
+      cost: 3,
+      rarity: "rare",
+      tags: ["high", "damage", "volatile"],
+      component: "spike",
+      amplitudes: [24, 34, 44],
+      effect: { damageBonus: 10, volatility: 22 },
+      description: "Tall punchy crest that can overcook."
+    },
+    glide: {
+      id: "glide",
+      label: "Glide",
+      family: "control",
+      cost: 2,
+      rarity: "common",
+      tags: ["smooth", "precision"],
+      component: "lift",
+      amplitudes: [8, 14, 20, -8],
+      effect: { precisionBonus: 10 },
+      description: "Smooth early lift that keeps the tail readable."
     }
   };
 
-  const DECK = [
+  const STARTER_POOL = [
     "arc",
     "arc",
-    "arc",
-    "bend",
+    "low_lob",
     "bend",
     "bend",
     "wave",
-    "wave",
     "sway",
-    "sway",
+    "ripple",
     "cubic",
-    "clamp"
+    "clamp",
+    "shelf",
+    "late_dive",
+    "needle",
+    "anchor",
+    "tunnel",
+    "glide",
+    "sky_hook",
+    "knife_bend",
+    "wobble",
+    "booster",
+    "prism",
+    "mortar",
+    "overpass"
   ];
 
   const BASE_SCENARIO = {
@@ -95,6 +308,78 @@
       { id: "B2", team: "B", name: "B2", x: 75, y: 22, hp: 100 }
     ]
   };
+
+  const MAP_TEMPLATES = [
+    {
+      id: "basalt-gate",
+      name: "Basalt Gate",
+      difficulty: 74,
+      obstacles: [
+        { id: "gate-spire", x: 42, y: 0, w: 7, h: 35 },
+        { id: "right-slit", x: 61, y: 0, w: 6, h: 22 },
+        { id: "bridge-block", x: 52, y: 35, w: 15, h: 5 },
+        { id: "left-lip", x: 30, y: 17, w: 8, h: 4 }
+      ],
+      units: [
+        { id: "A1", team: "A", name: "A1", x: 13, lift: 9 },
+        { id: "A2", team: "A", name: "A2", x: 24, lift: 6 },
+        { id: "B1", team: "B", name: "B1", x: 87, lift: 8 },
+        { id: "B2", team: "B", name: "B2", x: 76, lift: 17 }
+      ]
+    },
+    {
+      id: "needle-canyon",
+      name: "Needle Canyon",
+      difficulty: 81,
+      obstacles: [
+        { id: "left-needle", x: 35, y: 0, w: 5, h: 31 },
+        { id: "center-needle", x: 50, y: 0, w: 6, h: 42 },
+        { id: "right-needle", x: 66, y: 0, w: 5, h: 28 },
+        { id: "ceiling-slab", x: 42, y: 43, w: 20, h: 4 }
+      ],
+      units: [
+        { id: "A1", team: "A", name: "A1", x: 12, lift: 8 },
+        { id: "A2", team: "A", name: "A2", x: 23, lift: 13 },
+        { id: "B1", team: "B", name: "B1", x: 88, lift: 9 },
+        { id: "B2", team: "B", name: "B2", x: 77, lift: 15 }
+      ]
+    },
+    {
+      id: "upper-lock",
+      name: "Upper Lock",
+      difficulty: 78,
+      obstacles: [
+        { id: "lock-tower", x: 45, y: 0, w: 8, h: 29 },
+        { id: "upper-lock", x: 49, y: 31, w: 19, h: 6 },
+        { id: "low-wall", x: 61, y: 0, w: 5, h: 16 },
+        { id: "left-shelf", x: 28, y: 21, w: 10, h: 4 }
+      ],
+      units: [
+        { id: "A1", team: "A", name: "A1", x: 14, lift: 8 },
+        { id: "A2", team: "A", name: "A2", x: 25, lift: 18 },
+        { id: "B1", team: "B", name: "B1", x: 86, lift: 7 },
+        { id: "B2", team: "B", name: "B2", x: 73, lift: 14 }
+      ]
+    },
+    {
+      id: "split-roof",
+      name: "Split Roof",
+      difficulty: 86,
+      obstacles: [
+        { id: "left-roof", x: 33, y: 25, w: 15, h: 5 },
+        { id: "center-pillar", x: 49, y: 0, w: 8, h: 39 },
+        { id: "right-roof", x: 58, y: 32, w: 15, h: 5 },
+        { id: "right-pillar", x: 70, y: 0, w: 6, h: 24 },
+        { id: "low-bunker", x: 24, y: 0, w: 6, h: 14 }
+      ],
+      units: [
+        { id: "A1", team: "A", name: "A1", x: 12, lift: 7 },
+        { id: "A2", team: "A", name: "A2", x: 26, lift: 20 },
+        { id: "B1", team: "B", name: "B1", x: 88, lift: 8 },
+        { id: "B2", team: "B", name: "B2", x: 74, lift: 19 }
+      ]
+    }
+  ];
 
   function hashString(value) {
     let hash = 2166136261;
@@ -139,19 +424,47 @@
     return 4.2 + 1.2 * Math.sin(x / 8) + 0.8 * Math.sin(x / 17 + 1.5);
   }
 
-  function dealHand(seed, turn, team) {
-    const rng = mulberry32(hashString(`${seed}:${turn}:${team}:hand`));
-    const pile = DECK.map((id, index) => ({ id, instanceId: `${id}-${index}` }));
+  function shuffle(items, seed) {
+    const rng = mulberry32(hashString(seed));
+    const pile = items.slice();
     for (let i = pile.length - 1; i > 0; i -= 1) {
       const j = Math.floor(rng() * (i + 1));
       const temp = pile[i];
       pile[i] = pile[j];
       pile[j] = temp;
     }
-    return pile.slice(0, CONFIG.handSize).map((item, slot) => ({
+    return pile;
+  }
+
+  function createTeamDeck(seed, team) {
+    const shuffled = shuffle(STARTER_POOL, `${seed}:${team}:starter-deck`);
+    const required = ["arc", "bend", "wave", "low_lob", "anchor", "needle"];
+    const deck = required.concat(shuffled);
+    return deck.slice(0, 24);
+  }
+
+  function dealHand(seed, turn, team) {
+    const deck = createTeamDeck(seed, team);
+    const pile = shuffle(
+      deck.map((id, index) => ({ id, instanceId: `${id}-${index}` })),
+      `${seed}:${turn}:${team}:hand`
+    );
+    const hand = pile.slice(0, CONFIG.handSize).map((item, slot) => ({
       ...CARD_LIBRARY[item.id],
       instanceId: `${team}${turn}-${slot}-${item.id}`
     }));
+    const shapeCount = hand.filter((card) => card.family !== "modifier").length;
+    if (shapeCount < 2) {
+      const replacements = ["arc", "bend"].slice(0, 2 - shapeCount);
+      for (let i = 0; i < replacements.length; i += 1) {
+        const id = replacements[i];
+        hand[hand.length - 1 - i] = {
+          ...CARD_LIBRARY[id],
+          instanceId: `${team}${turn}-repair-${i}-${id}`
+        };
+      }
+    }
+    return hand;
   }
 
   function getEnergy(turn) {
@@ -177,16 +490,57 @@
     };
   }
 
+  function generateMap(seed) {
+    const rng = mulberry32(hashString(`${seed}:map`));
+    const template = clone(MAP_TEMPLATES[Math.floor(rng() * MAP_TEMPLATES.length)]);
+    const jitter = (amount) => Math.round((rng() * amount * 2 - amount) * 10) / 10;
+    const obstacles = template.obstacles.map((obstacle, index) => ({
+      ...obstacle,
+      x: clamp(round(obstacle.x + jitter(index === 0 ? 2 : 4), 1), 8, CONFIG.width - obstacle.w - 8),
+      h: clamp(round(obstacle.h + jitter(4), 1), 10, 45)
+    }));
+    const units = template.units.map((unit, index) => {
+      const x = clamp(round(unit.x + jitter(index % 2 === 0 ? 2 : 3), 1), 6, CONFIG.width - 6);
+      return {
+        id: unit.id,
+        team: unit.team,
+        name: unit.name,
+        x,
+        y: round(groundY(x) + unit.lift + rng() * 2.2, 1),
+        hp: 100
+      };
+    });
+    const tallCount = obstacles.filter((obstacle) => obstacle.h >= 24).length;
+    const density = obstacles.reduce((sum, obstacle) => sum + obstacle.w * obstacle.h, 0) / (CONFIG.width * CONFIG.height);
+    const difficulty = clamp(Math.round(template.difficulty + tallCount * 2 + density * 80 + rng() * 5), 60, 95);
+    return {
+      id: template.id,
+      name: template.name,
+      difficulty,
+      obstacles,
+      units
+    };
+  }
+
   function createInitialState(options) {
     const opts = options || {};
+    const seed = Number.isFinite(Number(opts.seed)) ? Number(opts.seed) : 7351;
+    const map = generateMap(seed);
     return {
-      seed: Number.isFinite(Number(opts.seed)) ? Number(opts.seed) : 7351,
+      seed,
       turn: 0,
       config: clone(CONFIG),
-      obstacles: clone(BASE_SCENARIO.obstacles),
-      units: clone(BASE_SCENARIO.units),
+      mapMeta: {
+        id: map.id,
+        name: map.name,
+        difficulty: map.difficulty
+      },
+      obstacles: clone(map.obstacles),
+      units: clone(map.units),
+      initialUnits: clone(map.units),
       events: [],
       paths: [],
+      score: null,
       winner: null,
       reason: "running"
     };
@@ -237,24 +591,45 @@
   }
 
   function componentValue(component, tau) {
-    if (component.id === "arc") {
+    const kind = component.component || component.id;
+    if (kind === "arc") {
       return component.amp * 4 * tau * (1 - tau);
     }
-    if (component.id === "bend") {
+    if (kind === "lift") {
+      return component.amp * Math.sin(Math.PI * tau) * (1 - 0.25 * tau);
+    }
+    if (kind === "bend") {
       return component.amp * (1 - Math.abs(2 * tau - 1));
     }
-    if (component.id === "wave") {
+    if (kind === "hook") {
+      return component.amp * Math.sin(Math.PI * tau) * (tau < 0.58 ? 0.55 : 1.25);
+    }
+    if (kind === "wave") {
       return component.amp * Math.sin(Math.PI * tau);
     }
-    if (component.id === "sway") {
+    if (kind === "sway") {
       return component.amp * Math.sin(Math.PI * 2 * tau);
     }
-    if (component.id === "cubic") {
+    if (kind === "ripple") {
+      return component.amp * Math.sin(Math.PI * 3 * tau) * 0.55;
+    }
+    if (kind === "cubic") {
       return component.amp * 6.2 * tau * (1 - tau) * (tau - 0.5);
     }
-    if (component.id === "clamp") {
+    if (kind === "dive") {
+      return component.amp * tau * tau * (1.35 - 0.35 * tau);
+    }
+    if (kind === "spike") {
+      const spike = Math.max(0, 1 - Math.abs(tau - 0.62) / 0.22);
+      return component.amp * spike;
+    }
+    if (kind === "clamp") {
       const shelf = tau > 0.26 && tau < 0.74 ? component.amp : 0;
       return shelf * 0.65;
+    }
+    if (kind === "shelf") {
+      const shelf = tau > 0.18 && tau < 0.82 ? component.amp : component.amp * 0.25;
+      return shelf * 0.72;
     }
     return 0;
   }
@@ -375,25 +750,17 @@
   }
 
   function cardAmplitudeOptions(card, directive) {
-    if (card.id === "arc" || card.id === "wave") {
-      if (directive.low && !directive.high) return [8, 12, -8];
-      if (directive.high) return [18, 24, 30, 36, -10];
-      return [12, 18, 24, -8];
+    const values = Array.isArray(card.amplitudes) ? card.amplitudes.slice() : [0];
+    if (directive.high && card.tags.includes("clearance")) {
+      return values.concat(values.filter((amp) => amp > 0).map((amp) => round(amp * 1.18, 1)));
     }
-    if (card.id === "bend") {
-      if (directive.bend) return [14, 20, 26, -14, -20];
-      return [9, 15, 21, -10];
+    if (directive.low && !directive.high) {
+      return values.filter((amp) => amp <= 16);
     }
-    if (card.id === "sway") {
-      return [8, 13, 18, -8, -13, -18];
+    if (directive.bend && card.tags.includes("corner")) {
+      return values.concat(values.filter((amp) => Math.abs(amp) >= 16).map((amp) => round(amp * 1.1, 1)));
     }
-    if (card.id === "cubic") {
-      return [10, 18, 26, -10, -18, -26];
-    }
-    if (card.id === "clamp") {
-      return [5, 10, -5, -10];
-    }
-    return [0];
+    return values;
   }
 
   function generateComponentCombos(hand, energy, directive) {
@@ -403,15 +770,32 @@
     for (const card of cards) {
       const existing = options.slice();
       for (const base of existing) {
-        if (base.components.length >= 2) continue;
+        if (base.components.length >= CONFIG.maxCardsPerShot) continue;
         const nextCost = base.cost + card.cost;
         if (nextCost > energy) continue;
+        const nextComponents = base.components.concat({
+          id: card.id,
+          cardId: card.instanceId,
+          label: card.label,
+          family: card.family,
+          tags: card.tags.slice(),
+          effect: card.effect || null,
+          component: card.component,
+          amp: 0
+        });
+        const shapeCount = nextComponents.filter((component) => component.family !== "modifier").length;
+        const modifierCount = nextComponents.filter((component) => component.family === "modifier").length;
+        if (shapeCount > CONFIG.maxShapeCards || modifierCount > CONFIG.maxModifierCards) continue;
         for (const amp of cardAmplitudeOptions(card, directive)) {
           options.push({
             components: base.components.concat({
               id: card.id,
               cardId: card.instanceId,
               label: card.label,
+              family: card.family,
+              tags: card.tags.slice(),
+              effect: card.effect || null,
+              component: card.component,
               amp
             }),
             cost: nextCost,
@@ -442,30 +826,54 @@
     if (cost > energy) {
       return { ok: false, reason: "not_enough_energy", cost };
     }
-    if (components.length > 2) {
+    if (components.length > CONFIG.maxCardsPerShot) {
       return { ok: false, reason: "too_many_components", cost };
+    }
+    const shapeCount = components.filter((component) => component.family !== "modifier").length;
+    const modifierCount = components.filter((component) => component.family === "modifier").length;
+    if (shapeCount > CONFIG.maxShapeCards) {
+      return { ok: false, reason: "too_many_shape_cards", cost };
+    }
+    if (modifierCount > CONFIG.maxModifierCards) {
+      return { ok: false, reason: "too_many_modifier_cards", cost };
     }
     return { ok: true, reason: "ok", cost };
   }
 
+  function sumEffects(components) {
+    return components.reduce(
+      (totals, component) => {
+        const effect = component.effect || {};
+        totals.damageBonus += effect.damageBonus || 0;
+        totals.precisionBonus += effect.precisionBonus || 0;
+        totals.volatility += effect.volatility || 0;
+        return totals;
+      },
+      { damageBonus: 0, precisionBonus: 0, volatility: 0 }
+    );
+  }
+
   function scoreSimulation(sim, shot, directive) {
     let score = 0;
+    const effects = sumEffects(shot.components);
     if (sim.kind === "hitEnemy") {
       score += sim.unitId === shot.target.id ? 1000 : 720;
+      score += effects.damageBonus * 3;
       if (directive.aggressive) score += 80;
     } else if (sim.kind === "hitAlly") {
       score -= directive.safe ? 1300 : 850;
+      score -= effects.volatility * 8;
     } else if (sim.kind === "blocked") {
-      score -= 360;
+      score -= 360 + effects.volatility * 5;
     } else if (sim.kind === "ground") {
-      score -= 260;
+      score -= 260 + effects.volatility * 4;
     } else if (sim.kind === "out" || sim.kind === "invalid") {
-      score -= 420;
+      score -= 420 + effects.volatility * 5;
     } else {
       score -= 140;
     }
 
-    score -= sim.closestTargetDistance * (directive.aggressive ? 7 : 9);
+    score -= Math.max(0, sim.closestTargetDistance - effects.precisionBonus / 20) * (directive.aggressive ? 7 : 9);
     score -= shot.cost * 7;
     if (directive.safe) {
       score -= Math.max(0, 10 - sim.closestEnemyDistance) * 0.5;
@@ -477,8 +885,10 @@
       score -= Math.max(0, sim.maxY - 32) * 1.2;
     }
     if (directive.bend) {
-      score += shot.components.filter((component) => component.id === "bend").length * 35;
+      score += shot.components.filter((component) => component.tags.includes("corner")).length * 35;
     }
+    if (shot.components.some((component) => component.tags.includes("precision"))) score += 16;
+    if (shot.components.some((component) => component.tags.includes("clearance")) && directive.high) score += 24;
     return score;
   }
 
@@ -492,6 +902,42 @@
       components: clone(combo.components),
       cost: combo.cost,
       usedCardIds: combo.usedCardIds.slice()
+    };
+  }
+
+  function describeIntent(directive) {
+    const parts = [];
+    if (directive.targetIds.length) parts.push(`priority ${directive.targetIds.join(" then ")}`);
+    if (directive.high) parts.push("high clearance");
+    if (directive.safe) parts.push("avoid allies");
+    if (directive.aggressive) parts.push("finish damage");
+    if (directive.low) parts.push("low path");
+    return parts.length ? parts.join(", ") : "balanced shot";
+  }
+
+  function riskNote(shot, sim, directive) {
+    const volatile = shot.components.filter((component) => component.tags.includes("volatile")).length;
+    if (sim.kind === "hitAlly") return "ally path risk materialized";
+    if (sim.kind === "blocked") return "cover was still too tight";
+    if (sim.kind === "ground") return "curve dropped into terrain";
+    if (sim.kind === "out") return "curve overcooked above the board";
+    if (volatile) return directive.safe ? "volatile card accepted despite safe command" : "volatile card used for payoff";
+    if (sim.closestTargetDistance <= CONFIG.unitRadius + 1) return "clean firing line";
+    return "miss distance was the main risk";
+  }
+
+  function buildThinking(decision) {
+    const usedLabels = decision.shot.components.map((component) => component.label);
+    return {
+      intent: describeIntent(decision.directive),
+      targetPriority: decision.targetPriority,
+      handConstraint: `${decision.hand.length} cards, ${decision.energy} energy, ${CONFIG.maxShapeCards} shapes + ${CONFIG.maxModifierCards} modifier max`,
+      selectedCombo: usedLabels.length ? usedLabels.join(" + ") : "baseline line",
+      risk: riskNote(decision.shot, decision.sim, decision.directive),
+      projectedResult: resultLabel(decision.sim),
+      publicReason: `${decision.shooter.id} aimed at ${decision.target.id} with ${
+        usedLabels.length ? usedLabels.join(" + ") : "baseline"
+      } because ${describeIntent(decision.directive)}.`
     };
   }
 
@@ -517,8 +963,14 @@
           best = {
             score,
             team,
+            state,
             shooter,
             target,
+            targetPriority: targets.map((rankedTarget, index) => ({
+              id: rankedTarget.id,
+              hp: rankedTarget.hp,
+              priority: index + 1
+            })),
             hand,
             energy,
             directive,
@@ -535,13 +987,19 @@
 
   function formatComponent(component) {
     const amp = round(component.amp, 1);
-    if (component.id === "arc") return `${amp}*arc(u/d)`;
-    if (component.id === "bend") return `${amp}*bend(u/d)`;
-    if (component.id === "wave") return `${amp}*sin(pi*u/d)`;
-    if (component.id === "sway") return `${amp}*sin(2*pi*u/d)`;
-    if (component.id === "cubic") return `${amp}*cubic(u/d)`;
-    if (component.id === "clamp") return `${amp}*shelf(u/d)`;
-    return `${amp}*${component.id}(u/d)`;
+    const kind = component.component || component.id;
+    if (kind === "arc") return `${amp}*arc(u/d)`;
+    if (kind === "lift") return `${amp}*lift(u/d)`;
+    if (kind === "bend") return `${amp}*bend(u/d)`;
+    if (kind === "hook") return `${amp}*hook(u/d)`;
+    if (kind === "wave") return `${amp}*sin(pi*u/d)`;
+    if (kind === "sway") return `${amp}*sin(2*pi*u/d)`;
+    if (kind === "ripple") return `${amp}*ripple(u/d)`;
+    if (kind === "cubic") return `${amp}*cubic(u/d)`;
+    if (kind === "dive") return `${amp}*dive(u/d)`;
+    if (kind === "spike") return `${amp}*spike(u/d)`;
+    if (kind === "clamp" || kind === "shelf") return `${amp}*shelf(u/d)`;
+    return `${amp}*${kind}(u/d)`;
   }
 
   function formatExpression(shot) {
@@ -561,6 +1019,46 @@
     return "miss";
   }
 
+  function calculateBattleScore(state) {
+    const winner = state.winner;
+    const alliedTeam = winner === "A" || winner === "B" ? winner : null;
+    const alliedHp = alliedTeam
+      ? state.units.filter((unit) => unit.team === alliedTeam).reduce((sum, unit) => sum + unit.hp, 0)
+      : 0;
+    const enemyHits = state.events.filter((event) => event.result === "hitEnemy").length;
+    const allyHits = state.events.filter((event) => event.result === "hitAlly").length;
+    const failures = state.events.filter((event) => ["blocked", "ground", "out", "miss", "invalid"].includes(event.result)).length;
+    const winBase = winner === "draw" ? 250 : alliedTeam ? 600 : 0;
+    const difficulty = state.mapMeta ? state.mapMeta.difficulty : 60;
+    const value =
+      winBase +
+      alliedHp +
+      enemyHits * 35 -
+      failures * 25 -
+      allyHits * 45 -
+      state.events.length * 6 +
+      Math.round(difficulty * (alliedTeam ? 2.2 : 0.9));
+    let rank = "D";
+    if (winner !== "draw" && value >= 980) rank = "S";
+    else if (winner !== "draw" && value >= 850) rank = "A";
+    else if (value >= 680) rank = "B";
+    else if (value >= 480) rank = "C";
+    return {
+      value: Math.max(0, Math.round(value)),
+      rank,
+      winner,
+      difficulty,
+      enemyHits,
+      allyHits,
+      failures,
+      turns: state.events.length
+    };
+  }
+
+  function finalizeBattle(state) {
+    state.score = calculateBattleScore(state);
+  }
+
   function applyTurn(state, commands) {
     if (state.winner) return state;
     const team = state.turn % 2 === 0 ? "A" : "B";
@@ -576,7 +1074,8 @@
     const sim = decision.sim;
     let damage = 0;
     if (sim.kind === "hitEnemy" || sim.kind === "hitAlly") {
-      damage = sim.kind === "hitEnemy" ? CONFIG.hitDamage : CONFIG.allyDamage;
+      const effects = sumEffects(decision.shot.components);
+      damage = sim.kind === "hitEnemy" ? CONFIG.hitDamage + effects.damageBonus : CONFIG.allyDamage;
       const hitUnit = state.units.find((unit) => unit.id === sim.unitId);
       if (hitUnit) hitUnit.hp = Math.max(0, hitUnit.hp - damage);
     }
@@ -592,6 +1091,9 @@
       hand: decision.hand.map((card) => ({
         id: card.id,
         label: card.label,
+        family: card.family,
+        rarity: card.rarity,
+        tags: card.tags,
         cost: card.cost,
         instanceId: card.instanceId,
         description: card.description
@@ -599,6 +1101,7 @@
       usedCardIds: decision.shot.usedCardIds,
       components: decision.shot.components,
       expression: formatExpression(decision.shot),
+      thinking: buildThinking(decision),
       result: sim.kind,
       resultLabel: resultLabel(sim),
       damage,
@@ -623,9 +1126,11 @@
     if (winner) {
       state.winner = winner;
       state.reason = "hp_zero";
+      finalizeBattle(state);
     } else if (state.turn + 1 >= CONFIG.maxTurns) {
       state.winner = "draw";
       state.reason = "max_turns";
+      finalizeBattle(state);
     }
 
     state.turn += 1;
@@ -647,10 +1152,12 @@
       runId: `seed-${state.seed}`,
       seed: state.seed,
       config: state.config,
+      mapMeta: clone(state.mapMeta),
       obstacles: state.obstacles,
-      initialUnits: clone(BASE_SCENARIO.units),
+      initialUnits: clone(state.initialUnits || BASE_SCENARIO.units),
       finalUnits: clone(state.units),
       events: clone(state.events),
+      score: clone(state.score),
       winner: state.winner,
       reason: state.reason,
       totalTurns: state.turn

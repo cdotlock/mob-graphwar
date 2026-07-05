@@ -61,8 +61,9 @@ sampled from a seeded starter pool. Cards should make different-looking curves:
 high arcs, shelves, dives, bends, narrow threading, overcorrection, and risky
 power boosts.
 
-Energy starts at 4, caps at 8, and increases slowly. A shot can use at most two
-cards. This keeps rules readable and makes hand variance matter.
+Energy starts at 4, caps at 8, and increases slowly. A shot can use at most
+three cards: two shape/control cards plus one modifier. This keeps rules
+readable while allowing card-battler-style payoff.
 
 ## Randomness
 
@@ -71,7 +72,7 @@ map, hands, trace, outcome, rank, and event list.
 
 Per-turn hand generation:
 
-- Use a team-specific deterministic deck generated from the seed.
+- Use a team-specific deterministic 24-card deck generated from the seed.
 - Shuffle using `seed + team + turn`.
 - Draw 5 cards.
 - No persistent deck mutation in this prototype, so replay is simple.

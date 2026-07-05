@@ -310,6 +310,8 @@
     ]
   };
 
+  const UNIT_TURN_ORDER = ["A1", "B1", "A2", "B2"];
+
   const MAP_TEMPLATES = [
     {
       id: "basalt-gate",
@@ -437,24 +439,24 @@
     return pile;
   }
 
-  function createTeamDeck(seed, team) {
-    const shuffled = shuffle(STARTER_POOL, `${seed}:${team}:starter-deck`);
+  function createTeamDeck(seed, owner) {
+    const shuffled = shuffle(STARTER_POOL, `${seed}:${owner}:starter-deck`);
     const required = ["arc", "bend", "wave", "low_lob", "anchor", "needle"];
     const deck = required.concat(shuffled);
     return deck.slice(0, 24);
   }
 
-  function dealHand(seed, turn, team, reroll) {
+  function dealHand(seed, turn, owner, reroll) {
     const rerollIndex = Number.isFinite(Number(reroll)) ? Number(reroll) : 0;
-    const deck = createTeamDeck(seed, team);
-    const shuffleSeed = rerollIndex > 0 ? `${seed}:${turn}:${team}:hand:${rerollIndex}` : `${seed}:${turn}:${team}:hand`;
+    const deck = createTeamDeck(seed, owner);
+    const shuffleSeed = rerollIndex > 0 ? `${seed}:${turn}:${owner}:hand:${rerollIndex}` : `${seed}:${turn}:${owner}:hand`;
     const pile = shuffle(
       deck.map((id, index) => ({ id, instanceId: `${id}-${index}` })),
       shuffleSeed
     );
     const hand = pile.slice(0, CONFIG.handSize).map((item, slot) => ({
       ...CARD_LIBRARY[item.id],
-      instanceId: rerollIndex > 0 ? `${team}${turn}r${rerollIndex}-${slot}-${item.id}` : `${team}${turn}-${slot}-${item.id}`
+      instanceId: rerollIndex > 0 ? `${owner}${turn}r${rerollIndex}-${slot}-${item.id}` : `${owner}${turn}-${slot}-${item.id}`
     }));
     const shapeCount = hand.filter((card) => card.family !== "modifier").length;
     if (shapeCount < 2) {
@@ -469,66 +471,122 @@
         const slot = modifierSlots[i] ?? hand.length - 1 - i;
         hand[slot] = {
           ...CARD_LIBRARY[id],
-          instanceId: `${team}${turn}-repair-${i}-${id}`
+          instanceId: `${owner}${turn}-repair-${i}-${id}`
         };
       }
     }
     return hand;
   }
 
-  function createHandState(seed, team, turn) {
+  function teamFromOwner(owner) {
+    const text = String(owner || "").toUpperCase();
+    if (text.startsWith("A")) return "A";
+    if (text.startsWith("B")) return "B";
+    return text === "B" ? "B" : "A";
+  }
+
+  function getTurnOrder(state) {
+    const order = Array.isArray(state && state.turnOrder) && state.turnOrder.length
+      ? state.turnOrder
+      : UNIT_TURN_ORDER;
+    return order.slice();
+  }
+
+  function getUnitById(state, unitId) {
+    const id = String(unitId || "").toUpperCase();
+    return (state.units || []).find((unit) => unit.id === id) || null;
+  }
+
+  function createHandState(seed, owner, turn) {
+    const normalizedOwner = String(owner || "A1").toUpperCase();
     return {
-      team,
+      owner: normalizedOwner,
+      team: teamFromOwner(normalizedOwner),
       turn,
       rerollsUsed: 0,
       swapsUsed: 0,
-      cards: dealHand(seed, 0, team, 0)
+      cards: dealHand(seed, 0, normalizedOwner, 0)
     };
   }
 
   function ensureHands(state) {
-    if (!state.hands) {
-      state.hands = {
-        A: createHandState(state.seed, "A", state.turn || 0),
-        B: createHandState(state.seed, "B", state.turn || 0)
-      };
-    }
-    for (const team of ["A", "B"]) {
-      if (!state.hands[team]) state.hands[team] = createHandState(state.seed, team, state.turn || 0);
-      if (state.hands[team].turn !== state.turn) {
-        state.hands[team].turn = state.turn;
-        state.hands[team].rerollsUsed = 0;
-        state.hands[team].swapsUsed = 0;
+    if (!state.hands) state.hands = {};
+    for (const owner of getTurnOrder(state)) {
+      const legacy = state.hands[teamFromOwner(owner)];
+      if (!state.hands[owner]) {
+        state.hands[owner] = legacy && legacy.cards
+          ? {
+              ...clone(legacy),
+              owner,
+              team: teamFromOwner(owner),
+              cards: dealHand(state.seed, 0, owner, 0)
+            }
+          : createHandState(state.seed, owner, state.turn || 0);
       }
-      if (!Number.isFinite(Number(state.hands[team].swapsUsed))) {
-        state.hands[team].swapsUsed = Number(state.hands[team].rerollsUsed) || 0;
+      if (state.hands[owner].turn !== state.turn) {
+        state.hands[owner].turn = state.turn;
+        state.hands[owner].rerollsUsed = 0;
+        state.hands[owner].swapsUsed = 0;
+      }
+      if (!state.hands[owner].owner) state.hands[owner].owner = owner;
+      if (!state.hands[owner].team) state.hands[owner].team = teamFromOwner(owner);
+      if (!Number.isFinite(Number(state.hands[owner].swapsUsed))) {
+        state.hands[owner].swapsUsed = Number(state.hands[owner].rerollsUsed) || 0;
       }
     }
     return state.hands;
   }
 
-  function getHandState(state, team) {
-    return ensureHands(state)[team];
+  function chooseUnitForTeam(state, team) {
+    const alive = getAliveTeamUnits(state, team);
+    if (!alive.length) return null;
+    const ordered = getTurnOrder(state)
+      .map((unitId) => alive.find((unit) => unit.id === unitId))
+      .filter(Boolean);
+    const pool = ordered.length ? ordered : alive;
+    return pool[Math.floor(state.turn / 2) % pool.length];
   }
 
-  function getCurrentHand(state, team) {
-    return clone(getHandState(state, team).cards);
+  function normalizeHandOwner(state, owner) {
+    const normalized = String(owner || "").toUpperCase();
+    if (getUnitById(state, normalized)) return normalized;
+    if (normalized === "A" || normalized === "B") {
+      const active = getActiveUnit(state);
+      if (active && active.team === normalized) return active.id;
+      const teamUnit = chooseUnitForTeam(state, normalized);
+      return teamUnit ? teamUnit.id : normalized;
+    }
+    return normalized || "A1";
   }
 
-  function rerollHand(state, team) {
+  function getHandState(state, owner) {
     const hands = ensureHands(state);
-    const handState = hands[team];
-    if (!handState) throw new Error("unknown_team");
+    const handOwner = normalizeHandOwner(state, owner);
+    if (!hands[handOwner]) hands[handOwner] = createHandState(state.seed, handOwner, state.turn || 0);
+    return hands[handOwner];
+  }
+
+  function getCurrentHand(state, owner) {
+    return clone(getHandState(state, owner).cards);
+  }
+
+  function rerollHand(state, owner) {
+    const hands = ensureHands(state);
+    const handOwner = normalizeHandOwner(state, owner);
+    const handState = hands[handOwner];
+    if (!handState) throw new Error("unknown_hand_owner");
     const used = Math.max(Number(handState.rerollsUsed) || 0, Number(handState.swapsUsed) || 0);
     if (used >= CONFIG.maxRerollsPerTurn) {
       throw new Error("reroll_limit_reached");
     }
     handState.rerollsUsed = used + 1;
     handState.swapsUsed = handState.rerollsUsed;
-    handState.cards = dealHand(state.seed, state.turn, team, handState.rerollsUsed);
+    handState.cards = dealHand(state.seed, state.turn, handOwner, handState.rerollsUsed);
     return {
       action: "swap_hand",
-      team,
+      owner: handOwner,
+      unitId: getUnitById(state, handOwner) ? handOwner : null,
+      team: handState.team || teamFromOwner(handOwner),
       rerollsUsed: handState.rerollsUsed,
       rerollsRemaining: CONFIG.maxRerollsPerTurn - handState.rerollsUsed,
       swapsUsed: handState.swapsUsed,
@@ -537,8 +595,8 @@
     };
   }
 
-  function swapHand(state, team) {
-    return rerollHand(state, team);
+  function swapHand(state, owner) {
+    return rerollHand(state, owner);
   }
 
   function getEnergy(turn) {
@@ -944,10 +1002,11 @@
 
   function normalizeBattleOrders(commands) {
     const source = commands || {};
-    return {
-      A: String(source.A || "").slice(0, CONFIG.maxCommandLength),
-      B: String(source.B || "").slice(0, CONFIG.maxCommandLength)
-    };
+    const orders = {};
+    for (const [key, value] of Object.entries(source)) {
+      orders[String(key).toUpperCase()] = String(value || "").slice(0, CONFIG.maxCommandLength);
+    }
+    return orders;
   }
 
   function createInitialState(options) {
@@ -967,9 +1026,12 @@
       obstacles: clone(map.obstacles),
       units: clone(map.units),
       initialUnits: clone(map.units),
+      turnOrder: UNIT_TURN_ORDER.slice(),
       hands: {
-        A: createHandState(seed, "A", 0),
-        B: createHandState(seed, "B", 0)
+        A1: createHandState(seed, "A1", 0),
+        B1: createHandState(seed, "B1", 0),
+        A2: createHandState(seed, "A2", 0),
+        B2: createHandState(seed, "B2", 0)
       },
       lockedOrders: null,
       events: [],
@@ -1002,9 +1064,20 @@
   }
 
   function chooseShooter(state, team) {
-    const alive = getAliveTeamUnits(state, team);
-    if (!alive.length) return null;
-    return alive[Math.floor(state.turn / 2) % alive.length];
+    const normalized = String(team || "").toUpperCase();
+    const unit = getUnitById(state, normalized);
+    if (unit) return isAlive(unit) ? unit : null;
+    return chooseUnitForTeam(state, normalized);
+  }
+
+  function getActiveUnit(state) {
+    if (!state || state.winner) return null;
+    const order = getTurnOrder(state);
+    for (let i = 0; i < order.length; i += 1) {
+      const unit = getUnitById(state, order[(state.turn + i) % order.length]);
+      if (unit && isAlive(unit)) return unit;
+    }
+    return null;
   }
 
   function rankTargets(state, shooter, directive) {
@@ -1654,25 +1727,27 @@
     };
   }
 
-  function makeCandidateId(team, turn, index, shot) {
-    return `${team}-${turn}-${index}-${shot.target.id}-${shot.usedCardIds.join(".") || "baseline"}`;
+  function makeCandidateId(owner, turn, index, shot) {
+    return `${owner}-${turn}-${index}-${shot.target.id}-${shot.usedCardIds.join(".") || "baseline"}`;
   }
 
-  function assignCandidateIds(choices, team, turn) {
+  function assignCandidateIds(choices, owner, turn) {
     return choices
       .sort((a, b) => b.score - a.score)
       .map((choice, index) => ({
         ...choice,
-        candidateId: makeCandidateId(team, turn, index, choice.shot)
+        candidateId: makeCandidateId(owner, turn, index, choice.shot)
       }));
   }
 
-  function buildShotChoices(state, team, command) {
-    const shooter = chooseShooter(state, team);
+  function buildShotChoices(state, owner, command) {
+    const shooter = chooseShooter(state, owner);
     if (!shooter) return [];
+    const team = shooter.team;
+    const handOwner = shooter.id;
 
     const directive = parseDirective(command);
-    const hand = getCurrentHand(state, team);
+    const hand = getCurrentHand(state, handOwner);
     const energy = getEnergy(state.turn);
     const rankedTargets = rankTargets(state, shooter, directive);
     const targetConstraint = applyTargetConstraints(rankedTargets, directive);
@@ -1693,6 +1768,8 @@
         choices.push({
           score,
           team,
+          owner: handOwner,
+          unitId: shooter.id,
           state,
           shooter,
           target,
@@ -1713,11 +1790,11 @@
       }
     }
 
-    return assignCandidateIds(choices, team, state.turn);
+    return assignCandidateIds(choices, handOwner, state.turn);
   }
 
-  function chooseShot(state, team, command, options) {
-    const choices = buildShotChoices(state, team, command);
+  function chooseShot(state, owner, command, options) {
+    const choices = buildShotChoices(state, owner, command);
     if (!choices.length) return null;
     if (options && options.candidateId) {
       return choices.find((choice) => choice.candidateId === options.candidateId) || null;
@@ -1725,8 +1802,8 @@
     return choices[0];
   }
 
-  function listLegalShots(state, team, command) {
-    return buildShotChoices(state, team, command).map((choice) => ({
+  function listLegalShots(state, owner, command) {
+    return buildShotChoices(state, owner, command).map((choice) => ({
       candidateId: choice.candidateId,
       targetId: choice.target.id,
       cards: choice.shot.components.map((component) => ({
@@ -1823,14 +1900,22 @@
   function applyTurn(state, commands, options) {
     if (state.winner) return state;
     const opts = options || {};
-    const team = state.turn % 2 === 0 ? "A" : "B";
+    const activeUnit = getActiveUnit(state);
+    if (!activeUnit) {
+      state.winner = "draw";
+      state.reason = "no_alive_shooter";
+      finalizeBattle(state);
+      return state;
+    }
+    const team = activeUnit.team;
+    const unitId = activeUnit.id;
     ensureHands(state);
     if (opts.action === "swap_hand" || opts.action === "reroll") {
-      return rerollHand(state, team);
+      return rerollHand(state, unitId);
     }
     const orders = normalizeBattleOrders(commands);
-    const command = orders[team] || "";
-    const decision = chooseShot(state, team, command, opts);
+    const command = orders[unitId] || orders[team] || "";
+    const decision = chooseShot(state, unitId, command, opts);
 
     if (!decision) {
       if (opts.candidateId) throw new Error("unknown_candidate");
@@ -1853,6 +1938,7 @@
     const event = {
       turn: state.turn,
       team,
+      unitId,
       command: decision.directive.raw,
       shooterId: decision.shooter.id,
       targetId: decision.target.id,
@@ -1888,6 +1974,7 @@
     state.paths.push({
       turn: state.turn,
       team,
+      unitId,
       shooterId: decision.shooter.id,
       targetId: decision.target.id,
       points: sim.points,
@@ -1943,6 +2030,7 @@
     CONFIG,
     CARD_LIBRARY,
     BASE_SCENARIO,
+    UNIT_TURN_ORDER,
     createInitialState,
     applyTurn,
     getCurrentHand,
@@ -1956,6 +2044,8 @@
     getEnergy,
     groundY,
     parseDirective,
+    getTurnOrder,
+    getActiveUnit,
     chooseShot,
     listLegalShots,
     simulateShot,

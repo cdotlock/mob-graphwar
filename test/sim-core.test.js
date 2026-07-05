@@ -4,7 +4,11 @@ const Sim = require("../src/sim-core.js");
 function commands() {
   return {
     A: "high arc, avoid allies, hit the weakest enemy",
-    B: "aggressive shot, use sharp bends, finish low HP targets"
+    B: "aggressive shot, use sharp bends, finish low HP targets",
+    A1: "high arc, avoid allies, hit the weakest enemy",
+    B1: "aggressive shot, use sharp bends, finish low HP targets",
+    A2: "safe high arc, target B1",
+    B2: "bend through center, target A1"
   };
 }
 
@@ -23,11 +27,15 @@ function testBattleOrdersCanChangeEveryTurn() {
   const state = Sim.createInitialState({ seed: 7351 });
   const firstOrders = {
     A: "must target B2, high safe arc",
-    B: "must target A2, high safe arc"
+    B: "must target A2, high safe arc",
+    A1: "must target B2, high safe arc",
+    B1: "must target A2, high safe arc"
   };
   const editedOrders = {
     A: "ignore B2, use volatile",
-    B: "must target A1, low risky direct shot"
+    B: "must target A1, low risky direct shot",
+    A1: "ignore B2, use volatile",
+    B1: "must target A1, low risky direct shot"
   };
 
   Sim.applyTurn(state, firstOrders);
@@ -38,6 +46,36 @@ function testBattleOrdersCanChangeEveryTurn() {
 
   const trace = Sim.exportTrace(state);
   assert.strictEqual(trace.lockedOrders, null, "trace should not freeze per-turn human prompts");
+}
+
+function testTurnsRotateAcrossFourUnitSeats() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  assert.deepStrictEqual(state.turnOrder, ["A1", "B1", "A2", "B2"], "state should expose the four AI seat turn order");
+
+  for (let i = 0; i < 4; i += 1) {
+    Sim.applyTurn(state, {
+      A1: "must target B2, safe high arc",
+      B1: "must target A2, safe high arc",
+      A2: "must target B1, safe high arc",
+      B2: "must target A1, safe high arc"
+    });
+  }
+
+  assert.deepStrictEqual(
+    state.events.slice(0, 4).map((event) => event.shooterId),
+    ["A1", "B1", "A2", "B2"],
+    "each AI seat should take its own visible turn"
+  );
+  assert.deepStrictEqual(
+    state.events.slice(0, 4).map((event) => event.team),
+    ["A", "B", "A", "B"],
+    "team order should alternate while preserving individual seats"
+  );
+  assert.deepStrictEqual(
+    state.events.slice(0, 4).map((event) => event.unitId),
+    ["A1", "B1", "A2", "B2"],
+    "events should expose the controlled AI unit"
+  );
 }
 
 function testInvalidProviderCandidateDoesNotAdvanceTurn() {
@@ -109,7 +147,7 @@ function testCommandParsing() {
 
 function testHardTargetConstraintChangesShotChoice() {
   const state = Sim.createInitialState({ seed: 7351 });
-  Sim.applyTurn(state, { A: "must target B2, high safe arc" });
+  Sim.applyTurn(state, { A1: "must target B2, high safe arc" });
   const event = state.events[0];
   assert.strictEqual(event.targetId, "B2");
   assert.ok(event.thinking.commandRules.includes("hard target B2"));
@@ -122,7 +160,7 @@ function testHardTargetConstraintChangesShotChoice() {
 function testUnavailableHardTargetIsReportedAsFallback() {
   const state = Sim.createInitialState({ seed: 7351 });
   state.units.find((unit) => unit.id === "B2").hp = 0;
-  Sim.applyTurn(state, { A: "must target B2, high safe arc" });
+  Sim.applyTurn(state, { A1: "must target B2, high safe arc" });
   const event = state.events[0];
   assert.strictEqual(event.targetId, "B1");
   assert.ok(event.thinking.commandRules.includes("requested target B2 unavailable"));
@@ -173,7 +211,7 @@ function testLegalShotsHonorSafeConstraints() {
 
 function testShotEventsExposeCardComboIdentity() {
   const state = Sim.createInitialState({ seed: 7351 });
-  Sim.applyTurn(state, { A: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。" });
+  Sim.applyTurn(state, { A1: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。" });
   const event = state.events[0];
   assert.ok(event.combo, "event should include card-combo identity");
   assert.ok(event.combo.name, "combo should have a player-facing name");
@@ -227,11 +265,11 @@ function testCardProfilesExposeTacticalCardRoles() {
 function testApplyTurnCanUseProviderCandidate() {
   const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
   const state = Sim.createInitialState({ seed: 7351 });
-  const shots = Sim.listLegalShots(state, "A", command);
+  const shots = Sim.listLegalShots(state, "A1", command);
   const selected = shots.find((shot) => shot.expression !== shots[0].expression) || shots[1];
   assert.ok(selected && selected.candidateId, "legal shots should expose candidate ids");
 
-  Sim.applyTurn(state, { A: command }, { candidateId: selected.candidateId, providerReason: "Provider picked a stable legal shot." });
+  Sim.applyTurn(state, { A1: command }, { candidateId: selected.candidateId, providerReason: "Provider picked a stable legal shot." });
   const event = state.events[0];
   assert.strictEqual(event.expression, selected.expression);
   assert.strictEqual(event.thinking.providerReason, "Provider picked a stable legal shot.");
@@ -264,29 +302,42 @@ function testCompactHandsStillGuaranteeShapeChoices() {
 
 function testHandsPersistAndCanBeRerolledThreeTimes() {
   const state = Sim.createInitialState({ seed: 8811 });
-  const firstHand = Sim.getCurrentHand(state, "A").map((card) => card.instanceId);
+  const firstHand = Sim.getCurrentHand(state, "A1").map((card) => card.instanceId);
+  const teammateHand = Sim.getCurrentHand(state, "A2").map((card) => card.instanceId);
   Sim.applyTurn(state, { A: "", B: "" });
   assert.deepStrictEqual(
-    Sim.getCurrentHand(state, "A").map((card) => card.instanceId),
+    Sim.getCurrentHand(state, "A1").map((card) => card.instanceId),
     firstHand,
-    "shooting should not discard the team's hand"
+    "shooting should not discard the active unit's hand"
+  );
+  assert.deepStrictEqual(
+    Sim.getCurrentHand(state, "A2").map((card) => card.instanceId),
+    teammateHand,
+    "teammate AI should retain its own independent hand"
   );
 
   const swapState = Sim.createInitialState({ seed: 8811 });
-  const swapFirstHand = Sim.getCurrentHand(swapState, "A").map((card) => card.instanceId);
+  const swapFirstHand = Sim.getCurrentHand(swapState, "A1").map((card) => card.instanceId);
+  const swapTeammateHand = Sim.getCurrentHand(swapState, "A2").map((card) => card.instanceId);
   const firstReroll = Sim.applyTurn(swapState, {}, { action: "swap_hand" });
   assert.strictEqual(firstReroll.action, "swap_hand");
+  assert.strictEqual(firstReroll.owner, "A1");
   assert.strictEqual(firstReroll.rerollsUsed, 1);
   assert.strictEqual(firstReroll.swapsUsed, 1);
   assert.strictEqual(swapState.turn, 0, "swap_hand should not consume the active turn");
   assert.notDeepStrictEqual(
-    Sim.getCurrentHand(swapState, "A").map((card) => card.instanceId),
+    Sim.getCurrentHand(swapState, "A1").map((card) => card.instanceId),
     swapFirstHand,
     "swap_hand should replace the retained hand"
   );
-  Sim.rerollHand(swapState, "A");
-  Sim.rerollHand(swapState, "A");
-  assert.throws(() => Sim.rerollHand(swapState, "A"), /reroll_limit_reached/);
+  assert.deepStrictEqual(
+    Sim.getCurrentHand(swapState, "A2").map((card) => card.instanceId),
+    swapTeammateHand,
+    "swap_hand should not change the teammate's hand"
+  );
+  Sim.rerollHand(swapState, "A1");
+  Sim.rerollHand(swapState, "A1");
+  assert.throws(() => Sim.rerollHand(swapState, "A1"), /reroll_limit_reached/);
 }
 
 function testSeededHardMapGeneration() {
@@ -333,12 +384,12 @@ function testHardMapsRemainSolvableByFiniteCardCombos() {
     assert.ok(state.mapMeta.complexity.threadSlots >= 4, `seed ${seed} should keep thread slots`);
     assert.ok(state.mapMeta.complexity.groundRibs >= 4, `seed ${seed} should keep low ground ribs`);
     assert.ok(state.mapMeta.complexity.visualLayers >= 4, `seed ${seed} should keep visible maze depth layers`);
-    for (const team of ["A", "B"]) {
-      const shots = Sim.listLegalShots(state, team, "");
-      assert.ok(shots.length > 0, `seed ${seed} team ${team} should have legal shots`);
+    for (const unitId of state.turnOrder) {
+      const shots = Sim.listLegalShots(state, unitId, "");
+      assert.ok(shots.length > 0, `seed ${seed} unit ${unitId} should have legal shots`);
       assert.ok(
         shots.some((shot) => !["invalid", "out"].includes(shot.result)),
-        `seed ${seed} team ${team} should have at least one bounded curve`
+        `seed ${seed} unit ${unitId} should have at least one bounded curve`
       );
       assert.ok(shots.every((shot) => shot.mapFit === undefined), "legal shots should not expose route-window fit");
     }
@@ -358,6 +409,7 @@ function testTraceShapeIncludesMapAndScore() {
 
 testDeterministicBattle();
 testBattleOrdersCanChangeEveryTurn();
+testTurnsRotateAcrossFourUnitSeats();
 testInvalidProviderCandidateDoesNotAdvanceTurn();
 testNoInvalidState();
 testResourceValidation();

@@ -182,9 +182,12 @@ function App() {
   const autoStartRef = useRef("");
 
   const latestEvent = battleState.events[battleState.events.length - 1];
-  const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
+  const activeUnit = battleState.winner ? null : Sim.getActiveUnit(battleState);
+  const activeUnitId = activeUnit?.id || "-";
+  const activeTeam = activeUnit?.team || "-";
   const displayTeam = activeTeam === "-" ? latestEvent?.team || battleState.winner || "A" : activeTeam;
-  const activeHand = useMemo(() => Sim.getCurrentHand(battleState, displayTeam === "B" ? "B" : "A"), [battleState, displayTeam]);
+  const displayUnitId = activeUnitId === "-" ? latestEvent?.unitId || latestEvent?.shooterId || (displayTeam === "B" ? "B1" : "A1") : activeUnitId;
+  const activeHand = useMemo(() => Sim.getCurrentHand(battleState, displayUnitId), [battleState, displayUnitId]);
   const visibleDecision = lastDecision || eventDecision(latestEvent);
 
   useEffect(() => {
@@ -579,7 +582,7 @@ function App() {
         </aside>
 
         <section className="battle-panel game-panel">
-          <BattleHeader state={battleState} activeTeam={activeTeam} message={message} />
+          <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} />
           <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
           <BattlePlaybackHud
             playback={battlePlayback}
@@ -593,14 +596,14 @@ function App() {
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
             <Battlefield state={battleState} latestEvent={latestEvent} />
-            <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
+            <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
             <BattleReplayRail state={battleState} />
             <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
           </section>
         </section>
 
         <aside className="tactical-panel game-panel">
-          <HandRack hand={activeHand} activeTeam={displayTeam} />
+          <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
           <Timeline state={battleState} />
           <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
           <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
@@ -817,23 +820,23 @@ function VersusBanner({ state, match, activeTeam }) {
   );
 }
 
-function AgentBattleMatrix({ state, match, activeTeam, lastDecision }) {
+function AgentBattleMatrix({ state, match, activeTeam, activeUnitId, lastDecision }) {
   const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
   const events = state.events || [];
-  const latestTeamEvent = (team) => [...events].reverse().find((event) => event.team === team);
+  const latestUnitEvent = (unitId) => [...events].reverse().find((event) => event.unitId === unitId || event.shooterId === unitId);
   return (
     <section className="agent-battle-matrix" data-testid="agent-battle-matrix" aria-label="Four AI battle seats">
       {roster.map((seat) => {
         const unit = state.units.find((item) => item.id === seat.unitId) || { hp: 0, team: seat.team };
-        const handState = state.hands?.[seat.team] || {};
-        const hand = Sim.getCurrentHand(state, seat.team).slice(0, 4);
+        const handState = state.hands?.[seat.unitId] || {};
+        const hand = Sim.getCurrentHand(state, seat.unitId).slice(0, 4);
         const swapsUsed = Number(handState.swapsUsed ?? handState.rerollsUsed) || 0;
         const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
-        const teamDecision = lastDecision?.team === seat.team ? lastDecision : null;
-        const event = latestTeamEvent(seat.team);
+        const teamDecision = lastDecision?.unitId === seat.unitId || (activeUnitId === seat.unitId && lastDecision?.team === seat.team) ? lastDecision : null;
+        const event = latestUnitEvent(seat.unitId);
         const actionLabel = teamDecision?.action || (event ? event.resultLabel : "standing by");
         const actionReason = teamDecision?.publicReason || event?.combo?.name || "waiting for auto-battle";
-        const active = activeTeam === seat.team && !state.winner;
+        const active = activeUnitId === seat.unitId && activeTeam === seat.team && !state.winner;
         return (
           <article className={`agent-seat team-${seat.team.toLowerCase()} ${active ? "active" : ""} ${unit.hp <= 0 ? "offline" : ""}`} data-testid={`agent-seat-${seat.unitId}`} key={seat.unitId}>
             <div className="agent-vitals">
@@ -870,13 +873,13 @@ function AgentBattleMatrix({ state, match, activeTeam, lastDecision }) {
   );
 }
 
-function BattleHeader({ state, activeTeam, message }) {
+function BattleHeader({ state, activeTeam, activeUnitId, message }) {
   const resultLabel = battleResultLabel(state.winner);
   const statusLabel = resultLabel && message ? `${resultLabel} · ${message}` : resultLabel || message;
   return (
     <div className="battle-header">
       <div><span>Turn</span><strong>{state.turn}/{Sim.CONFIG.maxTurns}</strong></div>
-      <div><span>Active</span><strong>Team {activeTeam}</strong></div>
+      <div><span>Active</span><strong>{activeUnitId === "-" ? "Standby" : `${activeUnitId} / Team ${activeTeam}`}</strong></div>
       <div><span>Map</span><strong>{state.mapMeta.name} {state.mapMeta.difficulty}</strong></div>
       <div><span>Status</span><strong>{statusLabel}</strong></div>
     </div>
@@ -1122,11 +1125,11 @@ function BattleReplayRail({ state }) {
   );
 }
 
-function HandRack({ hand, activeTeam }) {
+function HandRack({ hand, activeTeam, activeUnitId }) {
   return (
     <div className="hand-rack">
       <div className="panel-title"><KeyRound size={18} /> Retained Hand</div>
-      <p className="hand-rule">Team {activeTeam} cards stay after shots. Active model may choose Swap Hand x3 before firing.</p>
+      <p className="hand-rule">{activeUnitId} / Team {activeTeam} cards stay after shots. Active model may choose Swap Hand x3 before firing.</p>
       <div className="card-grid">
         {hand.map((card) => (
           <article className={`battle-card ${card.rarity}`} key={card.instanceId}>

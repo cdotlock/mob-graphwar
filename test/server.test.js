@@ -332,7 +332,7 @@ async function testMatchActionsMutateAuthoritativeState() {
   });
   assert.strictEqual(joined.status, 200);
   const matchId = joined.json.match.id;
-  const originalHand = joined.json.match.state.hands.A.cards.map((card) => card.instanceId).join("|");
+  const originalHand = joined.json.match.state.hands.A1.cards.map((card) => card.instanceId).join("|");
 
   const rerolled = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
     method: "POST",
@@ -342,11 +342,12 @@ async function testMatchActionsMutateAuthoritativeState() {
   assert.strictEqual(rerolled.status, 200);
   assert.strictEqual(rerolled.json.action.action, "swap_hand");
   assert.strictEqual(rerolled.json.action.team, "A");
+  assert.strictEqual(rerolled.json.action.unitId, "A1");
   assert.strictEqual(rerolled.json.match.state.turn, 0, "swap_hand should not consume the turn");
-  assert.strictEqual(rerolled.json.match.state.hands.A.rerollsUsed, 1);
-  assert.strictEqual(rerolled.json.match.state.hands.A.swapsUsed, 1);
+  assert.strictEqual(rerolled.json.match.state.hands.A1.rerollsUsed, 1);
+  assert.strictEqual(rerolled.json.match.state.hands.A1.swapsUsed, 1);
   assert.notStrictEqual(
-    rerolled.json.match.state.hands.A.cards.map((card) => card.instanceId).join("|"),
+    rerolled.json.match.state.hands.A1.cards.map((card) => card.instanceId).join("|"),
     originalHand,
     "swap_hand should replace the active hand"
   );
@@ -364,8 +365,10 @@ async function testMatchActionsMutateAuthoritativeState() {
   assert.strictEqual(fired.status, 200);
   assert.strictEqual(fired.json.action.action, "shot");
   assert.strictEqual(fired.json.action.team, "A");
+  assert.strictEqual(fired.json.action.unitId, "A1");
   assert.strictEqual(fired.json.match.state.turn, 1, "shot should consume the turn");
   assert.strictEqual(fired.json.match.state.events.length, 1);
+  assert.strictEqual(fired.json.match.state.events[0].unitId, "A1");
   assert.strictEqual(fired.json.match.state.events[0].provider, "Test Model");
   assert.strictEqual(fired.json.match.state.events[0].command, "must target B2 with a safe high arc");
 
@@ -500,6 +503,10 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   assert.strictEqual(capturedPrompts[0].options.headers.authorization, "Bearer auto-provider-secret");
   assert.strictEqual(capturedPrompts[0].requestBody.model, "gpt-auto");
   assert.strictEqual(capturedPrompts[0].prompt.command, "safe high arc, avoid ally, target the weakest opponent");
+  assert.strictEqual(capturedPrompts[0].prompt.activeUnitId, "A1");
+  assert.strictEqual(capturedPrompts[0].prompt.controlledUnit.id, "A1");
+  assert.strictEqual(capturedPrompts[0].prompt.hand.owner, "A1");
+  assert.strictEqual(capturedPrompts[1].prompt.activeUnitId, "A1", "provider should continue the same unit turn after swap_hand");
   assert.strictEqual(capturedPrompts[0].prompt.state.map.windows, undefined, "auto duel prompt should not include route windows");
   assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "swap_hand"));
   assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "shot"));

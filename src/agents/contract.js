@@ -20,8 +20,20 @@
     return out;
   }
 
-  function listPublicShotCandidates(state, team, command) {
-    const shots = Sim.listLegalShots(state, team, command).slice(0, MAX_PUBLIC_CANDIDATES);
+  function resolveControlledUnit(state, owner) {
+    const normalized = String(owner || "").toUpperCase();
+    const units = state.units || [];
+    const direct = units.find((unit) => unit.id === normalized);
+    if (direct) return direct;
+    const active = Sim.getActiveUnit ? Sim.getActiveUnit(state) : null;
+    if (active && active.team === normalized) return active;
+    return units.find((unit) => unit.team === normalized && unit.hp > 0) || active || null;
+  }
+
+  function listPublicShotCandidates(state, owner, command) {
+    const unit = resolveControlledUnit(state, owner);
+    const handOwner = unit ? unit.id : owner;
+    const shots = Sim.listLegalShots(state, handOwner, command).slice(0, MAX_PUBLIC_CANDIDATES);
     return shots.map((shot) => ({
       action: "shot",
       candidateId: shot.candidateId,
@@ -38,10 +50,13 @@
     }));
   }
 
-  function buildRulesPayload(state, team, command) {
+  function buildRulesPayload(state, owner, command) {
     const units = state.units || [];
-    const handState = state.hands && state.hands[team] ? state.hands[team] : null;
-    const cards = Sim.getCurrentHand(state, team).map((card) => ({
+    const controlledUnit = resolveControlledUnit(state, owner);
+    const activeUnitId = controlledUnit ? controlledUnit.id : String(owner || "A1").toUpperCase();
+    const team = controlledUnit ? controlledUnit.team : activeUnitId.startsWith("B") ? "B" : "A";
+    const handState = state.hands && state.hands[activeUnitId] ? state.hands[activeUnitId] : null;
+    const cards = Sim.getCurrentHand(state, activeUnitId).map((card) => ({
       id: card.id,
       instanceId: card.instanceId,
       label: card.label,
@@ -50,7 +65,7 @@
       tags: card.tags,
       description: card.description
     }));
-    const shotActions = listPublicShotCandidates(state, team, command);
+    const shotActions = listPublicShotCandidates(state, activeUnitId, command);
     const swapsUsed = handState ? Number(handState.swapsUsed ?? handState.rerollsUsed) || 0 : 0;
     const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
     const legalActions = swapsRemaining > 0
@@ -58,7 +73,7 @@
       : shotActions;
     return {
       rules: {
-        turnOrder: "A and B alternate one active unit per turn",
+        turnOrder: "A1, B1, A2, B2 rotate as separate AI seats",
         actionLimit: "choose exactly one legal action: swap_hand or shot",
         handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
         swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
@@ -67,6 +82,10 @@
       },
       objective: "eliminate opposing team while avoiding allied units",
       team,
+      activeUnitId,
+      controlledUnit: controlledUnit
+        ? { id: controlledUnit.id, team: controlledUnit.team, x: controlledUnit.x, y: controlledUnit.y, hp: controlledUnit.hp }
+        : { id: activeUnitId, team },
       command: String(command || "").slice(0, Sim.CONFIG.maxCommandLength),
       allyIds: units.filter((unit) => unit.team === team && unit.hp > 0).map((unit) => unit.id),
       opponentIds: units.filter((unit) => unit.team !== team && unit.hp > 0).map((unit) => unit.id),
@@ -78,6 +97,7 @@
         obstacles: state.obstacles || []
       },
       hand: {
+        owner: activeUnitId,
         retained: true,
         swapsUsed,
         swapsRemaining,

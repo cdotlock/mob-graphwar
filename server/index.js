@@ -450,19 +450,25 @@ function getPlayerSeat(match, player) {
 }
 
 function getActiveTeam(state) {
-  if (!state || state.winner) return null;
-  return state.turn % 2 === 0 ? "A" : "B";
+  const unit = Sim.getActiveUnit ? Sim.getActiveUnit(state) : null;
+  return unit ? unit.team : null;
+}
+
+function getActiveUnitId(state) {
+  const unit = Sim.getActiveUnit ? Sim.getActiveUnit(state) : null;
+  return unit ? unit.id : null;
 }
 
 function isSwapAction(action) {
   return action === "swap_hand" || action === "reroll";
 }
 
-function buildActionSummary(match, action, team, rerollResult, beforeEventCount) {
+function buildActionSummary(match, action, team, unitId, rerollResult, beforeEventCount) {
   if (isSwapAction(action)) {
     return {
       action: "swap_hand",
       team,
+      unitId,
       rerollsUsed: rerollResult.rerollsUsed,
       rerollsRemaining: rerollResult.rerollsRemaining,
       swapsUsed: rerollResult.swapsUsed,
@@ -474,6 +480,7 @@ function buildActionSummary(match, action, team, rerollResult, beforeEventCount)
   return {
     action,
     team,
+    unitId: event ? event.unitId || event.shooterId : unitId,
     event,
     result: event ? event.result : match.state.reason,
     winner: match.state.winner
@@ -482,25 +489,19 @@ function buildActionSummary(match, action, team, rerollResult, beforeEventCount)
 
 function autoResolveCommandsForTurn(match, options) {
   const opts = options || {};
+  const unitId = getActiveUnitId(match.state);
   const team = getActiveTeam(match.state);
-  const seat = getRosterSeatForTurn(match, team);
+  const seat = getRosterSeatForTurn(match, unitId);
   const command = seat && opts.playerId && seat.playerId === opts.playerId
     ? String(opts.command || "").slice(0, Sim.CONFIG.maxCommandLength)
     : "";
-  return { team, seat, command };
+  return { team, unitId, seat, command };
 }
 
-function getActiveShooter(state, team) {
-  const alive = (state.units || []).filter((unit) => unit.team === team && unit.hp > 0);
-  if (!alive.length) return null;
-  return alive[Math.floor(state.turn / 2) % alive.length];
-}
-
-function getRosterSeatForTurn(match, team) {
-  if (!match || !team || !Array.isArray(match.roster)) return null;
-  const shooter = getActiveShooter(match.state, team);
-  if (!shooter) return match.roster.find((seat) => seat.team === team) || null;
-  return match.roster.find((seat) => seat.unitId === shooter.id) || match.roster.find((seat) => seat.team === team) || null;
+function getRosterSeatForTurn(match, unitId) {
+  if (!match || !unitId || !Array.isArray(match.roster)) return null;
+  const unit = (match.state.units || []).find((item) => item.id === unitId);
+  return match.roster.find((seat) => seat.unitId === unitId) || match.roster.find((seat) => seat.team === unit?.team) || null;
 }
 
 function localAutoProviderLabel(team) {
@@ -523,7 +524,7 @@ function configuredSeatProvider(seat, env) {
 
 async function autoResolveDecisionForTurn(match, turn, options) {
   const opts = options || {};
-  const rulesPayload = Contract.buildRulesPayload(match.state, turn.team, turn.command);
+  const rulesPayload = Contract.buildRulesPayload(match.state, turn.unitId || turn.team, turn.command);
   const configured = configuredSeatProvider(turn.seat, opts.env);
   if (!configured) {
     return {
@@ -578,6 +579,7 @@ async function advanceMatchToResolution(match, options) {
       pushPlaybackFrame(opts.frames, match, {
         action: "swap_hand",
         team: turn.team,
+        unitId: turn.unitId,
         provider: resolved.providerLabel,
         publicReason: resolved.decision.publicReason,
         swapsUsed: rerollResult.swapsUsed,
@@ -588,7 +590,7 @@ async function advanceMatchToResolution(match, options) {
     const beforeEventCount = match.state.events.length;
     Sim.applyTurn(
       match.state,
-      { [turn.team]: resolved.command },
+      { [turn.unitId || turn.team]: resolved.command },
       {
         candidateId: resolved.decision.candidateId || undefined,
         provider: resolved.providerLabel,
@@ -599,6 +601,7 @@ async function advanceMatchToResolution(match, options) {
     pushPlaybackFrame(opts.frames, match, {
       action: "shot",
       team: turn.team,
+      unitId: event ? event.unitId || event.shooterId : turn.unitId,
       provider: resolved.providerLabel,
       publicReason: resolved.decision.publicReason,
       candidateId: resolved.decision.candidateId || null,
@@ -615,6 +618,7 @@ function publicEventSummary(event) {
   return {
     turn: event.turn,
     team: event.team,
+    unitId: event.unitId || event.shooterId,
     provider: event.provider || "Local AI",
     shooterId: event.shooterId,
     targetId: event.targetId,
@@ -662,6 +666,7 @@ function buildPlaybackFrame(match, action) {
     action: {
       action: publicAction.action || "state",
       team: publicAction.team || getActiveTeam(match.state) || "-",
+      unitId: publicAction.unitId || getActiveUnitId(match.state) || null,
       provider: publicAction.provider || "Battle Engine",
       publicReason: publicAction.publicReason || "",
       resultLabel: publicAction.resultLabel || null,
@@ -823,9 +828,11 @@ function localDecisionFromRules(rulesPayload) {
   return { action: "shot", candidateId: null, publicReason: "No legal action available." };
 }
 
-async function contestantDecision(contestant, state, team, env, fetchFn) {
+async function contestantDecision(contestant, state, unitId, env, fetchFn) {
+  const unit = (state.units || []).find((item) => item.id === unitId) || Sim.getActiveUnit(state);
+  const team = unit ? unit.team : getActiveTeam(state);
   const command = contestant.command || "";
-  const rulesPayload = Contract.buildRulesPayload(state, team, command);
+  const rulesPayload = Contract.buildRulesPayload(state, unit ? unit.id : team, command);
   const provider = getProvider(contestant.provider);
   const allowedProviders = listProviders(env).map((item) => item.id);
   if (!provider || contestant.provider === "local" || !allowedProviders.includes(provider.id) || !contestant.apiKey.trim()) {
@@ -860,9 +867,10 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
   const maxActions = Sim.CONFIG.maxTurns * (Sim.CONFIG.maxRerollsPerTurn + 1) + 4;
   while (!state.winner && state.turn < Sim.CONFIG.maxTurns && guard < maxActions) {
     guard += 1;
+    const unitId = getActiveUnitId(state);
     const team = getActiveTeam(state);
     const contestant = team === "A" ? teamA : teamB;
-    const resolved = await contestantDecision(contestant, state, team, env, fetchFn);
+    const resolved = await contestantDecision(contestant, state, unitId, env, fetchFn);
     if (isSwapAction(resolved.decision.action)) {
       Sim.applyTurn(state, {}, {
         action: "swap_hand",
@@ -873,7 +881,7 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
     }
     Sim.applyTurn(
       state,
-      { [team]: resolved.command },
+      { [unitId || team]: resolved.command },
       {
         candidateId: resolved.decision.candidateId || undefined,
         provider: resolved.providerLabel,
@@ -1089,8 +1097,9 @@ function createServer(options) {
           sendJson(res, 400, { error: "unknown_action" });
           return;
         }
+        const unitId = getActiveUnitId(match.state);
         const team = getActiveTeam(match.state);
-        if (!team) {
+        if (!team || !unitId) {
           sendJson(res, 409, { error: "match_already_resolved" });
           return;
         }
@@ -1103,7 +1112,7 @@ function createServer(options) {
             const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
             Sim.applyTurn(
               match.state,
-              { [team]: command },
+              { [unitId]: command },
               {
                 candidateId: body.candidateId,
                 provider: String(body.provider || "").slice(0, 80) || null,
@@ -1112,7 +1121,7 @@ function createServer(options) {
             );
           }
           match.status = match.state.winner ? "resolved" : "active";
-          const summary = buildActionSummary(match, action, team, rerollResult, beforeEventCount);
+          const summary = buildActionSummary(match, action, team, unitId, rerollResult, beforeEventCount);
           sendJson(res, 200, { match, action: summary });
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "action_failed" });
@@ -1172,12 +1181,15 @@ function createServer(options) {
           sendJson(res, 400, { error: "unknown_provider" });
           return;
         }
-        if (!body.state || (body.team !== "A" && body.team !== "B")) {
+        const requestedOwner = String(body.unitId || body.team || "").toUpperCase();
+        const validTeam = requestedOwner === "A" || requestedOwner === "B";
+        const validUnit = /^[AB][12]$/.test(requestedOwner);
+        if (!body.state || (!validTeam && !validUnit)) {
           sendJson(res, 400, { error: "invalid_agent_request" });
           return;
         }
         const command = String(body.command || "").slice(0, 80);
-        const rulesPayload = Contract.buildRulesPayload(body.state, body.team, command);
+        const rulesPayload = Contract.buildRulesPayload(body.state, requestedOwner, command);
         const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
         if (!rulesPayload.legalActions.length) {
           sendJson(res, 409, { error: "no_legal_actions" });

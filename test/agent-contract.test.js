@@ -4,7 +4,7 @@ const Contract = require("../src/agents/contract.js");
 
 function testCandidateExportIsSafe() {
   const state = Sim.createInitialState({ seed: 7351 });
-  const candidates = Contract.listPublicShotCandidates(state, "A", "hit B2 high");
+  const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
   assert.ok(candidates.length > 0, "should expose legal candidates");
   assert.ok(candidates.length <= Contract.MAX_PUBLIC_CANDIDATES, "candidate list should be bounded");
   assert.ok(candidates.every((candidate) => candidate.candidateId), "candidate should have stable id");
@@ -22,10 +22,13 @@ function testCandidateExportIsSafe() {
 
 function testRulesPayloadIsBareGameStateAndLegalActions() {
   const state = Sim.createInitialState({ seed: 7351 });
-  const payload = Contract.buildRulesPayload(state, "A", "human prompt only");
+  const payload = Contract.buildRulesPayload(state, "A1", "human prompt only");
   const serialized = JSON.stringify(payload);
   assert.strictEqual(payload.objective, "eliminate opposing team while avoiding allied units");
   assert.strictEqual(payload.team, "A");
+  assert.strictEqual(payload.activeUnitId, "A1");
+  assert.strictEqual(payload.controlledUnit.id, "A1");
+  assert.strictEqual(payload.hand.owner, "A1");
   assert.ok(payload.allyIds.includes("A2"), "payload should identify allies");
   assert.ok(payload.opponentIds.includes("B1") && payload.opponentIds.includes("B2"), "payload should identify opponents");
   assert.ok(payload.hand.cards.length === Sim.CONFIG.handSize, "payload should include the retained current hand");
@@ -43,11 +46,11 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
 
 function testDecisionValidation() {
   const state = Sim.createInitialState({ seed: 7351 });
-  const candidates = Contract.listPublicShotCandidates(state, "A", "hit B2 high");
+  const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
   const valid = Contract.validateAgentDecision({ candidateId: candidates[0].candidateId, publicReason: "High arc." }, candidates);
   assert.strictEqual(valid.ok, true);
 
-  const payload = Contract.buildRulesPayload(state, "A", "hit B2 high");
+  const payload = Contract.buildRulesPayload(state, "A1", "hit B2 high");
   const swap = Contract.validateAgentDecision({ action: "swap_hand", publicReason: "Need a better hand." }, payload.legalActions);
   assert.strictEqual(swap.ok, true);
   assert.strictEqual(swap.action, "swap_hand");

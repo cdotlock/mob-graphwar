@@ -29,6 +29,9 @@ function testFourSeatAgentBattleMatrixExists() {
   assert.ok(main.includes("agent-hand-strip"), "each agent seat should surface the retained hand visible to its model");
   assert.ok(main.includes("agent-action-beam"), "agent seats should show the latest model action/reason as a game HUD element");
   assert.ok(main.includes("swapsRemaining"), "agent seats should expose retained-hand swap economy");
+  assert.ok(main.includes("Sim.getCurrentHand(state, seat.unitId)"), "agent seats should read retained hands per AI unit, not per team");
+  assert.ok(main.includes("state.hands?.[seat.unitId]"), "agent seats should read swap economy per AI unit");
+  assert.ok(main.includes("activeUnitId"), "battle surface should track the active AI unit for watch-only play");
   assert.ok(css.includes(".agent-battle-matrix"), "CSS should style the four-seat battle matrix");
   assert.ok(css.includes(".agent-seat"), "CSS should style each AI seat card");
   assert.ok(css.includes(".agent-hand-strip"), "CSS should style per-agent retained hand chips");

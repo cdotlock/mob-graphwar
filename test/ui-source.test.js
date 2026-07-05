@@ -38,10 +38,19 @@ function testGameSurfacesMatchmakingAndLeagueSimulation() {
   assert.ok(css.includes(".queue-strip"), "CSS should style the ranked queue state");
 }
 
+function testGameSurfacesPersistentProfileAndLeaderboard() {
+  assert.ok(main.includes("restoreProfile"), "UI should restore a persisted ranked profile");
+  assert.ok(main.includes("LeaderboardPanel"), "UI should expose a ranked leaderboard panel");
+  assert.ok(main.includes('data-testid="leaderboard-panel"'), "leaderboard should be selectable for browser verification");
+  assert.ok(css.includes(".profile-vault"), "CSS should style the profile persistence surface");
+  assert.ok(css.includes(".leaderboard-panel"), "CSS should style the ranked leaderboard panel");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
 testUiSubmitsRankedActionsToServer();
 testGameSurfacesMatchmakingAndLeagueSimulation();
+testGameSurfacesPersistentProfileAndLeaderboard();
 
 console.log("ui-source tests passed");

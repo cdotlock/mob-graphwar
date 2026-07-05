@@ -15,6 +15,7 @@ const matches = new Map();
 const matchmakingQueue = [];
 let nextPlayerId = 1;
 let nextMatchId = 1;
+let loadedStoreFile = null;
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -74,6 +75,91 @@ function serveStatic(req, res) {
   });
 }
 
+function resolveStoreFile(env) {
+  const source = env || process.env;
+  if (source.GRAPHWAR_DATA_FILE === "memory") return null;
+  if (source.GRAPHWAR_DATA_FILE) return path.resolve(String(source.GRAPHWAR_DATA_FILE));
+  if (source.RAILWAY_ENVIRONMENT || source.RAILWAY_PROJECT_ID || source.NODE_ENV === "production") {
+    return path.join(ROOT, ".data", "graphwar-store.json");
+  }
+  return null;
+}
+
+function persistableProviders(providers) {
+  return Object.fromEntries(
+    Object.entries(providers || {}).map(([id, value]) => [
+      id,
+      {
+        model: value.model || "",
+        configured: Boolean(value.apiKey || value.configured)
+      }
+    ])
+  );
+}
+
+function persistablePlayer(player) {
+  return {
+    id: player.id,
+    displayName: player.displayName,
+    rank: player.rank,
+    providers: persistableProviders(player.providers)
+  };
+}
+
+function readStoreFile(storeFile) {
+  if (!storeFile || !fs.existsSync(storeFile)) return { players: {}, nextPlayerId: 1 };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(storeFile, "utf8"));
+    return {
+      players: parsed && parsed.players && typeof parsed.players === "object" ? parsed.players : {},
+      nextPlayerId: Number(parsed && parsed.nextPlayerId) || 1
+    };
+  } catch {
+    return { players: {}, nextPlayerId: 1 };
+  }
+}
+
+function loadPersistentStore(env) {
+  const storeFile = resolveStoreFile(env);
+  if (!storeFile || loadedStoreFile === storeFile) return storeFile;
+  players.clear();
+  matches.clear();
+  matchmakingQueue.length = 0;
+
+  const store = readStoreFile(storeFile);
+  let maxPlayerNumber = 0;
+  for (const player of Object.values(store.players)) {
+    if (!player || !player.id) continue;
+    players.set(player.id, {
+      id: String(player.id),
+      displayName: String(player.displayName || "Player").slice(0, 32),
+      rank: player.rank || { rating: 1000, tier: "Bronze", games: 0 },
+      providers: persistableProviders(player.providers)
+    });
+    const numeric = Number(String(player.id).replace(/^player-/, ""));
+    if (Number.isFinite(numeric)) maxPlayerNumber = Math.max(maxPlayerNumber, numeric);
+  }
+  nextPlayerId = Math.max(Number(store.nextPlayerId) || 1, maxPlayerNumber + 1);
+  nextMatchId = 1;
+  loadedStoreFile = storeFile;
+  return storeFile;
+}
+
+function savePersistentStore(env) {
+  const storeFile = resolveStoreFile(env);
+  if (!storeFile) return;
+  fs.mkdirSync(path.dirname(storeFile), { recursive: true });
+  const body = JSON.stringify({
+    version: 1,
+    nextPlayerId,
+    players: Object.fromEntries(Array.from(players.values()).map((player) => [player.id, persistablePlayer(player)]))
+  }, null, 2);
+  const tempFile = `${storeFile}.tmp`;
+  fs.writeFileSync(tempFile, body);
+  fs.renameSync(tempFile, storeFile);
+  loadedStoreFile = storeFile;
+}
+
 function summarizeState(state) {
   return {
     seed: state.seed,
@@ -102,9 +188,26 @@ function publicPlayer(player) {
     displayName: player.displayName,
     rank: player.rank,
     providers: Object.fromEntries(
-      Object.entries(player.providers || {}).map(([id, value]) => [id, { model: value.model || "", configured: Boolean(value.apiKey) }])
+      Object.entries(player.providers || {}).map(([id, value]) => [
+        id,
+        { model: value.model || "", configured: Boolean(value.apiKey || value.configured) }
+      ])
     )
   };
+}
+
+function publicLeaderboard(limit) {
+  return Array.from(players.values())
+    .map((player) => ({
+      id: player.id,
+      displayName: player.displayName,
+      rating: player.rank.rating,
+      tier: player.rank.tier,
+      games: player.rank.games,
+      providers: Object.keys(player.providers || {})
+    }))
+    .sort((a, b) => b.rating - a.rating || b.games - a.games || a.displayName.localeCompare(b.displayName))
+    .slice(0, limit || 25);
 }
 
 function createRoster(player, preferredProvider) {
@@ -437,6 +540,7 @@ function createServer(options) {
   const opts = options || {};
   const env = opts.env || process.env;
   const fetchFn = opts.fetch || globalThis.fetch;
+  loadPersistentStore(env);
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://127.0.0.1");
@@ -446,6 +550,21 @@ function createServer(options) {
       }
       if (req.method === "GET" && url.pathname === "/api/providers") {
         sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || "deepseek", providers: listProviders(env) });
+        return;
+      }
+      const sessionMatch = url.pathname.match(/^\/api\/session\/([^/]+)$/);
+      if (req.method === "GET" && sessionMatch) {
+        const player = players.get(sessionMatch[1]);
+        if (!player) {
+          sendJson(res, 404, { error: "unknown_player" });
+          return;
+        }
+        sendJson(res, 200, { player: publicPlayer(player) });
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/leaderboard") {
+        const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 25));
+        sendJson(res, 200, { players: publicLeaderboard(limit) });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/session") {
@@ -458,6 +577,7 @@ function createServer(options) {
           rank: { rating: 1000, tier: "Bronze", games: 0 }
         };
         players.set(id, player);
+        savePersistentStore(env);
         sendJson(res, 200, { player: publicPlayer(player) });
         return;
       }
@@ -564,6 +684,7 @@ function createServer(options) {
         player.rank.games += 1;
         player.rank.tier = player.rank.rating >= 1200 ? "Gold" : player.rank.rating >= 1050 ? "Silver" : "Bronze";
         match.rankSettlements[player.id] = { rankDelta, rating: player.rank.rating };
+        savePersistentStore(env);
         sendJson(res, 200, { match, player: publicPlayer(player), rankDelta, score: finalState.score });
         return;
       }

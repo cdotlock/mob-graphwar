@@ -8,3 +8,4 @@ coverage/
 dist/
 build/
 .superpowers/sdd/
+.data/

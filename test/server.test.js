@@ -1,4 +1,7 @@
 const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const { createServer } = require("../server/index.js");
 
 async function request(server, path, options) {
@@ -89,6 +92,65 @@ async function testLoginMatchmakingAndRankLoop() {
   assert.strictEqual(result.status, 200);
   assert.ok(result.json.rankDelta !== 0, "resolved ranked match should award or remove rank points");
   assert.ok(Number.isFinite(result.json.player.rank.rating), "resolved ranked match should return updated rank");
+}
+
+function freshCreateServer() {
+  const serverPath = require.resolve("../server/index.js");
+  delete require.cache[serverPath];
+  return require("../server/index.js").createServer;
+}
+
+async function testProfileRankAndLeaderboardPersistAcrossRestart() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-store-"));
+  const dataFile = path.join(dataDir, "store.json");
+  const env = { GRAPHWAR_DATA_FILE: dataFile };
+  const createPersistentServer = freshCreateServer();
+
+  const session = await request(createPersistentServer({ env }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Persisted",
+      providers: {
+        deepseek: { apiKey: "persist-secret", model: "deepseek-v4-flash" }
+      }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+  assert.ok(fs.existsSync(dataFile), "session creation should persist the player store");
+  assert.ok(!session.text.includes("persist-secret"), "session response should not echo API keys");
+
+  const playerId = session.json.player.id;
+  const match = await request(createPersistentServer({ env }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(match.status, 200);
+
+  const resolved = await request(createPersistentServer({ env }), `/api/match/${match.json.match.id}/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId })
+  });
+  assert.strictEqual(resolved.status, 200);
+  const settledRating = resolved.json.player.rank.rating;
+  assert.notStrictEqual(settledRating, 1000, "rank settlement should mutate persistent rating");
+
+  const restartedCreateServer = freshCreateServer();
+  const restored = await request(restartedCreateServer({ env }), `/api/session/${playerId}`);
+  assert.strictEqual(restored.status, 200);
+  assert.strictEqual(restored.json.player.id, playerId);
+  assert.strictEqual(restored.json.player.rank.rating, settledRating);
+  assert.ok(!restored.text.includes("persist-secret"), "restored profile should not expose API keys");
+
+  const leaderboard = await request(restartedCreateServer({ env }), "/api/leaderboard");
+  assert.strictEqual(leaderboard.status, 200);
+  assert.ok(
+    leaderboard.json.players.some((player) => player.id === playerId && player.rating === settledRating),
+    "leaderboard should include restored ranked player"
+  );
+  assert.ok(!leaderboard.text.includes("persist-secret"), "leaderboard should not expose API keys");
 }
 
 async function createTestPlayer(displayName) {
@@ -381,6 +443,7 @@ async function testProviderShotRequiresKey() {
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
+  await testProfileRankAndLeaderboardPersistAcrossRestart();
   await testHumanMatchmakingQueueCanFormRanked2v2();
   await testMatchActionsMutateAuthoritativeState();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();

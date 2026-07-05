@@ -6,6 +6,7 @@ import {
   Cpu,
   Crosshair,
   KeyRound,
+  ListOrdered,
   LogIn,
   PlayCircle,
   RadioTower,
@@ -30,6 +31,8 @@ const DEFAULT_ROSTER = [
   { unitId: "B1", team: "B", control: "ai", displayName: "AI Rival 1", provider: "local" },
   { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "local" }
 ];
+
+const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -86,6 +89,7 @@ function App() {
   const [lastDecision, setLastDecision] = useState(null);
   const [queueState, setQueueState] = useState(null);
   const [leagueResult, setLeagueResult] = useState(null);
+  const [leaderboard, setLeaderboard] = useState([]);
 
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
   const activeHand = useMemo(() => (activeTeam === "-" ? [] : Sim.getCurrentHand(battleState, activeTeam)), [battleState, activeTeam]);
@@ -109,12 +113,45 @@ function App() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "login_failed");
       setProfile(payload.player);
+      window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+      await loadLeaderboard();
       setMessage("Profile ready. Join ranked matchmaking.");
     } catch (err) {
       setMessage(err.message || "Login failed.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function restoreProfile() {
+    const storedId = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!storedId) {
+      setMessage("No saved ranked profile on this device.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/session/${storedId}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "restore_failed");
+      setProfile(payload.player);
+      setLogin((current) => ({ ...current, displayName: payload.player.displayName }));
+      await loadLeaderboard();
+      setMessage(`Restored ${payload.player.displayName} at ${payload.player.rank.rating}.`);
+    } catch (err) {
+      window.localStorage.removeItem(PROFILE_STORAGE_KEY);
+      setMessage(err.message || "Profile restore failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadLeaderboard() {
+    const response = await fetch("/api/leaderboard?limit=8");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "leaderboard_failed");
+    setLeaderboard(payload.players || []);
+    return payload.players || [];
   }
 
   async function joinMatch(options) {
@@ -348,6 +385,8 @@ function App() {
       setProfile(payload.player);
       setMatch(payload.match);
       setBattleState(payload.match.state);
+      window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+      await loadLeaderboard();
       setLastDecision({
         action: "rank",
         team: payload.match.state.winner || "draw",
@@ -382,9 +421,10 @@ function App() {
 
       <section className="game-grid">
         <aside className="lobby-panel game-panel">
-          <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={signIn} />
+          <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={signIn} onRestore={restoreProfile} />
           <MatchCard profile={profile} match={match} queueState={queueState} busy={busy} onJoin={joinMatch} onSettle={settleRank} />
           <RosterCard match={match} />
+          <LeaderboardPanel players={leaderboard} profile={profile} onRefresh={loadLeaderboard} />
         </aside>
 
         <section className="battle-panel game-panel">
@@ -452,7 +492,7 @@ function DuelCommanders({ state, match, activeTeam, lastDecision }) {
   );
 }
 
-function LoginCard({ login, setLogin, profile, busy, onSubmit }) {
+function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
   return (
     <form className="login-card" onSubmit={onSubmit}>
       <div className="panel-title"><LogIn size={18} /> Login / Model Key</div>
@@ -466,6 +506,10 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit }) {
       </select></label>
       <label>Model<input value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })} /></label>
       <label>API key<input type="password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
+      <div className="profile-vault">
+        <span>{profile ? `${profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked profile"}</span>
+        <button type="button" disabled={busy} onClick={onRestore}>Restore</button>
+      </div>
       <button disabled={busy}>{profile ? "Update Session" : "Enter Arena"}</button>
     </form>
   );
@@ -504,6 +548,25 @@ function RosterCard({ match }) {
           <small>{seat.control} · {seat.provider}</small>
         </div>
       )) : <p className="empty-copy">Join matchmaking to fill your ally and rivals.</p>}
+    </div>
+  );
+}
+
+function LeaderboardPanel({ players, profile, onRefresh }) {
+  return (
+    <div className="leaderboard-panel" data-testid="leaderboard-panel">
+      <div className="panel-title"><ListOrdered size={18} /> Ranked Ladder</div>
+      <div className="leaderboard-list">
+        {players.length ? players.map((player, index) => (
+          <div className={`leaderboard-row ${profile?.id === player.id ? "you" : ""}`} key={player.id}>
+            <span>#{index + 1}</span>
+            <strong>{player.displayName}</strong>
+            <b>{player.rating}</b>
+            <small>{player.tier} · {player.games}G</small>
+          </div>
+        )) : <p className="empty-copy">Settle ranked matches to populate the ladder.</p>}
+      </div>
+      <button type="button" onClick={onRefresh}>Refresh Ladder</button>
     </div>
   );
 }

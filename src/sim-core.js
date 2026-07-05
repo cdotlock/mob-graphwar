@@ -1026,6 +1026,79 @@
     };
   }
 
+  function countTag(cards, tag) {
+    return cards.filter((card) => (card.tags || []).includes(tag)).length;
+  }
+
+  function analyzeHand(hand, energy) {
+    const cards = Array.isArray(hand) ? hand : [];
+    const tags = componentTags(cards);
+    const families = componentFamilies(cards);
+    const has = (tag) => tags.includes(tag);
+    const usesFamily = (family) => families.includes(family);
+    const playable = cards.filter((card) => card.cost <= energy);
+    const totalCost = cards.reduce((sum, card) => sum + card.cost, 0);
+    const precisionCount = countTag(cards, "precision");
+    const clearanceCount = countTag(cards, "clearance");
+    const cornerCount = countTag(cards, "corner");
+    const cheapCount = countTag(cards, "cheap");
+    const volatileCount = countTag(cards, "volatile");
+
+    let archetype = "Mixed Curve";
+    let commandRead = "Flexible hand with no single dominant lane.";
+    if (clearanceCount > 0 && precisionCount > 0) {
+      archetype = "Guided Overpass";
+      commandRead = "High clearance and precision are available.";
+    } else if (clearanceCount >= 2) {
+      archetype = "Sky Stack";
+      commandRead = "High lift is available, with ceiling risk.";
+    } else if (cornerCount > 0 && (has("thread") || precisionCount > 0)) {
+      archetype = "Threaded Hook";
+      commandRead = "Corner and threading tools are available.";
+    } else if (has("shelf") && precisionCount > 0) {
+      archetype = "Hold Line";
+      commandRead = "Shelf control can stabilize mid-curve shots.";
+    } else if (usesFamily("risk") && precisionCount > 0) {
+      archetype = "Armed Needle";
+      commandRead = "Damage pressure has precision support.";
+    } else if (usesFamily("risk") || has("damage")) {
+      archetype = "Loose Charge";
+      commandRead = "Damage pressure is available without much stability.";
+    } else if (has("weave")) {
+      archetype = "Weave Line";
+      commandRead = "Oscillation can search for side-door angles.";
+    } else if (cheapCount >= 2) {
+      archetype = "Tempo Shot";
+      commandRead = "Cheap cards can conserve energy.";
+    }
+
+    const traitPriority = ["clearance", "precision", "thread", "corner", "shelf", "weave", "damage", "cheap", "volatile"];
+    const traits = traitPriority.filter((tag) => has(tag)).slice(0, 3);
+    const risk =
+      volatileCount > 0 && precisionCount > 0
+        ? "volatile option"
+        : volatileCount > 0
+          ? "volatile pressure"
+          : usesFamily("risk")
+            ? "damage option"
+            : "stable";
+    const averageCost = cards.length ? round(totalCost / cards.length, 1) : 0;
+    const energyRead = `${playable.length}/${cards.length} playable at ${energy}E; avg ${averageCost}E`;
+
+    return {
+      archetype,
+      traits: traits.length ? traits : families.slice(0, 3),
+      playableCount: playable.length,
+      handSize: cards.length,
+      energy,
+      totalCost,
+      averageCost,
+      risk,
+      energyRead,
+      commandRead
+    };
+  }
+
   function scoreSimulation(sim, shot, directive) {
     let score = 0;
     const effects = sumEffects(shot.components);
@@ -1409,6 +1482,7 @@
     runBattle,
     exportTrace,
     dealHand,
+    analyzeHand,
     getEnergy,
     groundY,
     parseDirective,

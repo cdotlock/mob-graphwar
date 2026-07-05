@@ -13,6 +13,7 @@
   const handCards = document.getElementById("handCards");
   const handTitle = document.getElementById("handTitle");
   const handHint = document.getElementById("handHint");
+  const handRead = document.getElementById("handRead");
   const thinkingPanel = document.getElementById("thinkingPanel");
   const mapBadge = document.getElementById("mapBadge");
   const activeBadge = document.getElementById("activeBadge");
@@ -258,18 +259,38 @@
       </article>`;
   }
 
+  function renderHandRead(hand, energy) {
+    const read = Sim.analyzeHand(hand, energy);
+    const traits = read.traits.map((trait) => `<span class="tag">${esc(trait)}</span>`).join("");
+    handRead.innerHTML = `
+      <div class="hand-read-main">
+        <span>Hand Read</span>
+        <strong>${esc(read.archetype)}</strong>
+      </div>
+      <div class="hand-read-copy">${esc(read.commandRead)}</div>
+      <div class="hand-read-stats">
+        <span>${esc(read.energyRead)}</span>
+        <span>${esc(read.risk)}</span>
+      </div>
+      <div class="tag-row">${traits}</div>
+    `;
+  }
+
   function renderCurrentHand() {
     const event = state.events[state.events.length - 1];
     if (state.winner && event) {
       handTitle.textContent = `Final Shot Hand - Team ${event.team}`;
       handHint.textContent = "Used cards glow";
+      renderHandRead(event.hand, event.energy);
       handCards.innerHTML = event.hand.map((card) => cardMarkup(card, event.usedCardIds.includes(card.instanceId))).join("");
       return;
     }
     const team = state.turn % 2 === 0 ? "A" : "B";
     const hand = Sim.dealHand(state.seed, state.turn, team);
+    const energy = Sim.getEnergy(state.turn);
     handTitle.textContent = `Current Hand - Team ${team}`;
-    handHint.textContent = `${Sim.getEnergy(state.turn)} energy before lock-in`;
+    handHint.textContent = `${energy} energy before lock-in`;
+    renderHandRead(hand, energy);
     handCards.innerHTML = hand.map((card) => cardMarkup(card, false)).join("");
   }
 

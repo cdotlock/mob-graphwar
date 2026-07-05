@@ -161,6 +161,18 @@ function testLegalShotsExposeCardComboIdentity() {
   assert.ok(shots.some((shot) => shot.combo.name === "Guided Overpass"));
 }
 
+function testHandAnalysisSummarizesTacticalRead() {
+  const hand = Sim.dealHand(7351, 0, "A");
+  const analysis = Sim.analyzeHand(hand, 4);
+
+  assert.strictEqual(analysis.archetype, "Guided Overpass");
+  assert.deepStrictEqual(analysis.traits, ["clearance", "precision", "thread"]);
+  assert.strictEqual(analysis.playableCount, 5);
+  assert.strictEqual(analysis.risk, "volatile option");
+  assert.ok(analysis.energyRead.includes("4E"));
+  assert.ok(analysis.commandRead.includes("High clearance"));
+}
+
 function testApplyTurnCanUseProviderCandidate() {
   const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
   const state = Sim.createInitialState({ seed: 7351 });
@@ -212,13 +224,14 @@ testResourceValidation();
 testCommandParsing();
 testHardTargetConstraintChangesShotChoice();
 testUnavailableHardTargetIsReportedAsFallback();
-testSafeCommandForbidsRiskCards();
-testLegalShotsHonorSafeConstraints();
-testShotEventsExposeCardComboIdentity();
-testLegalShotsExposeCardComboIdentity();
-testApplyTurnCanUseProviderCandidate();
-testRicherCardCatalog();
-testSeededHardMapGeneration();
-testTraceShapeIncludesMapAndScore();
+  testSafeCommandForbidsRiskCards();
+  testLegalShotsHonorSafeConstraints();
+  testShotEventsExposeCardComboIdentity();
+  testLegalShotsExposeCardComboIdentity();
+  testHandAnalysisSummarizesTacticalRead();
+  testApplyTurnCanUseProviderCandidate();
+  testRicherCardCatalog();
+  testSeededHardMapGeneration();
+  testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

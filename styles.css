@@ -182,6 +182,7 @@ h1 {
   grid-template-columns: minmax(0, 1fr) 390px;
   gap: 12px;
   align-items: start;
+  min-width: 0;
 }
 
 .play-panel {
@@ -243,10 +244,15 @@ h1 {
 .command-box,
 .hand-panel,
 .side-panel section {
+  min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(17, 24, 18, 0.98), rgba(10, 14, 11, 0.98));
   box-shadow: 0 12px 26px var(--shadow);
+}
+
+.hand-panel {
+  overflow: hidden;
 }
 
 .command-box {
@@ -374,6 +380,7 @@ button:focus-visible {
 .side-panel {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .shot-summary,
@@ -423,10 +430,65 @@ button:focus-visible {
   color: #dfeee2;
 }
 
+.hand-read {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  margin: 10px 10px 0;
+  border: 1px solid rgba(228, 187, 98, 0.16);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: linear-gradient(135deg, rgba(228, 187, 98, 0.1), rgba(22, 101, 52, 0.08));
+}
+
+.hand-read-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hand-read-main span,
+.hand-read-stats {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hand-read-main strong {
+  color: var(--gold);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.hand-read-copy {
+  min-width: 0;
+  color: #dfeee2;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.hand-read-stats {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.hand-read .tag-row {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(5, minmax(128px, 1fr));
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
   padding: 10px;
 }
 
@@ -666,6 +728,14 @@ button:focus-visible {
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
+  }
+
+  .hand-read {
+    grid-template-columns: 1fr;
+  }
+
+  .hand-read-stats {
+    justify-items: start;
   }
 
   .card {

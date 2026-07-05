@@ -125,10 +125,50 @@ function createRankedMatch(player, preferredProvider) {
     seed,
     roster: createRoster(player, preferredProvider),
     filledByAi: true,
-    state: Sim.createInitialState({ seed })
+    state: Sim.createInitialState({ seed }),
+    rankSettlements: {}
   };
   matches.set(id, match);
   return match;
+}
+
+function getPlayerSeat(match, player) {
+  if (!match || !player) return null;
+  return match.roster.find((seat) => seat.playerId === player.id) || null;
+}
+
+function getActiveTeam(state) {
+  if (!state || state.winner) return null;
+  return state.turn % 2 === 0 ? "A" : "B";
+}
+
+function buildActionSummary(match, action, team, rerollResult, beforeEventCount) {
+  if (action === "reroll") {
+    return {
+      action,
+      team,
+      rerollsUsed: rerollResult.rerollsUsed,
+      rerollsRemaining: rerollResult.rerollsRemaining,
+      hand: rerollResult.cards
+    };
+  }
+  const event = match.state.events[beforeEventCount] || match.state.events[match.state.events.length - 1] || null;
+  return {
+    action,
+    team,
+    event,
+    result: event ? event.result : match.state.reason,
+    winner: match.state.winner
+  };
+}
+
+function advanceMatchToResolution(match) {
+  while (!match.state.winner && match.state.turn < Sim.CONFIG.maxTurns) {
+    const team = getActiveTeam(match.state);
+    Sim.applyTurn(match.state, { A: "", B: "" }, { provider: team === "A" ? "Auto Resolve A" : "Auto Resolve B" });
+  }
+  match.status = "resolved";
+  return match.state;
 }
 
 function resolveRankDelta(winner, playerTeam) {
@@ -143,6 +183,7 @@ function providerErrorStatus(error) {
   if (error.message === "missing_candidate_id") return 502;
   if (error.message === "invalid_provider_json") return 502;
   if (error.message === "provider_http_error") return 502;
+  if (error.message === "reroll_limit_reached") return 409;
   return 400;
 }
 
@@ -185,6 +226,58 @@ function createServer(options) {
         sendJson(res, 200, { match });
         return;
       }
+      const actionMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/action$/);
+      if (req.method === "POST" && actionMatch) {
+        const body = JSON.parse(await readBody(req, 64_000));
+        const match = matches.get(actionMatch[1]);
+        const player = players.get(String(body.playerId || ""));
+        if (!match || !player) {
+          sendJson(res, 404, { error: "unknown_match_or_player" });
+          return;
+        }
+        if (!getPlayerSeat(match, player)) {
+          sendJson(res, 403, { error: "player_not_in_match" });
+          return;
+        }
+        if (match.status === "resolved" || match.state.winner) {
+          sendJson(res, 409, { error: "match_already_resolved" });
+          return;
+        }
+        const action = String(body.action || "shot");
+        if (action !== "shot" && action !== "reroll") {
+          sendJson(res, 400, { error: "unknown_action" });
+          return;
+        }
+        const team = getActiveTeam(match.state);
+        if (!team) {
+          sendJson(res, 409, { error: "match_already_resolved" });
+          return;
+        }
+        try {
+          let rerollResult = null;
+          const beforeEventCount = match.state.events.length;
+          if (action === "reroll") {
+            rerollResult = Sim.applyTurn(match.state, {}, { action: "reroll" });
+          } else {
+            const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
+            Sim.applyTurn(
+              match.state,
+              { [team]: command },
+              {
+                candidateId: body.candidateId,
+                provider: String(body.provider || "").slice(0, 80) || null,
+                providerReason: String(body.providerReason || "").slice(0, 240) || null
+              }
+            );
+          }
+          match.status = match.state.winner ? "resolved" : "active";
+          const summary = buildActionSummary(match, action, team, rerollResult, beforeEventCount);
+          sendJson(res, 200, { match, action: summary });
+        } catch (err) {
+          sendJson(res, providerErrorStatus(err), { error: err.message || "action_failed" });
+        }
+        return;
+      }
       const resolveMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/resolve$/);
       if (req.method === "POST" && resolveMatch) {
         const body = JSON.parse(await readBody(req, 64_000));
@@ -194,15 +287,23 @@ function createServer(options) {
           sendJson(res, 404, { error: "unknown_match_or_player" });
           return;
         }
-        const finalState = Sim.runBattle({ seed: match.seed, commands: { A: "", B: "" } });
-        match.status = "resolved";
-        match.state = finalState;
-        const playerSeat = match.roster.find((seat) => seat.playerId === player.id);
+        const playerSeat = getPlayerSeat(match, player);
+        if (!playerSeat) {
+          sendJson(res, 403, { error: "player_not_in_match" });
+          return;
+        }
+        const finalState = advanceMatchToResolution(match);
         const playerTeam = playerSeat ? playerSeat.team : "A";
+        if (match.rankSettlements[player.id]) {
+          const settlement = match.rankSettlements[player.id];
+          sendJson(res, 200, { match, player: publicPlayer(player), rankDelta: settlement.rankDelta, score: finalState.score });
+          return;
+        }
         const rankDelta = resolveRankDelta(finalState.winner, playerTeam);
         player.rank.rating += rankDelta;
         player.rank.games += 1;
         player.rank.tier = player.rank.rating >= 1200 ? "Gold" : player.rank.rating >= 1050 ? "Silver" : "Bronze";
+        match.rankSettlements[player.id] = { rankDelta, rating: player.rank.rating };
         sendJson(res, 200, { match, player: publicPlayer(player), rankDelta, score: finalState.score });
         return;
       }

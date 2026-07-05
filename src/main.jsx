@@ -133,21 +133,43 @@ function App() {
     }
   }
 
-  function localReroll() {
-    if (battleState.winner || activeTeam === "-") return;
-    const next = clone(battleState);
+  async function submitMatchAction(actionPayload) {
+    if (!profile || !match) return null;
+    const response = await fetch(`/api/match/${match.id}/action`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ playerId: profile.id, ...actionPayload })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "action_failed");
+    setMatch(payload.match);
+    setBattleState(payload.match.state);
+    return payload;
+  }
+
+  async function localReroll() {
+    if (battleState.winner || activeTeam === "-" || busy) return;
+    const team = activeTeam;
+    setBusy(true);
     try {
-      const result = Sim.rerollHand(next, activeTeam);
-      setBattleState(next);
+      const payload = match && profile
+        ? await submitMatchAction({ action: "reroll", provider: "Local AI" })
+        : null;
+      const result = payload ? { ...payload.action, cards: payload.action.hand } : null;
+      const localState = payload ? null : clone(battleState);
+      const reroll = result || Sim.rerollHand(localState, team);
+      if (localState) setBattleState(localState);
       setLastDecision({
         action: "reroll",
-        team: activeTeam,
+        team,
         provider: "Local AI",
-        publicReason: `Rerolled into ${result.cards.map((card) => card.label).join(", ")}.`
+        publicReason: `Rerolled into ${reroll.cards.map((card) => card.label).join(", ")}.`
       });
-      setMessage(`Team ${activeTeam} rerolled. ${result.rerollsRemaining} rerolls left this turn.`);
+      setMessage(`Team ${team} rerolled. ${reroll.rerollsRemaining} rerolls left this turn.`);
     } catch (err) {
       setMessage(err.message || "Reroll failed.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -173,25 +195,46 @@ function App() {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "provider_failed");
         if (payload.decision.action === "reroll") {
-          Sim.rerollHand(next, activeTeam);
+          const providerLabel = `${login.provider} / ${payload.model}`;
+          const actionPayload = match && profile
+            ? await submitMatchAction({
+                action: "reroll",
+                provider: providerLabel,
+                providerReason: payload.decision.publicReason
+              })
+            : null;
+          if (!actionPayload) Sim.rerollHand(next, activeTeam);
           setLastDecision({
             action: "reroll",
             team: activeTeam,
-            provider: `${login.provider} / ${payload.model}`,
+            provider: providerLabel,
             publicReason: payload.decision.publicReason || "Provider selected a legal reroll."
           });
           setMessage(`${login.provider} chose to reroll.`);
         } else {
-          Sim.applyTurn(next, { A: battleOrder, B: "" }, {
-            candidateId: payload.decision.candidateId,
-            provider: `${login.provider} / ${payload.model}`,
-            providerReason: payload.decision.publicReason
-          });
-          const event = next.events[next.events.length - 1];
+          const providerLabel = `${login.provider} / ${payload.model}`;
+          const actionPayload = match && profile
+            ? await submitMatchAction({
+                action: "shot",
+                command: battleOrder,
+                candidateId: payload.decision.candidateId,
+                provider: providerLabel,
+                providerReason: payload.decision.publicReason
+              })
+            : null;
+          if (!actionPayload) {
+            Sim.applyTurn(next, { A: battleOrder, B: "" }, {
+              candidateId: payload.decision.candidateId,
+              provider: providerLabel,
+              providerReason: payload.decision.publicReason
+            });
+          }
+          const resolvedState = actionPayload ? actionPayload.match.state : next;
+          const event = resolvedState.events[resolvedState.events.length - 1];
           setLastDecision({
             action: "shot",
             team: activeTeam,
-            provider: event.provider || `${login.provider} / ${payload.model}`,
+            provider: event.provider || providerLabel,
             result: event.resultLabel,
             combo: event.combo?.name || "Mixed Curve",
             command: event.command,
@@ -204,12 +247,21 @@ function App() {
           A: activeTeam === "A" ? battleOrder : getAutoOrder("A"),
           B: activeTeam === "B" ? battleOrder || getAutoOrder("B") : getAutoOrder("B")
         };
-        Sim.applyTurn(next, orders, { provider: activeTeam === "A" ? "Local Ally AI" : "Local Rival AI" });
-        const event = next.events[next.events.length - 1];
+        const providerLabel = activeTeam === "A" ? "Local Ally AI" : "Local Rival AI";
+        const actionPayload = match && profile
+          ? await submitMatchAction({
+              action: "shot",
+              command: orders[activeTeam],
+              provider: providerLabel
+            })
+          : null;
+        if (!actionPayload) Sim.applyTurn(next, orders, { provider: providerLabel });
+        const resolvedState = actionPayload ? actionPayload.match.state : next;
+        const event = resolvedState.events[resolvedState.events.length - 1];
         setLastDecision({
           action: "shot",
           team: activeTeam,
-          provider: event.provider || "Local AI",
+          provider: event.provider || providerLabel,
           result: event.resultLabel,
           combo: event.combo?.name || "Mixed Curve",
           command: event.command,
@@ -217,7 +269,7 @@ function App() {
         });
         setMessage(`Team ${activeTeam} resolved by local AI.`);
       }
-      setBattleState(next);
+      if (!match || !profile) setBattleState(next);
     } catch (err) {
       setMessage(err.message || "Action failed.");
     } finally {

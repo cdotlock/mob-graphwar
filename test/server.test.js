@@ -91,6 +91,71 @@ async function testLoginMatchmakingAndRankLoop() {
   assert.ok(Number.isFinite(result.json.player.rank.rating), "resolved ranked match should return updated rank");
 }
 
+async function testMatchActionsMutateAuthoritativeState() {
+  const session = await request(createServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ displayName: "Commander", providers: { deepseek: { apiKey: "", model: "local" } } })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(joined.status, 200);
+  const matchId = joined.json.match.id;
+  const originalHand = joined.json.match.state.hands.A.cards.map((card) => card.instanceId).join("|");
+
+  const rerolled = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, action: "reroll" })
+  });
+  assert.strictEqual(rerolled.status, 200);
+  assert.strictEqual(rerolled.json.action.action, "reroll");
+  assert.strictEqual(rerolled.json.action.team, "A");
+  assert.strictEqual(rerolled.json.match.state.turn, 0, "reroll should not consume the turn");
+  assert.strictEqual(rerolled.json.match.state.hands.A.rerollsUsed, 1);
+  assert.notStrictEqual(
+    rerolled.json.match.state.hands.A.cards.map((card) => card.instanceId).join("|"),
+    originalHand,
+    "reroll should replace the active hand"
+  );
+
+  const fired = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      playerId: session.json.player.id,
+      action: "shot",
+      command: "must target B2 with a safe high arc",
+      provider: "Test Model"
+    })
+  });
+  assert.strictEqual(fired.status, 200);
+  assert.strictEqual(fired.json.action.action, "shot");
+  assert.strictEqual(fired.json.action.team, "A");
+  assert.strictEqual(fired.json.match.state.turn, 1, "shot should consume the turn");
+  assert.strictEqual(fired.json.match.state.events.length, 1);
+  assert.strictEqual(fired.json.match.state.events[0].provider, "Test Model");
+  assert.strictEqual(fired.json.match.state.events[0].command, "must target B2 with a safe high arc");
+
+  const playedEvent = fired.json.match.state.events[0];
+  const resolved = await request(createServer({ env: {} }), `/api/match/${matchId}/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id })
+  });
+  assert.strictEqual(resolved.status, 200);
+  assert.ok(resolved.json.match.state.events.length >= 1, "resolve should keep played events");
+  assert.strictEqual(resolved.json.match.state.events[0].candidateId, playedEvent.candidateId);
+  assert.strictEqual(resolved.json.match.state.events[0].result, playedEvent.result);
+  assert.strictEqual(resolved.json.match.state.events[0].provider, "Test Model");
+  assert.ok(resolved.json.score.turns >= 1, "rank score should include the played turn");
+}
+
 async function testProviderShotUsesByokAndValidatesCandidate() {
   let captured;
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
@@ -246,6 +311,7 @@ async function testProviderShotRequiresKey() {
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
+  await testMatchActionsMutateAuthoritativeState();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();
   await testProviderCanChooseReroll();

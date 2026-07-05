@@ -25,8 +25,14 @@ function testGameGradeHudStylesExist() {
   assert.ok(css.includes(".arena-stage"), "CSS should frame the battlefield as the primary game stage");
 }
 
+function testUiSubmitsRankedActionsToServer() {
+  assert.ok(main.includes("submitMatchAction"), "UI should centralize ranked action submission");
+  assert.ok(main.includes("/action"), "ranked reroll and shot actions should be posted to the match action endpoint");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
+testUiSubmitsRankedActionsToServer();
 
 console.log("ui-source tests passed");

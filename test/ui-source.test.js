@@ -25,9 +25,10 @@ function testGameGradeHudStylesExist() {
   assert.ok(css.includes(".arena-stage"), "CSS should frame the battlefield as the primary game stage");
 }
 
-function testUiSubmitsRankedActionsToServer() {
-  assert.ok(main.includes("submitMatchAction"), "UI should centralize ranked action submission");
-  assert.ok(main.includes("/action"), "ranked reroll and shot actions should be posted to the match action endpoint");
+function testUiKeepsRankedDuelSpectatorOnly() {
+  assert.ok(!main.includes("submitMatchAction"), "ranked UI should not expose per-turn manual action submission");
+  assert.ok(!main.includes("/action"), "ranked UI should not post reroll or shot actions during the duel");
+  assert.ok(main.includes("After that, watch only."), "command console should frame the player as a spectator after kickoff");
 }
 
 function testGameSurfacesMatchmakingAndLeagueSimulation() {
@@ -79,7 +80,7 @@ function testUiOffersOneClickRankedAutoDuel() {
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
-testUiSubmitsRankedActionsToServer();
+testUiKeepsRankedDuelSpectatorOnly();
 testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testUiPollsQueuedMatchmakingRooms();

@@ -380,21 +380,109 @@ function buildActionSummary(match, action, team, rerollResult, beforeEventCount)
 function autoResolveCommandsForTurn(match, options) {
   const opts = options || {};
   const team = getActiveTeam(match.state);
-  const commands = {
-    A: "",
-    B: ""
-  };
-  if (opts.playerTeam && opts.command && (opts.playerTeam === "A" || opts.playerTeam === "B")) {
-    commands[opts.playerTeam] = String(opts.command || "").slice(0, Sim.CONFIG.maxCommandLength);
-  }
-  return { team, commands };
+  const seat = getRosterSeatForTurn(match, team);
+  const command = seat && opts.playerId && seat.playerId === opts.playerId
+    ? String(opts.command || "").slice(0, Sim.CONFIG.maxCommandLength)
+    : "";
+  return { team, seat, command };
 }
 
-function advanceMatchToResolution(match, options) {
+function getActiveShooter(state, team) {
+  const alive = (state.units || []).filter((unit) => unit.team === team && unit.hp > 0);
+  if (!alive.length) return null;
+  return alive[Math.floor(state.turn / 2) % alive.length];
+}
+
+function getRosterSeatForTurn(match, team) {
+  if (!match || !team || !Array.isArray(match.roster)) return null;
+  const shooter = getActiveShooter(match.state, team);
+  if (!shooter) return match.roster.find((seat) => seat.team === team) || null;
+  return match.roster.find((seat) => seat.unitId === shooter.id) || match.roster.find((seat) => seat.team === team) || null;
+}
+
+function localAutoProviderLabel(team) {
+  return team === "A" ? "Auto Resolve A" : "Auto Resolve B";
+}
+
+function configuredSeatProvider(seat, env) {
+  if (!seat || seat.control !== "human" || !seat.playerId) return null;
+  const player = players.get(seat.playerId);
+  if (!player) return null;
+  const providerId = String(seat.provider || preferredPlayerProvider(player)).slice(0, 40);
+  const provider = getProvider(providerId);
+  const allowedProviders = listProviders(env).map((item) => item.id);
+  const providerConfig = player.providers && player.providers[providerId] ? player.providers[providerId] : {};
+  const apiKey = typeof providerConfig.apiKey === "string" ? providerConfig.apiKey.trim() : "";
+  if (!provider || provider.id === "local" || !allowedProviders.includes(provider.id) || !apiKey) return null;
+  const model = providerConfig.model || seat.model || provider.defaultModel;
+  return { player, provider, providerConfig, apiKey, model };
+}
+
+async function autoResolveDecisionForTurn(match, turn, options) {
   const opts = options || {};
-  while (!match.state.winner && match.state.turn < Sim.CONFIG.maxTurns) {
+  const rulesPayload = Contract.buildRulesPayload(match.state, turn.team, turn.command);
+  const configured = configuredSeatProvider(turn.seat, opts.env);
+  if (!configured) {
+    return {
+      command: turn.command,
+      providerLabel: localAutoProviderLabel(turn.team),
+      decision: localDecisionFromRules(rulesPayload)
+    };
+  }
+
+  const providerLabel = `${turn.seat.displayName || configured.player.displayName} / ${configured.model}`;
+  try {
+    const result = await executeProviderDecision(
+      configured.provider,
+      {
+        apiKey: configured.apiKey,
+        command: turn.command,
+        candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
+        stateSummary: summarizeState(match.state),
+        rulesPayload,
+        model: configured.model
+      },
+      { env: opts.env, fetch: opts.fetchFn }
+    );
+    return {
+      command: turn.command,
+      providerLabel,
+      decision: result.decision
+    };
+  } catch (err) {
+    return {
+      command: turn.command,
+      providerLabel: localAutoProviderLabel(turn.team),
+      decision: localDecisionFromRules(rulesPayload)
+    };
+  }
+}
+
+async function advanceMatchToResolution(match, options) {
+  const opts = options || {};
+  let guard = 0;
+  const maxActions = Sim.CONFIG.maxTurns * (Sim.CONFIG.maxRerollsPerTurn + 1) + 4;
+  while (!match.state.winner && match.state.turn < Sim.CONFIG.maxTurns && guard < maxActions) {
+    guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
-    Sim.applyTurn(match.state, turn.commands, { provider: turn.team === "A" ? "Auto Resolve A" : "Auto Resolve B" });
+    const resolved = await autoResolveDecisionForTurn(match, turn, opts);
+    if (resolved.decision.action === "reroll") {
+      Sim.applyTurn(match.state, {}, {
+        action: "reroll",
+        provider: resolved.providerLabel,
+        providerReason: resolved.decision.publicReason
+      });
+      continue;
+    }
+    Sim.applyTurn(
+      match.state,
+      { [turn.team]: resolved.command },
+      {
+        candidateId: resolved.decision.candidateId || undefined,
+        provider: resolved.providerLabel,
+        providerReason: resolved.decision.publicReason
+      }
+    );
   }
   match.status = "resolved";
   return match.state;
@@ -432,11 +520,14 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode) {
   };
 }
 
-function settleResolvedMatch(match, player, playerSeat, env, options) {
+async function settleResolvedMatch(match, player, playerSeat, env, options, fetchFn) {
   const opts = options || {};
   const startedTurn = match.state.events.length;
   const playerTeam = playerSeat ? playerSeat.team : "A";
-  const finalState = advanceMatchToResolution(match, {
+  const finalState = await advanceMatchToResolution(match, {
+    env,
+    fetchFn,
+    playerId: player.id,
     playerTeam,
     command: opts.command
   });
@@ -600,7 +691,7 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
       }
     );
   }
-  if (!state.winner) advanceMatchToResolution({ state, status: "active" });
+  if (!state.winner) await advanceMatchToResolution({ state, status: "active" }, { env, fetchFn });
   return state;
 }
 
@@ -824,7 +915,7 @@ function createServer(options) {
           return;
         }
         const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
-        sendJson(res, 200, settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command }));
+        sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command }, fetchFn));
         return;
       }
       const resolveMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/resolve$/);
@@ -841,7 +932,7 @@ function createServer(options) {
           sendJson(res, 403, { error: "player_not_in_match" });
           return;
         }
-        sendJson(res, 200, settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve" }));
+        sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve" }, fetchFn));
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/simulations/league") {

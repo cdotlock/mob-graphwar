@@ -13,17 +13,11 @@ import {
   RefreshCw,
   Shield,
   Swords,
-  Trophy,
-  Zap
+  Trophy
 } from "lucide-react";
 import "./arena.css";
 
 const Sim = window.GraphwarSim;
-
-const AUTO_ORDERS = {
-  A: "thread high shelf, avoid ally, pressure weakest rival",
-  B: "bend through center, punish exposed target, avoid ally"
-};
 
 const DEFAULT_ROSTER = [
   { unitId: "A1", team: "A", control: "human", displayName: "You", provider: "local" },
@@ -33,10 +27,6 @@ const DEFAULT_ROSTER = [
 ];
 
 const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
 
 function sx(x) {
   return x * 10;
@@ -117,10 +107,6 @@ function teamHealth(state, team) {
   return { hp, max: units.length * 100, alive: units.filter((unit) => unit.hp > 0).length };
 }
 
-function getAutoOrder(team) {
-  return AUTO_ORDERS[team] || "";
-}
-
 function App() {
   const [profile, setProfile] = useState(null);
   const [match, setMatch] = useState(null);
@@ -143,7 +129,6 @@ function App() {
 
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
   const activeHand = useMemo(() => (activeTeam === "-" ? [] : Sim.getCurrentHand(battleState, activeTeam)), [battleState, activeTeam]);
-  const activeHandState = activeTeam === "-" ? null : battleState.hands?.[activeTeam];
   const latestEvent = battleState.events[battleState.events.length - 1];
 
   useEffect(() => {
@@ -338,182 +323,6 @@ function App() {
     }
   }
 
-  async function submitMatchAction(actionPayload) {
-    if (!profile || !match) return null;
-    const response = await fetch(`/api/match/${match.id}/action`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ playerId: profile.id, ...actionPayload })
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "action_failed");
-    setMatch(payload.match);
-    setBattleState(payload.match.state);
-    setAutoBattle(null);
-    return payload;
-  }
-
-  async function localReroll() {
-    if (battleState.winner || activeTeam === "-" || busy) return;
-    const team = activeTeam;
-    setBusy(true);
-    try {
-      const payload = match && profile
-        ? await submitMatchAction({ action: "reroll", provider: "Local AI" })
-        : null;
-      const result = payload ? { ...payload.action, cards: payload.action.hand } : null;
-      const localState = payload ? null : clone(battleState);
-      const reroll = result || Sim.rerollHand(localState, team);
-      if (localState) setBattleState(localState);
-      setLastDecision({
-        action: "reroll",
-        team,
-        provider: "Local AI",
-        publicReason: `Rerolled into ${reroll.cards.map((card) => card.label).join(", ")}.`
-      });
-      setMessage(`Team ${team} rerolled. ${reroll.rerollsRemaining} rerolls left this turn.`);
-    } catch (err) {
-      setMessage(err.message || "Reroll failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resolveActiveModel() {
-    if (battleState.winner || activeTeam === "-") return;
-    setBusy(true);
-    try {
-      const next = clone(battleState);
-      const useProvider = profile && activeTeam === "A" && login.apiKey.trim();
-      if (useProvider) {
-        const response = await fetch("/api/agent/shot", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            provider: login.provider,
-            apiKey: login.apiKey,
-            model: login.model,
-            state: next,
-            team: activeTeam,
-            command: battleOrder
-          })
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "provider_failed");
-        if (payload.decision.action === "reroll") {
-          const providerLabel = `${login.provider} / ${payload.model}`;
-          const actionPayload = match && profile
-            ? await submitMatchAction({
-                action: "reroll",
-                provider: providerLabel,
-                providerReason: payload.decision.publicReason
-              })
-            : null;
-          if (!actionPayload) Sim.rerollHand(next, activeTeam);
-          setLastDecision({
-            action: "reroll",
-            team: activeTeam,
-            provider: providerLabel,
-            publicReason: payload.decision.publicReason || "Provider selected a legal reroll."
-          });
-          setMessage(`${login.provider} chose to reroll.`);
-        } else {
-          const providerLabel = `${login.provider} / ${payload.model}`;
-          const actionPayload = match && profile
-            ? await submitMatchAction({
-                action: "shot",
-                command: battleOrder,
-                candidateId: payload.decision.candidateId,
-                provider: providerLabel,
-                providerReason: payload.decision.publicReason
-              })
-            : null;
-          if (!actionPayload) {
-            Sim.applyTurn(next, { A: battleOrder, B: "" }, {
-              candidateId: payload.decision.candidateId,
-              provider: providerLabel,
-              providerReason: payload.decision.publicReason
-            });
-          }
-          const resolvedState = actionPayload ? actionPayload.match.state : next;
-          const event = resolvedState.events[resolvedState.events.length - 1];
-          setLastDecision({
-            action: "shot",
-            team: activeTeam,
-            provider: event.provider || providerLabel,
-            result: event.resultLabel,
-            combo: event.combo?.name || "Mixed Curve",
-            command: event.command,
-            publicReason: payload.decision.publicReason || "Provider selected a legal shot."
-          });
-          setMessage(`${login.provider} fired a legal ranked shot.`);
-        }
-      } else {
-        const orders = {
-          A: activeTeam === "A" ? battleOrder : getAutoOrder("A"),
-          B: activeTeam === "B" ? battleOrder || getAutoOrder("B") : getAutoOrder("B")
-        };
-        const providerLabel = activeTeam === "A" ? "Local Ally AI" : "Local Rival AI";
-        const actionPayload = match && profile
-          ? await submitMatchAction({
-              action: "shot",
-              command: orders[activeTeam],
-              provider: providerLabel
-            })
-          : null;
-        if (!actionPayload) Sim.applyTurn(next, orders, { provider: providerLabel });
-        const resolvedState = actionPayload ? actionPayload.match.state : next;
-        const event = resolvedState.events[resolvedState.events.length - 1];
-        setLastDecision({
-          action: "shot",
-          team: activeTeam,
-          provider: event.provider || providerLabel,
-          result: event.resultLabel,
-          combo: event.combo?.name || "Mixed Curve",
-          command: event.command,
-          publicReason: "Local model resolved a legal curve."
-        });
-        setMessage(`Team ${activeTeam} resolved by local AI.`);
-      }
-      if (!match || !profile) setBattleState(next);
-    } catch (err) {
-      setMessage(err.message || "Action failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function settleRank() {
-    if (!profile || !match) return;
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/match/${match.id}/resolve`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ playerId: profile.id })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "rank_failed");
-      setProfile(payload.player);
-      setMatch(payload.match);
-      setBattleState(payload.match.state);
-      window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
-      await loadLeaderboard();
-      setLastDecision({
-        action: "rank",
-        team: payload.match.state.winner || "draw",
-        provider: "Rank Engine",
-        result: `${payload.rankDelta > 0 ? "+" : ""}${payload.rankDelta}`,
-        publicReason: `Rating ${payload.player.rank.rating}`
-      });
-      setMessage(`Rank ${payload.rankDelta > 0 ? "+" : ""}${payload.rankDelta}. New rating ${payload.player.rank.rating}.`);
-    } catch (err) {
-      setMessage(err.message || "Rank settlement failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function runAutoDuel() {
     if (!profile || !match || busy) return;
     setBusy(true);
@@ -593,7 +402,6 @@ function App() {
             onAutoDuel={runAutoDuel}
             busy={busy}
             canRun={Boolean(profile && match && !battleState.winner)}
-            rerollsRemaining={activeHandState ? Sim.CONFIG.maxRerollsPerTurn - activeHandState.rerollsUsed : 0}
           />
         </section>
 
@@ -839,7 +647,7 @@ function Battlefield({ state, latestEvent }) {
   );
 }
 
-function CommandConsole({ activeTeam, order, setOrder, onAutoDuel, busy, canRun, rerollsRemaining }) {
+function CommandConsole({ activeTeam, order, setOrder, onAutoDuel, busy, canRun }) {
   return (
     <div className="command-console">
       <div className="console-copy">
@@ -851,7 +659,6 @@ function CommandConsole({ activeTeam, order, setOrder, onAutoDuel, busy, canRun,
       </div>
       <textarea maxLength="80" value={order} onChange={(e) => setOrder(e.target.value)} placeholder="Optional 80-character standing order before auto duel" />
       <div className="command-actions">
-        <button disabled><RefreshCw size={16} /> AI rerolls itself ({rerollsRemaining})</button>
         <button className="fire-button" disabled={busy || !canRun} onClick={onAutoDuel}><PlayCircle size={16} /> Watch Auto Duel</button>
       </div>
     </div>
@@ -958,7 +765,7 @@ function ShotIntel({ event, state }) {
           <code>{event.expression}</code>
         </div>
       ) : (
-        <p className="empty-copy">No shots yet. Login, match, and resolve the first model action.</p>
+        <p className="empty-copy">No shots yet. Login, match, then watch the auto duel.</p>
       )}
       {state.score ? <div className="final-score">Final {state.score.rank} · {state.score.value}</div> : null}
     </div>

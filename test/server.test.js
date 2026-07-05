@@ -317,7 +317,7 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       displayName: "AutoDuelist",
-      providers: { deepseek: { apiKey: "auto-duel-secret", model: "local" } }
+      providers: { deepseek: { apiKey: "", model: "local" } }
     })
   });
   assert.strictEqual(session.status, 200);
@@ -349,7 +349,73 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.ok(autoDuel.json.autoBattle.finalEvent && autoDuel.json.autoBattle.finalEvent.resultLabel);
   assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve A"));
   assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve B"));
-  assert.ok(!autoDuel.text.includes("auto-duel-secret"), "auto duel should not leak stored API keys");
+}
+
+async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
+  const capturedPrompts = [];
+  const fetchMock = async (url, options) => {
+    const requestBody = JSON.parse(options.body);
+    const prompt = JSON.parse(requestBody.messages[1].content);
+    const candidates = prompt.legalActions.filter((action) => action.action === "shot");
+    capturedPrompts.push({ url, options, requestBody, prompt });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                action: "shot",
+                candidateId: candidates[0].candidateId,
+                publicReason: "Provider chose a legal spectator-duel shot."
+              })
+            }
+          }
+        ]
+      })
+    };
+  };
+
+  const session = await request(createServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Provider Pilot",
+      providers: { openai: { apiKey: "auto-provider-secret", model: "gpt-auto" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "openai" })
+  });
+  assert.strictEqual(joined.status, 200);
+
+  const autoDuel = await request(createServer({ env: {}, fetch: fetchMock }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      playerId: session.json.player.id,
+      command: "safe high arc, avoid ally, target the weakest opponent"
+    })
+  });
+
+  assert.strictEqual(autoDuel.status, 200);
+  assert.ok(capturedPrompts.length >= 1, "auto duel should call the configured player provider");
+  assert.strictEqual(capturedPrompts[0].options.headers.authorization, "Bearer auto-provider-secret");
+  assert.strictEqual(capturedPrompts[0].requestBody.model, "gpt-auto");
+  assert.strictEqual(capturedPrompts[0].prompt.command, "safe high arc, avoid ally, target the weakest opponent");
+  assert.strictEqual(capturedPrompts[0].prompt.state.map.windows, undefined, "auto duel prompt should not include route windows");
+  assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "reroll"));
+  assert.ok(capturedPrompts[0].prompt.legalActions.some((action) => action.action === "shot"));
+  assert.ok(
+    autoDuel.json.autoBattle.providers.some((provider) => provider.includes("Provider Pilot / gpt-auto")),
+    "auto duel summary should expose the configured provider label"
+  );
+  assert.ok(!autoDuel.text.includes("auto-provider-secret"), "auto duel should not leak stored API keys");
 }
 
 async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
@@ -533,6 +599,7 @@ async function testProviderShotRequiresKey() {
   await testQueuedPlayersCanPollMatchedRoom();
   await testMatchActionsMutateAuthoritativeState();
   await testAutoDuelResolvesRankedMatchWithBattleSummary();
+  await testAutoDuelUsesConfiguredProviderWithoutLeakingKeys();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();

@@ -39,6 +39,7 @@ const MODEL_PROVIDERS = [
 ];
 
 const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
+const SESSION_STORAGE_KEY = "mob-graphwar-session-token";
 const EXHIBITION_COMMANDS = {
   A: "safe high arc target weakest enemy avoid ally",
   B: "thread center with bend target weakest enemy"
@@ -221,6 +222,7 @@ function delayFrame(ms) {
 
 function App() {
   const [profile, setProfile] = useState(null);
+  const [sessionToken, setSessionToken] = useState("");
   const [match, setMatch] = useState(null);
   const [battleState, setBattleState] = useState(createExhibitionBattle);
   const [battlePlayback, setBattlePlayback] = useState(null);
@@ -276,10 +278,50 @@ function App() {
     playbackSpeedRef.current = playbackSpeed;
   }, [playbackSpeed]);
 
+  function authorizedHeaders(extra = {}, token = sessionToken) {
+    return {
+      ...extra,
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+  }
+
+  function rememberSession(payload) {
+    if (!payload?.player) return;
+    setProfile(payload.player);
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+    if (payload.sessionToken) {
+      setSessionToken(payload.sessionToken);
+      window.localStorage.setItem(SESSION_STORAGE_KEY, payload.sessionToken);
+    }
+  }
+
+  async function saveProviderSettings() {
+    if (!profile || !sessionToken) throw new Error("missing_session");
+    const response = await fetch("/api/profile/providers", {
+      method: "POST",
+      headers: authorizedHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({
+        providers: {
+          [login.provider]: { apiKey: login.apiKey, model: login.model }
+        }
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "provider_update_failed");
+    setProfile(payload.player);
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+    setMessage(`${login.provider} model vault updated. Ranked queue is ready.`);
+    return payload.player;
+  }
+
   async function signIn(event) {
     event.preventDefault();
     setBusy(true);
     try {
+      if (profile && sessionToken) {
+        await saveProviderSettings();
+        return;
+      }
       const endpoint = login.authMode === "login" ? "/api/auth/login" : "/api/auth/register";
       const response = await fetch(endpoint, {
         method: "POST",
@@ -295,10 +337,9 @@ function App() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "login_failed");
-      setProfile(payload.player);
-      window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+      rememberSession(payload);
       await loadLeaderboard();
-      setMessage(login.authMode === "login" ? "Account signed in. Join ranked matchmaking." : "Account registered. Join ranked matchmaking.");
+      setMessage(login.authMode === "login" ? "Secure session restored. Join ranked matchmaking." : "Secure session created. Join ranked matchmaking.");
     } catch (err) {
       setMessage(err.message || "Login failed.");
     } finally {
@@ -308,16 +349,20 @@ function App() {
 
   async function restoreProfile() {
     const storedId = window.localStorage.getItem(PROFILE_STORAGE_KEY);
-    if (!storedId) {
-      setMessage("No saved ranked profile on this device.");
+    const storedToken = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!storedId || !storedToken) {
+      setMessage("No saved secure ranked session on this device.");
       return;
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/session/${storedId}`);
+      const response = await fetch("/api/session/me", {
+        headers: authorizedHeaders({}, storedToken)
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "restore_failed");
       setProfile(payload.player);
+      setSessionToken(storedToken);
       setLogin((current) => ({ ...current, handle: payload.player.handle || current.handle, displayName: payload.player.displayName }));
       await loadLeaderboard();
       const status = await pollMatchmaking(payload.player.id);
@@ -326,6 +371,8 @@ function App() {
       }
     } catch (err) {
       window.localStorage.removeItem(PROFILE_STORAGE_KEY);
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      setSessionToken("");
       setMessage(err.message || "Profile restore failed.");
     } finally {
       setBusy(false);
@@ -343,7 +390,9 @@ function App() {
   async function syncMatchRoom(matchId = match?.id, playerId = profile?.id) {
     if (!matchId || !playerId) return null;
     playbackToken.current += 1;
-    const response = await fetch(`/api/match/${matchId}?playerId=${playerId}`);
+    const response = await fetch(`/api/match/${matchId}?playerId=${playerId}`, {
+      headers: authorizedHeaders()
+    });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "room_sync_failed");
     const room = payload.match;
@@ -365,7 +414,9 @@ function App() {
 
   async function pollMatchmaking(playerId = profile?.id) {
     if (!playerId) return null;
-    const response = await fetch(`/api/matchmaking/${playerId}`);
+    const response = await fetch(`/api/matchmaking/${playerId}`, {
+      headers: authorizedHeaders()
+    });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "matchmaking_sync_failed");
     if (payload.status === "matched" && payload.match) {
@@ -399,14 +450,17 @@ function App() {
   }
 
   async function joinMatch(options) {
-    if (!profile) return;
+    if (!profile || !sessionToken) {
+      setMessage("Sign in before joining ranked matchmaking.");
+      return;
+    }
     const opts = options || {};
     setBusy(true);
     try {
       const response = await fetch("/api/match/join", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ playerId: profile.id, preferredProvider: login.provider, allowAiFill: opts.allowAiFill !== false })
+        headers: authorizedHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ preferredProvider: login.provider, allowAiFill: opts.allowAiFill !== false })
       });
       const payload = await response.json();
       if (response.status === 202) {
@@ -588,8 +642,8 @@ function App() {
     try {
       const response = await fetch(`/api/match/${room.id}/auto-duel`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ playerId, command: login.standingOrder })
+        headers: authorizedHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ command: login.standingOrder })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "auto_duel_failed");
@@ -639,6 +693,7 @@ function App() {
             login={login}
             setLogin={setLogin}
             profile={profile}
+            sessionToken={sessionToken}
             match={match}
             queueState={queueState}
             busy={busy}
@@ -745,6 +800,7 @@ function LaunchBay({
   login,
   setLogin,
   profile,
+  sessionToken,
   match,
   queueState,
   busy,
@@ -755,7 +811,7 @@ function LaunchBay({
 }) {
   const readySteps = [
     { label: "Account", value: profile ? profile.handle || profile.displayName : "Guest" },
-    { label: "Model", value: login.apiKey.trim() ? login.model : "Local fallback" },
+    { label: "Model", value: profile?.providers?.[login.provider]?.configured || login.apiKey.trim() ? login.model : "Local fallback" },
     { label: "Room", value: match ? match.status : queueState ? "queued" : "not matched" },
     { label: "Control", value: "Watch-only after launch" }
   ];
@@ -773,8 +829,9 @@ function LaunchBay({
           <span key={step.label}><b>{step.label}</b>{step.value}</span>
         ))}
       </div>
-      <RankedFlowPanel profile={profile} match={match} queueState={queueState} login={login} />
-      <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={onSubmit} onRestore={onRestore} />
+      <RankedFlowPanel profile={profile} sessionToken={sessionToken} match={match} queueState={queueState} login={login} />
+      <SessionStatusPanel profile={profile} sessionToken={sessionToken} login={login} />
+      <LoginCard login={login} setLogin={setLogin} profile={profile} sessionToken={sessionToken} busy={busy} onSubmit={onSubmit} onRestore={onRestore} />
       <MatchCard
         profile={profile}
         match={match}
@@ -787,7 +844,7 @@ function LaunchBay({
   );
 }
 
-function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
+function LoginCard({ login, setLogin, profile, sessionToken, busy, onSubmit, onRestore }) {
   const authMode = login.authMode === "login" ? "login" : "register";
   return (
     <form className="login-card" onSubmit={onSubmit}>
@@ -810,21 +867,21 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit, onRestore }) {
       </select></label>
       <label>Model<input autoComplete="off" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })} /></label>
       <label>API key<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
-      <ProviderReadinessGrid login={login} />
+      <ProviderReadinessGrid login={login} profile={profile} />
       <label>Standing order<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
       <div className="profile-vault">
-        <span>{profile ? `${profile.handle || profile.displayName} · ${profile.rank.tier} ${profile.rank.rating}` : "No active ranked account"}</span>
+        <span>{profile ? `${profile.handle || profile.displayName} · ${profile.rank.tier} ${profile.rank.rating} · ${sessionToken ? "secure" : "no token"}` : "No active ranked account"}</span>
         <button type="button" disabled={busy} onClick={onRestore}>Restore</button>
       </div>
-      <button disabled={busy}>{profile ? "Update Account" : authMode === "login" ? "Sign In" : "Create Account"}</button>
+      <button disabled={busy}>{profile ? "Save Model Key" : authMode === "login" ? "Sign In" : "Create Account"}</button>
     </form>
   );
 }
 
-function RankedFlowPanel({ profile, match, queueState, login }) {
+function RankedFlowPanel({ profile, sessionToken, match, queueState, login }) {
   const steps = [
-    { id: "account", label: "Account", value: profile ? "registered" : "guest", ready: Boolean(profile) },
-    { id: "model", label: "Model", value: login.apiKey.trim() ? "API key armed" : "local fallback", ready: Boolean(login.apiKey.trim()) },
+    { id: "account", label: "Account", value: profile && sessionToken ? "secure session" : profile ? "profile only" : "guest", ready: Boolean(profile && sessionToken) },
+    { id: "model", label: "Model", value: profile?.providers?.[login.provider]?.configured || login.apiKey.trim() ? "API key armed" : "local fallback", ready: Boolean(profile?.providers?.[login.provider]?.configured || login.apiKey.trim()) },
     { id: "match", label: "Match", value: match ? match.status : queueState ? "queue live" : "not queued", ready: Boolean(match || queueState) },
     { id: "watch", label: "Watch", value: match ? "auto duel" : "exhibition", ready: Boolean(match) },
     { id: "rank", label: "Rank", value: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "unrated", ready: Boolean(profile?.rank?.games) }
@@ -842,8 +899,27 @@ function RankedFlowPanel({ profile, match, queueState, login }) {
   );
 }
 
-function ProviderReadinessGrid({ login }) {
-  const keyed = Boolean(login.apiKey.trim());
+function SessionStatusPanel({ profile, sessionToken, login }) {
+  const selectedProvider = profile?.providers?.[login.provider];
+  const modelReady = Boolean(selectedProvider?.configured || login.apiKey.trim());
+  return (
+    <div className="session-status-panel" data-testid="session-status-panel" aria-label="Secure account and model vault status">
+      <span className={profile && sessionToken ? "ready" : ""}>
+        <Shield size={16} />
+        <b>Secure session</b>
+        <small>{profile && sessionToken ? "Bearer token active" : "Sign in to unlock ranked queue"}</small>
+      </span>
+      <span className={modelReady ? "ready" : ""}>
+        <KeyRound size={16} />
+        <b>Model vault</b>
+        <small>{modelReady ? `${login.provider} / ${selectedProvider?.model || login.model}` : "BYOK key or local fallback"}</small>
+      </span>
+    </div>
+  );
+}
+
+function ProviderReadinessGrid({ login, profile }) {
+  const keyed = Boolean(login.apiKey.trim() || profile?.providers?.[login.provider]?.configured);
   return (
     <div className="provider-readiness-grid" data-testid="provider-readiness-grid" aria-label="Model provider readiness">
       {MODEL_PROVIDERS.map((provider) => {

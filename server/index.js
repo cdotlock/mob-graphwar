@@ -295,6 +295,76 @@ function authErrorResponse(res, err) {
   sendJson(res, err.status || 400, { error: err.message || "auth_failed" });
 }
 
+function sessionSecret(env) {
+  return String((env || process.env).GRAPHWAR_SESSION_SECRET || "dev-graphwar-session-secret");
+}
+
+function encodeSessionPayload(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64url");
+}
+
+function signSessionPayload(encodedPayload, env) {
+  return crypto.createHmac("sha256", sessionSecret(env)).update(encodedPayload).digest("base64url");
+}
+
+function createSessionToken(player, env) {
+  const encodedPayload = encodeSessionPayload({
+    playerId: player.id,
+    issuedAt: Date.now(),
+    nonce: crypto.randomBytes(8).toString("hex")
+  });
+  return `${encodedPayload}.${signSessionPayload(encodedPayload, env)}`;
+}
+
+function bearerToken(req) {
+  const header = String(req.headers.authorization || "");
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function verifySessionToken(token, env) {
+  const [encodedPayload, signature] = String(token || "").split(".");
+  if (!encodedPayload || !signature) return null;
+  const expected = signSessionPayload(encodedPayload, env);
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(signature);
+  if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    if (!payload || !payload.playerId) return null;
+    const issuedAt = Number(payload.issuedAt);
+    const maxAgeMs = 1000 * 60 * 60 * 24 * 30;
+    if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > maxAgeMs) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function sessionPlayer(req, env) {
+  const token = bearerToken(req);
+  if (!token) return { status: 401, error: "missing_session" };
+  const payload = verifySessionToken(token, env);
+  if (!payload) return { status: 401, error: "invalid_session" };
+  const player = players.get(String(payload.playerId));
+  if (!player) return { status: 401, error: "invalid_session" };
+  return { player };
+}
+
+function protectedPlayer(req, res, env, requestedPlayerId) {
+  const resolved = sessionPlayer(req, env);
+  if (!resolved.player) {
+    sendJson(res, resolved.status, { error: resolved.error });
+    return null;
+  }
+  const requested = String(requestedPlayerId || "");
+  if (requested && requested !== resolved.player.id) {
+    sendJson(res, 403, { error: "session_player_mismatch" });
+    return null;
+  }
+  return resolved.player;
+}
+
 function publicLeaderboard(limit) {
   return Array.from(players.values())
     .map((player) => ({
@@ -1004,13 +1074,16 @@ function createServer(options) {
         sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || "deepseek", providers: listProviders(env) });
         return;
       }
+      if (req.method === "GET" && url.pathname === "/api/session/me") {
+        const player = protectedPlayer(req, res, env);
+        if (!player) return;
+        sendJson(res, 200, { player: publicPlayer(player) });
+        return;
+      }
       const sessionMatch = url.pathname.match(/^\/api\/session\/([^/]+)$/);
       if (req.method === "GET" && sessionMatch) {
-        const player = players.get(sessionMatch[1]);
-        if (!player) {
-          sendJson(res, 404, { error: "unknown_player" });
-          return;
-        }
+        const player = protectedPlayer(req, res, env, sessionMatch[1]);
+        if (!player) return;
         sendJson(res, 200, { player: publicPlayer(player) });
         return;
       }
@@ -1025,7 +1098,7 @@ function createServer(options) {
           const player = createRegisteredPlayer(body);
           players.set(player.id, player);
           savePersistentStore(env);
-          sendJson(res, 200, { player: publicPlayer(player) });
+          sendJson(res, 200, { player: publicPlayer(player), sessionToken: createSessionToken(player, env) });
         } catch (err) {
           authErrorResponse(res, err);
         }
@@ -1045,27 +1118,39 @@ function createServer(options) {
         }
         player.lastLoginAt = new Date().toISOString();
         savePersistentStore(env);
+        sendJson(res, 200, { player: publicPlayer(player), sessionToken: createSessionToken(player, env) });
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/profile/providers") {
+        const body = JSON.parse(await readBody(req, 128_000));
+        const player = protectedPlayer(req, res, env);
+        if (!player) return;
+        const providers = normalizeAuthProviders(body.providers);
+        if (!Object.keys(providers).length) {
+          sendJson(res, 400, { error: "missing_providers" });
+          return;
+        }
+        player.providers = { ...(player.providers || {}), ...providers };
+        savePersistentStore(env);
         sendJson(res, 200, { player: publicPlayer(player) });
         return;
       }
       const matchmakingStatusMatch = url.pathname.match(/^\/api\/matchmaking\/([^/]+)$/);
       if (req.method === "GET" && matchmakingStatusMatch) {
-        const player = players.get(matchmakingStatusMatch[1]);
-        if (!player) {
-          sendJson(res, 404, { error: "unknown_player" });
-          return;
-        }
+        const player = protectedPlayer(req, res, env, matchmakingStatusMatch[1]);
+        if (!player) return;
         sendJson(res, 200, publicMatchmakingStatus(player));
         return;
       }
       const rulesMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/rules$/);
       if (req.method === "GET" && rulesMatch) {
         const match = matches.get(rulesMatch[1]);
-        const player = players.get(String(url.searchParams.get("playerId") || ""));
-        if (!match || !player) {
-          sendJson(res, 404, { error: "unknown_match_or_player" });
+        if (!match) {
+          sendJson(res, 404, { error: "unknown_match" });
           return;
         }
+        const player = protectedPlayer(req, res, env, url.searchParams.get("playerId"));
+        if (!player) return;
         if (!getPlayerSeat(match, player)) {
           sendJson(res, 403, { error: "player_not_in_match" });
           return;
@@ -1081,17 +1166,11 @@ function createServer(options) {
           sendJson(res, 404, { error: "unknown_match" });
           return;
         }
-        const playerId = url.searchParams.get("playerId");
-        if (playerId) {
-          const player = players.get(playerId);
-          if (!player) {
-            sendJson(res, 404, { error: "unknown_player" });
-            return;
-          }
-          if (!getPlayerSeat(match, player)) {
-            sendJson(res, 403, { error: "player_not_in_match" });
-            return;
-          }
+        const player = protectedPlayer(req, res, env, url.searchParams.get("playerId"));
+        if (!player) return;
+        if (!getPlayerSeat(match, player)) {
+          sendJson(res, 403, { error: "player_not_in_match" });
+          return;
         }
         sendJson(res, 200, { match });
         return;
@@ -1107,16 +1186,13 @@ function createServer(options) {
         };
         players.set(id, player);
         savePersistentStore(env);
-        sendJson(res, 200, { player: publicPlayer(player) });
+        sendJson(res, 200, { player: publicPlayer(player), sessionToken: createSessionToken(player, env) });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/match/join") {
         const body = JSON.parse(await readBody(req, 64_000));
-        const player = players.get(String(body.playerId || ""));
-        if (!player) {
-          sendJson(res, 404, { error: "unknown_player" });
-          return;
-        }
+        const player = protectedPlayer(req, res, env, body.playerId);
+        if (!player) return;
         const indexedMatch = getIndexedMatch(player.id);
         if (indexedMatch && indexedMatch.status !== "resolved") {
           sendJson(res, 200, { match: indexedMatch, queueSize: matchmakingQueue.length });
@@ -1151,11 +1227,12 @@ function createServer(options) {
       if (req.method === "POST" && autoDuelMatch) {
         const body = JSON.parse(await readBody(req, 64_000));
         const match = matches.get(autoDuelMatch[1]);
-        const player = players.get(String(body.playerId || ""));
-        if (!match || !player) {
-          sendJson(res, 404, { error: "unknown_match_or_player" });
+        if (!match) {
+          sendJson(res, 404, { error: "unknown_match" });
           return;
         }
+        const player = protectedPlayer(req, res, env, body.playerId);
+        if (!player) return;
         const playerSeat = getPlayerSeat(match, player);
         if (!playerSeat) {
           sendJson(res, 403, { error: "player_not_in_match" });
@@ -1169,11 +1246,12 @@ function createServer(options) {
       if (req.method === "POST" && resolveMatch) {
         const body = JSON.parse(await readBody(req, 64_000));
         const match = matches.get(resolveMatch[1]);
-        const player = players.get(String(body.playerId || ""));
-        if (!match || !player) {
-          sendJson(res, 404, { error: "unknown_match_or_player" });
+        if (!match) {
+          sendJson(res, 404, { error: "unknown_match" });
           return;
         }
+        const player = protectedPlayer(req, res, env, body.playerId);
+        if (!player) return;
         const playerSeat = getPlayerSeat(match, player);
         if (!playerSeat) {
           sendJson(res, 403, { error: "player_not_in_match" });

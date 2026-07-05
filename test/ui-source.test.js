@@ -111,6 +111,14 @@ function testGameSurfacesRealAccountAuth() {
   assert.ok(main.includes("authMode"), "UI should distinguish register and sign-in modes");
   assert.ok(main.includes("/api/auth/register"), "UI should call the register endpoint");
   assert.ok(main.includes("/api/auth/login"), "UI should call the login endpoint");
+  assert.ok(main.includes("SESSION_STORAGE_KEY"), "UI should persist an opaque session token instead of only a player id");
+  assert.ok(main.includes("/api/session/me"), "UI should restore profile through the authenticated session endpoint");
+  assert.ok(main.includes("Authorization"), "ranked client requests should send bearer authorization");
+  assert.ok(main.includes("/api/profile/providers"), "logged-in users should update model keys without re-registering");
+  assert.ok(main.includes("SessionStatusPanel"), "launch bay should include a named secure session status panel");
+  assert.ok(main.includes('data-testid="session-status-panel"'), "secure session panel should be selectable for browser verification");
+  assert.ok(main.includes("Secure session"), "account panel should visibly show session readiness");
+  assert.ok(main.includes("Model vault"), "account panel should visibly show model-key readiness");
   assert.ok(main.includes("Account / Model Key"), "account panel should frame login as a persistent account");
   assert.ok(main.includes('data-testid="auth-mode-tabs"'), "auth mode control should be selectable for browser verification");
   assert.ok(main.includes("Handle"), "auth form should collect a stable player handle");

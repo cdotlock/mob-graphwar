@@ -351,6 +351,57 @@ label,
   white-space: nowrap;
 }
 
+.session-status-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-status-panel span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(88, 212, 255, 0.26);
+  border-radius: 8px;
+  padding: 9px;
+  background:
+    linear-gradient(135deg, rgba(88, 212, 255, 0.12), transparent 64%),
+    rgba(3, 7, 14, 0.72);
+}
+
+.session-status-panel span.ready {
+  border-color: rgba(217, 255, 71, 0.5);
+  background:
+    linear-gradient(135deg, rgba(217, 255, 71, 0.15), transparent 62%),
+    rgba(3, 7, 14, 0.76);
+}
+
+.session-status-panel svg {
+  grid-row: span 2;
+  color: var(--acid);
+}
+
+.session-status-panel b,
+.session-status-panel small {
+  overflow: hidden;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.session-status-panel b {
+  color: var(--text);
+}
+
+.session-status-panel small {
+  color: var(--muted);
+}
+
 .login-card,
 .match-card,
 .roster-card,

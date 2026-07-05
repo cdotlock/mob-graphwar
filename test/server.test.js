@@ -19,6 +19,14 @@ async function request(server, path, options) {
   }
 }
 
+function authHeaders(session, extra) {
+  const token = session?.json?.sessionToken || session?.sessionToken;
+  return {
+    ...(extra || {}),
+    ...(token ? { authorization: `Bearer ${token}` } : {})
+  };
+}
+
 async function testHealthAndProviders() {
   const health = await request(createServer({ env: {} }), "/healthz");
   assert.strictEqual(health.status, 200);
@@ -76,7 +84,7 @@ async function testLoginMatchmakingAndRankLoop() {
 
   const match = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
   });
   assert.strictEqual(match.status, 200);
@@ -86,7 +94,7 @@ async function testLoginMatchmakingAndRankLoop() {
 
   const result = await request(createServer({ env: {} }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
   });
   assert.strictEqual(result.status, 200);
@@ -123,14 +131,14 @@ async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   const playerId = session.json.player.id;
   const match = await request(createPersistentServer({ env }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId, preferredProvider: "deepseek" })
   });
   assert.strictEqual(match.status, 200);
 
   const resolved = await request(createPersistentServer({ env }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId })
   });
   assert.strictEqual(resolved.status, 200);
@@ -138,7 +146,9 @@ async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   assert.notStrictEqual(settledRating, 1000, "rank settlement should mutate persistent rating");
 
   const restartedCreateServer = freshCreateServer();
-  const restored = await request(restartedCreateServer({ env }), `/api/session/${playerId}`);
+  const restored = await request(restartedCreateServer({ env }), `/api/session/${playerId}`, {
+    headers: authHeaders(session)
+  });
   assert.strictEqual(restored.status, 200);
   assert.strictEqual(restored.json.player.id, playerId);
   assert.strictEqual(restored.json.player.rank.rating, settledRating);
@@ -224,6 +234,108 @@ async function testRegisterLoginAndProviderUpdatePersistAcrossRestart() {
   assert.ok(!stored.includes("sk-auth-login"), "persistent store should not keep login API keys");
 }
 
+async function testSessionTokenProtectsRankedAndProviderRoutes() {
+  const registered = await request(createServer({ env: {} }), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      handle: "ranked_secure",
+      displayName: "Ranked Secure",
+      password: "Swordfish!10",
+      providers: {
+        deepseek: { apiKey: "sk-session-register", model: "deepseek-v4-flash" }
+      }
+    })
+  });
+  assert.strictEqual(registered.status, 200);
+  assert.ok(registered.json.sessionToken, "register should return a session token");
+  assert.ok(!registered.text.includes("sk-session-register"), "register response should not leak provider keys");
+
+  const restored = await request(createServer({ env: {} }), "/api/session/me", {
+    headers: authHeaders(registered)
+  });
+  assert.strictEqual(restored.status, 200);
+  assert.strictEqual(restored.json.player.id, registered.json.player.id);
+
+  const noProviderSession = await request(createServer({ env: {} }), "/api/profile/providers", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ providers: { openai: { apiKey: "sk-no-session", model: "gpt-4.1-mini" } } })
+  });
+  assert.strictEqual(noProviderSession.status, 401);
+  assert.strictEqual(noProviderSession.json.error, "missing_session");
+
+  const badProviderSession = await request(createServer({ env: {} }), "/api/profile/providers", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer bad-token" },
+    body: JSON.stringify({ providers: { openai: { apiKey: "sk-bad-session", model: "gpt-4.1-mini" } } })
+  });
+  assert.strictEqual(badProviderSession.status, 401);
+  assert.strictEqual(badProviderSession.json.error, "invalid_session");
+
+  const updated = await request(createServer({ env: {} }), "/api/profile/providers", {
+    method: "POST",
+    headers: authHeaders(registered, { "content-type": "application/json" }),
+    body: JSON.stringify({
+      providers: {
+        anthropic: { apiKey: "sk-provider-session", model: "claude-3-5-haiku-latest" }
+      }
+    })
+  });
+  assert.strictEqual(updated.status, 200);
+  assert.strictEqual(updated.json.player.providers.anthropic.configured, true);
+  assert.strictEqual(updated.json.player.providers.anthropic.model, "claude-3-5-haiku-latest");
+  assert.ok(!updated.text.includes("sk-provider-session"), "provider update response should not leak API keys");
+
+  const noJoinSession = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: registered.json.player.id, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(noJoinSession.status, 401);
+  assert.strictEqual(noJoinSession.json.error, "missing_session");
+
+  const badJoinSession = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer bad-token" },
+    body: JSON.stringify({ playerId: registered.json.player.id, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(badJoinSession.status, 401);
+  assert.strictEqual(badJoinSession.json.error, "invalid_session");
+
+  const joined = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(registered, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "anthropic" })
+  });
+  assert.strictEqual(joined.status, 200);
+  assert.strictEqual(joined.json.match.roster[0].playerId, registered.json.player.id);
+  assert.strictEqual(joined.json.match.roster[0].provider, "anthropic");
+
+  const rules = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/rules?command=safe%20arc`, {
+    headers: authHeaders(registered)
+  });
+  assert.strictEqual(rules.status, 200);
+  assert.strictEqual(rules.json.requesterSeat.playerId, registered.json.player.id);
+
+  const noDuelSession = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: registered.json.player.id })
+  });
+  assert.strictEqual(noDuelSession.status, 401);
+  assert.strictEqual(noDuelSession.json.error, "missing_session");
+
+  const autoDuel = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: authHeaders(registered, { "content-type": "application/json" }),
+    body: JSON.stringify({ command: "safe arc" })
+  });
+  assert.strictEqual(autoDuel.status, 200);
+  assert.strictEqual(autoDuel.json.match.status, "resolved");
+  assert.ok(!autoDuel.text.includes("sk-provider-session"), "auto duel should not leak stored provider keys");
+}
+
 async function createTestPlayer(displayName) {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
@@ -235,7 +347,7 @@ async function createTestPlayer(displayName) {
   });
   assert.strictEqual(session.status, 200);
   assert.ok(!session.text.includes(`${displayName}-secret`), "session should redact player API key");
-  return session.json.player;
+  return { ...session.json.player, sessionToken: session.json.sessionToken };
 }
 
 async function testHumanMatchmakingQueueCanFormRanked2v2() {
@@ -247,7 +359,7 @@ async function testHumanMatchmakingQueueCanFormRanked2v2() {
   for (let index = 0; index < 3; index += 1) {
     const queued = await request(createServer({ env: {} }), "/api/match/join", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: authHeaders(players[index], { "content-type": "application/json" }),
       body: JSON.stringify({ playerId: players[index].id, preferredProvider: "deepseek", allowAiFill: false })
     });
     assert.strictEqual(queued.status, 202);
@@ -258,7 +370,7 @@ async function testHumanMatchmakingQueueCanFormRanked2v2() {
 
   const matched = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(players[3], { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: players[3].id, preferredProvider: "deepseek", allowAiFill: false })
   });
   assert.strictEqual(matched.status, 200);
@@ -282,13 +394,15 @@ async function testQueuedPlayersCanPollMatchedRoom() {
   for (let index = 0; index < 3; index += 1) {
     const queued = await request(createServer({ env: {} }), "/api/match/join", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: authHeaders(players[index], { "content-type": "application/json" }),
       body: JSON.stringify({ playerId: players[index].id, preferredProvider: "deepseek", allowAiFill: false })
     });
     assert.strictEqual(queued.status, 202);
   }
 
-  const waiting = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`);
+  const waiting = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`, {
+    headers: authHeaders(players[0])
+  });
   assert.strictEqual(waiting.status, 200);
   assert.strictEqual(waiting.json.status, "queued");
   assert.strictEqual(waiting.json.queueSize, 3);
@@ -297,20 +411,24 @@ async function testQueuedPlayersCanPollMatchedRoom() {
 
   const matched = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(players[3], { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: players[3].id, preferredProvider: "deepseek", allowAiFill: false })
   });
   assert.strictEqual(matched.status, 200);
   const matchId = matched.json.match.id;
 
-  const synced = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`);
+  const synced = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`, {
+    headers: authHeaders(players[0])
+  });
   assert.strictEqual(synced.status, 200);
   assert.strictEqual(synced.json.status, "matched");
   assert.strictEqual(synced.json.match.id, matchId);
   assert.strictEqual(synced.json.match.roster.filter((seat) => seat.control === "human").length, 4);
   assert.ok(!synced.text.includes("Echo-secret"), "matchmaking poll should not leak API keys");
 
-  const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${players[0].id}`);
+  const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${players[0].id}`, {
+    headers: authHeaders(players[0])
+  });
   assert.strictEqual(fetched.status, 200);
   assert.strictEqual(fetched.json.match.id, matchId);
   assert.ok(fetched.json.match.roster.some((seat) => seat.playerId === players[0].id), "fetched match should include requesting player");
@@ -327,7 +445,7 @@ async function testRankedMatchRejectsMidDuelManualActions() {
 
   const joined = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
   });
   assert.strictEqual(joined.status, 200);
@@ -354,14 +472,16 @@ async function testRankedMatchRejectsMidDuelManualActions() {
   assert.strictEqual(fired.status, 410);
   assert.strictEqual(fired.json.error, "manual_actions_disabled");
 
-  const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${session.json.player.id}`);
+  const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${session.json.player.id}`, {
+    headers: authHeaders(session)
+  });
   assert.strictEqual(fetched.status, 200);
   assert.strictEqual(fetched.json.match.state.turn, 0, "rejected manual actions must not consume turns");
   assert.strictEqual(fetched.json.match.state.events.length, 0, "rejected manual actions must not create events");
 
   const autoDuel = await request(createServer({ env: {} }), `/api/match/${matchId}/auto-duel`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
   });
   assert.strictEqual(autoDuel.status, 200);
@@ -382,14 +502,14 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
 
   const joined = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
   });
   assert.strictEqual(joined.status, 200);
 
   const autoDuel = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
   });
   assert.strictEqual(autoDuel.status, 200);
@@ -437,14 +557,15 @@ async function testMatchRulesEndpointExposesBareModelContract() {
 
   const joined = await request(createIsolatedServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "openai" })
   });
   assert.strictEqual(joined.status, 200);
 
   const rules = await request(
     createIsolatedServer({ env: {} }),
-    `/api/match/${joined.json.match.id}/rules?playerId=${session.json.player.id}&command=safe%20high%20arc`
+    `/api/match/${joined.json.match.id}/rules?playerId=${session.json.player.id}&command=safe%20high%20arc`,
+    { headers: authHeaders(session) }
   );
   assert.strictEqual(rules.status, 200);
   assert.strictEqual(rules.json.matchId, joined.json.match.id);
@@ -475,14 +596,14 @@ async function testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel() {
 
   const joined = await request(createIsolatedServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
   });
   assert.strictEqual(joined.status, 200);
 
   const autoDuel = await request(createIsolatedServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
   });
   assert.strictEqual(autoDuel.status, 200);
@@ -542,14 +663,14 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
 
   const joined = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "openai" })
   });
   assert.strictEqual(joined.status, 200);
 
   const autoDuel = await request(createServer({ env: {}, fetch: fetchMock }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       playerId: session.json.player.id,
       command: "safe high arc, avoid ally, target the weakest opponent"
@@ -762,6 +883,7 @@ async function testProviderShotRequiresKey() {
   await testLoginMatchmakingAndRankLoop();
   await testProfileRankAndLeaderboardPersistAcrossRestart();
   await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
+  await testSessionTokenProtectsRankedAndProviderRoutes();
   await testHumanMatchmakingQueueCanFormRanked2v2();
   await testQueuedPlayersCanPollMatchedRoom();
   await testRankedMatchRejectsMidDuelManualActions();

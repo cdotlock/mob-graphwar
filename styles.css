@@ -515,9 +515,33 @@ button:focus-visible {
   background: var(--gold);
 }
 
+.card.role-clear::before {
+  background: var(--team-a);
+}
+
+.card.role-risk::before {
+  background: var(--danger);
+}
+
+.card.role-aim::before {
+  background: var(--green);
+}
+
+.card.role-thread::before {
+  background: #c78cff;
+}
+
+.card.role-control::before {
+  background: #7ccfbc;
+}
+
 .card.used {
   border-color: rgba(228, 187, 98, 0.9);
   box-shadow: 0 0 0 1px rgba(228, 187, 98, 0.24), 0 0 24px rgba(228, 187, 98, 0.18);
+}
+
+.card.unplayable {
+  opacity: 0.62;
 }
 
 .card-meta {
@@ -536,6 +560,27 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.card-role-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.card-role {
+  flex: 0 0 auto;
+  border: 1px solid rgba(228, 187, 98, 0.22);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #f1d98f;
+  background: rgba(228, 187, 98, 0.08);
 }
 
 .card h3 {
@@ -561,6 +606,18 @@ button:focus-visible {
   color: #c9d4c8;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.card-table-text {
+  margin-top: 7px;
+  color: #aebcae;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.card-table-text b {
+  color: #e4d2a6;
 }
 
 .tag-row {

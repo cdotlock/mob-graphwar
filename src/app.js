@@ -248,13 +248,22 @@
     return `${event.combo.name}${traits ? ` - ${traits}` : ""}`;
   }
 
-  function cardMarkup(card, used) {
+  function cardMarkup(card, used, energy) {
+    const profile = Sim.cardProfile(card, energy);
     const tags = (card.tags || []).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("");
+    const profileClass = `role-${profile.role.toLowerCase()}`;
     return `
-      <article class="card ${esc(card.rarity || "basic")}${used ? " used" : ""}">
+      <article class="card ${esc(card.rarity || "basic")} ${esc(profileClass)}${used ? " used" : ""}${
+        profile.playable ? "" : " unplayable"
+      }">
         <div class="card-meta"><span>${esc(card.family)}</span><span>${esc(card.rarity || "basic")}</span></div>
+        <div class="card-role-row">
+          <span class="card-role">${esc(profile.role)}</span>
+          <span>${esc(profile.costPressure)}</span>
+        </div>
         <h3>${esc(card.label)} <small>${card.cost}E</small></h3>
         <p>${esc(card.description)}</p>
+        <div class="card-table-text">${esc(profile.tableText)} <b>${esc(profile.riskText)}</b></div>
         <div class="tag-row">${tags}</div>
       </article>`;
   }
@@ -282,7 +291,7 @@
       handTitle.textContent = `Final Shot Hand - Team ${event.team}`;
       handHint.textContent = "Used cards glow";
       renderHandRead(event.hand, event.energy);
-      handCards.innerHTML = event.hand.map((card) => cardMarkup(card, event.usedCardIds.includes(card.instanceId))).join("");
+      handCards.innerHTML = event.hand.map((card) => cardMarkup(card, event.usedCardIds.includes(card.instanceId), event.energy)).join("");
       return;
     }
     const team = state.turn % 2 === 0 ? "A" : "B";
@@ -291,7 +300,7 @@
     handTitle.textContent = `Current Hand - Team ${team}`;
     handHint.textContent = `${energy} energy before lock-in`;
     renderHandRead(hand, energy);
-    handCards.innerHTML = hand.map((card) => cardMarkup(card, false)).join("");
+    handCards.innerHTML = hand.map((card) => cardMarkup(card, false, energy)).join("");
   }
 
   function renderThinking(event) {

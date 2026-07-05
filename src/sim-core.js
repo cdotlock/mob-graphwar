@@ -1030,6 +1030,50 @@
     return cards.filter((card) => (card.tags || []).includes(tag)).length;
   }
 
+  function cardProfile(card, energy) {
+    const tags = card && Array.isArray(card.tags) ? card.tags : [];
+    const has = (tag) => tags.includes(tag);
+    const cost = card && Number.isFinite(Number(card.cost)) ? Number(card.cost) : 0;
+    const availableEnergy = Number.isFinite(Number(energy)) ? Number(energy) : 0;
+
+    let role = "Curve";
+    let tableText = "Flexible curve ingredient.";
+    if (has("volatile") || (card && card.family === "risk")) {
+      role = "Risk";
+      tableText = "High payoff tool with unstable flight.";
+    } else if (has("precision")) {
+      role = "Aim";
+      tableText = "Stabilizes tight lanes and near misses.";
+    } else if (has("clearance") || has("high")) {
+      role = "Clear";
+      tableText = "Clears cover and tall map shapes.";
+    } else if (has("corner") || has("thread")) {
+      role = "Thread";
+      tableText = "Bends around slots and side doors.";
+    } else if (has("shelf") || (card && card.family === "control")) {
+      role = "Control";
+      tableText = "Shapes the middle of the curve.";
+    } else if (has("cheap")) {
+      role = "Tempo";
+      tableText = "Keeps energy flexible.";
+    } else if (has("damage")) {
+      role = "Burst";
+      tableText = "Adds pressure when a hit is available.";
+    }
+
+    const playable = cost <= availableEnergy;
+    const costPressure = !playable ? "over budget" : cost <= 1 ? "cheap" : cost >= availableEnergy ? "full spend" : "mid cost";
+    const riskText = has("volatile") ? "volatile" : card && card.family === "risk" ? "risky" : "stable";
+
+    return {
+      role,
+      playable,
+      costPressure,
+      riskText,
+      tableText
+    };
+  }
+
   function analyzeHand(hand, energy) {
     const cards = Array.isArray(hand) ? hand : [];
     const tags = componentTags(cards);
@@ -1483,6 +1527,7 @@
     exportTrace,
     dealHand,
     analyzeHand,
+    cardProfile,
     getEnergy,
     groundY,
     parseDirective,

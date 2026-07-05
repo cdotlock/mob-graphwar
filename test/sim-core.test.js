@@ -173,6 +173,27 @@ function testHandAnalysisSummarizesTacticalRead() {
   assert.ok(analysis.commandRead.includes("High clearance"));
 }
 
+function testCardProfilesExposeTacticalCardRoles() {
+  const arc = Sim.cardProfile(Sim.CARD_LIBRARY.arc, 4);
+  assert.strictEqual(arc.role, "Clear");
+  assert.strictEqual(arc.playable, true);
+  assert.strictEqual(arc.costPressure, "mid cost");
+  assert.ok(arc.tableText.includes("cover"));
+
+  const anchor = Sim.cardProfile(Sim.CARD_LIBRARY.anchor, 4);
+  assert.strictEqual(anchor.role, "Aim");
+  assert.strictEqual(anchor.costPressure, "cheap");
+  assert.strictEqual(anchor.riskText, "stable");
+
+  const lateDive = Sim.cardProfile(Sim.CARD_LIBRARY.late_dive, 4);
+  assert.strictEqual(lateDive.role, "Risk");
+  assert.strictEqual(lateDive.riskText, "volatile");
+
+  const overpass = Sim.cardProfile(Sim.CARD_LIBRARY.overpass, 2);
+  assert.strictEqual(overpass.playable, false);
+  assert.strictEqual(overpass.costPressure, "over budget");
+}
+
 function testApplyTurnCanUseProviderCandidate() {
   const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
   const state = Sim.createInitialState({ seed: 7351 });
@@ -229,6 +250,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testShotEventsExposeCardComboIdentity();
   testLegalShotsExposeCardComboIdentity();
   testHandAnalysisSummarizesTacticalRead();
+  testCardProfilesExposeTacticalCardRoles();
   testApplyTurnCanUseProviderCandidate();
   testRicherCardCatalog();
   testSeededHardMapGeneration();

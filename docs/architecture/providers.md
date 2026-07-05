@@ -37,6 +37,10 @@ JSON, validates the returned `candidateId`, then returns the verified candidate
 to the browser. The browser applies that candidate through the same one-shot
 simulation path used by the local agent.
 
+OpenAI-compatible providers use JSON mode. DeepSeek defaults to
+`deepseek-v4-flash`, caps output tokens for the candidate-selection response,
+and disables thinking mode for this narrow JSON selection task.
+
 The UI defaults to local deterministic play. The Agent Source panel enables
 live provider mode per shot. Run Battle and Auto stay disabled while live mode
 is active to avoid accidental multi-call spending.
@@ -55,3 +59,14 @@ The server listens on `HOST` and `PORT`. Railway deployments should use
 The catalog includes OpenAI, DeepSeek, MiniMax, Zhipu, and Anthropic. OpenAI,
 DeepSeek, MiniMax, and Zhipu use the OpenAI-compatible adapter shape.
 Anthropic uses the Messages adapter shape.
+
+## Real Provider Smoke
+
+Set `DEEPSEEK_API_KEY` and run:
+
+```sh
+npm run test:real:deepseek
+```
+
+This is intentionally separate from `npm test` because it spends real provider
+quota and depends on network availability.

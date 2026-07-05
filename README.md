@@ -36,10 +36,20 @@ The test suite covers deterministic simulation, card/resource validation,
 seeded map generation, score/rank output, provider contract redaction, provider
 catalog redaction, and the minimal Node server.
 
+Real DeepSeek smoke test:
+
+```sh
+DEEPSEEK_API_KEY=... npm run test:real:deepseek
+```
+
+This calls the hosted provider path against DeepSeek, validates the returned
+candidate id, executes that candidate locally, and verifies the response does
+not echo the API key.
+
 ## Current Game Rules
 
 - 2v2 artillery board.
-- Each turn shows the active team's five-card hand.
+- Each turn shows the active team's four-card hand.
 - The player has one 80-character command.
 - `Lock Shot` resolves exactly one AI-generated legal function shot.
 - The AI can use at most two shape/control cards and one modifier card.
@@ -86,8 +96,8 @@ Use `.env.example` as the variable reference.
 
 ## Roadmap
 
-- Better live-provider status and model presets.
-- Better shot playback animation and timeline controls.
+- More live-provider status and model presets.
+- Richer shot playback animation and replay controls.
 - More map templates and balance tests.
 - Multiplayer lobby.
 - Rank history and replay browser.

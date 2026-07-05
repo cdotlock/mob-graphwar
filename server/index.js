@@ -107,7 +107,7 @@ function createServer(options) {
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/providers") {
-        sendJson(res, 200, { providers: listProviders(env) });
+        sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || "deepseek", providers: listProviders(env) });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/agent/shot") {

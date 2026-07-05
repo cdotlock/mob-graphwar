@@ -15,6 +15,7 @@
   const handHint = document.getElementById("handHint");
   const handRead = document.getElementById("handRead");
   const thinkingPanel = document.getElementById("thinkingPanel");
+  const battleTimeline = document.getElementById("battleTimeline");
   const mapBadge = document.getElementById("mapBadge");
   const activeBadge = document.getElementById("activeBadge");
   const eventLog = document.getElementById("eventLog");
@@ -362,12 +363,27 @@
     eventLog.innerHTML = items || `<li>No events yet.</li>`;
   }
 
+  function renderTimeline() {
+    if (!battleTimeline) return;
+    const activeTurn = state.winner ? -1 : state.turn;
+    battleTimeline.innerHTML = Array.from({ length: Sim.CONFIG.maxTurns }, (_, turn) => {
+      const event = state.events.find((item) => item.turn === turn);
+      const team = turn % 2 === 0 ? "A" : "B";
+      const classes = ["timeline-node", `team-${team.toLowerCase()}`];
+      if (event) classes.push("complete", event.result);
+      if (turn === activeTurn) classes.push("active");
+      const label = event ? `${event.team} ${event.resultLabel}` : `Turn ${turn} Team ${team}`;
+      return `<span class="${classes.join(" ")}" title="${esc(label)}">${turn + 1}</span>`;
+    }).join("");
+  }
+
   function render() {
     updateCommandCounts();
     renderStatus();
     renderBattlefield();
     renderShotSummary();
     renderLog();
+    renderTimeline();
     const live = providerEnabled.checked;
     const orderLocked = Boolean(state.lockedOrders);
     commandA.disabled = orderLocked || busy;
@@ -395,6 +411,9 @@
       providerSelect.innerHTML = providers
         .map((provider) => `<option value="${esc(provider.id)}" data-model="${esc(provider.model || "")}">${esc(provider.label)}</option>`)
         .join("");
+      if (data.defaultProvider && providers.some((provider) => provider.id === data.defaultProvider)) {
+        providerSelect.value = data.defaultProvider;
+      }
       updateProviderModel();
       providerStatus.textContent = providers.length ? "Local" : "Local only";
     } catch (err) {

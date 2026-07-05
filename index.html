@@ -5,16 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Mob Graphwar</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=12" />
+    <link rel="stylesheet" href="styles.css?v=13" />
   </head>
   <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <div>
+    <main class="app-shell cockpit-shell" data-ui-version="cockpit-v2">
+      <header class="topbar command-center">
+        <div class="brand-block">
+          <span class="eyebrow">Function Artillery Cockpit</span>
           <h1>Mob Graphwar</h1>
-          <p>One battle order. New hands every turn. One impossible function shot.</p>
+          <p>Human intent, model judgment, constrained curves.</p>
         </div>
-        <div class="seed-controls">
+        <div class="seed-controls match-controls">
           <label>
             Seed
             <input id="seedInput" type="number" min="1" max="999999" value="7351" />
@@ -26,11 +27,11 @@
         </div>
       </header>
 
-      <section class="status-strip" id="statusStrip" aria-live="polite"></section>
+      <section class="status-strip hud-grid" id="statusStrip" aria-live="polite"></section>
 
-      <section class="workspace">
-        <section class="play-panel" aria-label="Battle cockpit">
-          <section class="battlefield-panel" aria-label="Battlefield">
+      <section class="workspace cockpit-grid">
+        <section class="play-panel battle-stack" aria-label="Battle cockpit">
+          <section class="battlefield-panel tactical-board" aria-label="Battlefield">
             <div class="board-overlay">
               <span id="mapBadge">Map</span>
               <span id="activeBadge">Ready</span>
@@ -38,18 +39,18 @@
             <svg id="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar battlefield"></svg>
           </section>
 
-          <section class="command-row" aria-label="Agent commands">
-            <label class="command-box team-a">
+          <section class="command-row command-deck" aria-label="Agent commands">
+            <label class="command-box order-terminal team-a">
               <span>Agent A battle order <b id="commandCountA">0/80</b></span>
               <textarea id="commandA" maxlength="80"></textarea>
             </label>
-            <label class="command-box team-b">
+            <label class="command-box order-terminal team-b">
               <span>Agent B battle order <b id="commandCountB">0/80</b></span>
               <textarea id="commandB" maxlength="80"></textarea>
             </label>
           </section>
 
-          <section class="hand-panel">
+          <section class="hand-panel card-rack">
             <div class="panel-heading inline-heading">
               <h2 id="handTitle">Current Hand</h2>
               <span id="handHint">Visible before lock-in</span>
@@ -59,8 +60,8 @@
           </section>
         </section>
 
-        <aside class="side-panel">
-          <section class="provider-panel">
+        <aside class="side-panel tactical-rail">
+          <section class="provider-panel rail-card">
             <div class="panel-heading">
               <h2>Agent Source</h2>
               <span id="providerStatus">Local</span>
@@ -85,7 +86,7 @@
             </div>
           </section>
 
-          <section>
+          <section class="rail-card shot-card">
             <div class="panel-heading">
               <h2>Current Shot</h2>
               <button id="copyTraceBtn" type="button">Copy Trace</button>
@@ -93,14 +94,22 @@
             <div id="shotSummary" class="shot-summary"></div>
           </section>
 
-          <section>
+          <section class="rail-card thinking-card">
             <div class="panel-heading">
               <h2>AI Thinking</h2>
             </div>
             <div id="thinkingPanel" class="thinking-panel"></div>
           </section>
 
-          <section>
+          <section class="rail-card timeline-card">
+            <div class="panel-heading">
+              <h2>Battle Timeline</h2>
+              <span>16 turns</span>
+            </div>
+            <div id="battleTimeline" class="battle-timeline" aria-label="Battle timeline"></div>
+          </section>
+
+          <section class="rail-card log-card">
             <div class="panel-heading">
               <h2>Event Log</h2>
             </div>
@@ -110,7 +119,7 @@
       </section>
     </main>
 
-    <script src="src/sim-core.js?v=11"></script>
-    <script src="src/app.js?v=11"></script>
+    <script src="src/sim-core.js?v=12"></script>
+    <script src="src/app.js?v=12"></script>
   </body>
 </html>

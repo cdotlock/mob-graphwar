@@ -24,6 +24,7 @@ async function testHealthAndProviders() {
   const providers = await request(createServer({ env: { OPENAI_API_KEY: "sk-test" } }), "/api/providers");
   assert.strictEqual(providers.status, 200);
   assert.ok(providers.json.providers.some((provider) => provider.id === "openai" && provider.available));
+  assert.strictEqual(providers.json.defaultProvider, "deepseek");
   assert.ok(!JSON.stringify(providers.json).includes("sk-test"), "response should redact keys");
 }
 
@@ -33,6 +34,10 @@ async function testStaticServerOnlyServesMainEntrypoint() {
   assert.ok(main.text.includes("Mob Graphwar"));
   assert.ok(main.text.includes('<textarea id="commandA" maxlength="80"></textarea>'), "Team A should not ship with a default prompt");
   assert.ok(main.text.includes('<textarea id="commandB" maxlength="80"></textarea>'), "Team B should not ship with a default prompt");
+  assert.ok(main.text.includes('data-ui-version="cockpit-v2"'), "entrypoint should expose the upgraded cockpit shell");
+  assert.ok(/class="[^"]*\bcommand-center\b[^"]*"/.test(main.text), "entrypoint should include a focused command center");
+  assert.ok(/class="[^"]*\btactical-rail\b[^"]*"/.test(main.text), "entrypoint should include a tactical side rail");
+  assert.ok(main.text.includes('id="battleTimeline"'), "entrypoint should include a visible battle timeline surface");
 
   const duplicate = await request(createServer({ env: {} }), "/index%202.html");
   assert.strictEqual(duplicate.status, 404);

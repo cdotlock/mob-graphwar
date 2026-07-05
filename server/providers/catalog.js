@@ -19,7 +19,7 @@ const PROVIDERS = [
     baseUrlEnv: "DEEPSEEK_BASE_URL",
     modelEnv: "DEEPSEEK_MODEL",
     defaultBaseUrl: "https://api.deepseek.com",
-    defaultModel: "deepseek-chat"
+    defaultModel: "deepseek-v4-flash"
   },
   {
     id: "minimax",

@@ -5,7 +5,8 @@
   "description": "A deterministic prototype for resource-limited AI Graphwar battles.",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node test/sim-core.test.js && node test/agent-contract.test.js && node test/provider-catalog.test.js && node test/server.test.js"
+    "test": "node test/sim-core.test.js && node test/agent-contract.test.js && node test/provider-catalog.test.js && node test/server.test.js",
+    "test:real:deepseek": "node test/real-deepseek-smoke.js"
   },
   "license": "MIT"
 }

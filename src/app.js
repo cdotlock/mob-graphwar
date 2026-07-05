@@ -11,6 +11,11 @@
   const statusStrip = document.getElementById("statusStrip");
   const shotSummary = document.getElementById("shotSummary");
   const handCards = document.getElementById("handCards");
+  const handTitle = document.getElementById("handTitle");
+  const handHint = document.getElementById("handHint");
+  const thinkingPanel = document.getElementById("thinkingPanel");
+  const mapBadge = document.getElementById("mapBadge");
+  const activeBadge = document.getElementById("activeBadge");
   const eventLog = document.getElementById("eventLog");
   const resetBtn = document.getElementById("resetBtn");
   const nextBtn = document.getElementById("nextBtn");
@@ -49,7 +54,7 @@
   }
 
   function unitColor(team) {
-    return team === "A" ? "var(--blue)" : "var(--red)";
+    return team === "A" ? "var(--team-a)" : "var(--team-b)";
   }
 
   function pathClass(team) {
@@ -76,14 +81,19 @@
       .join(" ");
     const nextTeam = state.winner ? "-" : state.turn % 2 === 0 ? "A" : "B";
     const energy = state.winner ? "-" : Sim.getEnergy(state.turn);
+    const score = state.score ? `${state.score.rank} / ${state.score.value}` : "pending";
     statusStrip.innerHTML = [
       statusItem("Turn", `${state.turn}/${Sim.CONFIG.maxTurns}`),
       statusItem("Next", nextTeam),
       statusItem("Energy", energy),
+      statusItem("Map", `${state.mapMeta.name} ${state.mapMeta.difficulty}`),
       statusItem("Team A HP", aHp),
       statusItem("Team B HP", bHp),
+      statusItem("Rank", score),
       statusItem("Result", state.winner ? `${state.winner} (${state.reason})` : "running")
     ].join("");
+    mapBadge.textContent = `${state.mapMeta.name} - difficulty ${state.mapMeta.difficulty}`;
+    activeBadge.textContent = state.winner ? `Final rank ${score}` : `Team ${nextTeam} locks next shot`;
   }
 
   function terrainPath() {
@@ -163,10 +173,11 @@
   function renderCollision(path, fresh) {
     const point = path.collisionPoint;
     const color = path.team === "A" ? "var(--blue)" : "var(--red)";
+    const teamColor = path.team === "A" ? "var(--team-a)" : "var(--team-b)";
     if (path.result === "hitEnemy" || path.result === "hitAlly") {
       return `<circle class="hit-ring" cx="${sx(point.x)}" cy="${sy(point.y)}" r="${
         fresh ? 25 : 18
-      }" stroke="${color}" opacity="${fresh ? 0.95 : 0.45}" />`;
+      }" stroke="${teamColor}" opacity="${fresh ? 0.95 : 0.45}" />`;
     }
     const x = sx(point.x);
     const y = sy(point.y);
@@ -179,7 +190,7 @@
 
   function renderBattlefield() {
     svg.innerHTML = `
-      <rect x="0" y="0" width="1000" height="600" fill="#fcfbf7" />
+      <rect x="0" y="0" width="1000" height="600" fill="#07110c" />
       ${renderGrid()}
       <path class="terrain" d="${terrainPath()}" />
       ${renderObstacles()}
@@ -193,9 +204,13 @@
     if (!event) {
       shotSummary.innerHTML = `
         <div class="summary-row"><span>Status</span><strong>No shots yet</strong></div>
-        <div class="summary-row"><span>Rule</span><code>Each AI can only use cards in the current hand.</code></div>
+        <div class="summary-row"><span>Rule</span><code>Lock Shot resolves exactly one AI function.</code></div>
       `;
-      handCards.innerHTML = "";
+      thinkingPanel.innerHTML = `
+        <div class="thinking-row"><span>Intent</span><strong>Waiting for first lock-in</strong></div>
+        <div class="thinking-row"><span>Constraint</span><strong>Current hand is visible below the board</strong></div>
+      `;
+      renderCurrentHand();
       return;
     }
 
@@ -209,20 +224,54 @@
       summaryRow("Closest", `${event.closestTargetDistance}u, maxY ${event.maxY}`)
     ].join("");
 
-    handCards.innerHTML = event.hand
-      .map((card) => {
-        const used = event.usedCardIds.includes(card.instanceId);
-        return `
-          <article class="card${used ? " used" : ""}">
-            <h3>${esc(card.label)} - ${card.cost} energy</h3>
-            <p>${esc(card.description)}</p>
-          </article>`;
-      })
-      .join("");
+    renderThinking(event);
+    renderCurrentHand();
   }
 
   function summaryRow(label, value, raw) {
     return `<div class="summary-row"><span>${esc(label)}</span><strong>${raw ? value : esc(value)}</strong></div>`;
+  }
+
+  function cardMarkup(card, used) {
+    const tags = (card.tags || []).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("");
+    return `
+      <article class="card ${esc(card.rarity || "basic")}${used ? " used" : ""}">
+        <h3>${esc(card.label)} <small>${card.cost}E</small></h3>
+        <p>${esc(card.description)}</p>
+        <div class="tag-row">${tags}</div>
+      </article>`;
+  }
+
+  function renderCurrentHand() {
+    const event = state.events[state.events.length - 1];
+    if (state.winner && event) {
+      handTitle.textContent = `Final Shot Hand - Team ${event.team}`;
+      handHint.textContent = "Used cards glow";
+      handCards.innerHTML = event.hand.map((card) => cardMarkup(card, event.usedCardIds.includes(card.instanceId))).join("");
+      return;
+    }
+    const team = state.turn % 2 === 0 ? "A" : "B";
+    const hand = Sim.dealHand(state.seed, state.turn, team);
+    handTitle.textContent = `Current Hand - Team ${team}`;
+    handHint.textContent = `${Sim.getEnergy(state.turn)} energy before lock-in`;
+    handCards.innerHTML = hand.map((card) => cardMarkup(card, false)).join("");
+  }
+
+  function renderThinking(event) {
+    const thinking = event.thinking || {};
+    const targets = (thinking.targetPriority || []).map((target) => `${target.id}(${target.hp})`).join(" -> ");
+    thinkingPanel.innerHTML = [
+      thinkingRow("Intent", thinking.intent || "balanced shot"),
+      thinkingRow("Targets", targets || event.targetId),
+      thinkingRow("Hand", thinking.handConstraint || `${event.hand.length} cards`),
+      thinkingRow("Combo", thinking.selectedCombo || event.components.map((component) => component.label).join(" + ")),
+      thinkingRow("Risk", thinking.risk || "none"),
+      thinkingRow("Reason", thinking.publicReason || "Local deterministic agent selected the highest scoring legal shot.")
+    ].join("");
+  }
+
+  function thinkingRow(label, value) {
+    return `<div class="thinking-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
   }
 
   function renderLog() {
@@ -235,7 +284,7 @@
           <li class="${cls}">
             <strong>Turn ${event.turn} - Team ${event.team} - ${esc(event.resultLabel)}</strong>
             <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} using ${event.cost}/${event.energy} energy.</div>
-            <div>${esc(event.expression)}</div>
+            <div>${esc(event.components.map((component) => component.label).join(" + ") || "baseline")}</div>
           </li>`;
       })
       .join("");

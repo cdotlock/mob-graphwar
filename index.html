@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Graphwar Demo</title>
+    <title>Mob Graphwar</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=4" />
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div>
-          <h1>AI Graphwar</h1>
-          <p>Short commands, limited function cards, deterministic AI duel.</p>
+          <h1>Mob Graphwar</h1>
+          <p>One command. One hand. One impossible function shot.</p>
         </div>
         <div class="seed-controls">
           <label>
@@ -20,28 +20,42 @@
             <input id="seedInput" type="number" min="1" max="999999" value="7351" />
           </label>
           <button id="resetBtn" type="button">Reset</button>
-          <button id="nextBtn" type="button">Next Turn</button>
+          <button id="nextBtn" class="primary-action" type="button">Lock Shot</button>
           <button id="runBtn" type="button">Run Battle</button>
           <button id="autoBtn" type="button">Auto</button>
         </div>
       </header>
 
-      <section class="command-row" aria-label="Agent commands">
-        <label class="command-box team-a">
-          <span>Agent A command <b id="commandCountA">0/80</b></span>
-          <textarea id="commandA" maxlength="80">用手牌最多两组件绕塔墙上缘，避队友，优先B2，露线再打B1。</textarea>
-        </label>
-        <label class="command-box team-b">
-          <span>Agent B command <b id="commandCountB">0/80</b></span>
-          <textarea id="commandB" maxlength="80">每弹最多两段，优先arc/bend高抛越塔墙打A2再A1；避B友，低能用wave/sway修正。</textarea>
-        </label>
-      </section>
-
       <section class="status-strip" id="statusStrip" aria-live="polite"></section>
 
       <section class="workspace">
-        <section class="battlefield-panel" aria-label="Battlefield">
-          <svg id="battlefield" viewBox="0 0 1000 600" role="img" aria-label="AI Graphwar battlefield"></svg>
+        <section class="play-panel" aria-label="Battle cockpit">
+          <section class="battlefield-panel" aria-label="Battlefield">
+            <div class="board-overlay">
+              <span id="mapBadge">Map</span>
+              <span id="activeBadge">Ready</span>
+            </div>
+            <svg id="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar battlefield"></svg>
+          </section>
+
+          <section class="command-row" aria-label="Agent commands">
+            <label class="command-box team-a">
+              <span>Agent A command <b id="commandCountA">0/80</b></span>
+              <textarea id="commandA" maxlength="80">用手牌最多两组件绕塔墙上缘，避队友，优先B2，露线再打B1。</textarea>
+            </label>
+            <label class="command-box team-b">
+              <span>Agent B command <b id="commandCountB">0/80</b></span>
+              <textarea id="commandB" maxlength="80">每弹最多两段，优先arc/bend高抛越塔墙打A2再A1；避B友，低能用wave/sway修正。</textarea>
+            </label>
+          </section>
+
+          <section class="hand-panel">
+            <div class="panel-heading inline-heading">
+              <h2 id="handTitle">Current Hand</h2>
+              <span id="handHint">Visible before lock-in</span>
+            </div>
+            <div id="handCards" class="cards"></div>
+          </section>
         </section>
 
         <aside class="side-panel">
@@ -55,9 +69,9 @@
 
           <section>
             <div class="panel-heading">
-              <h2>Function Cards</h2>
+              <h2>AI Thinking</h2>
             </div>
-            <div id="handCards" class="cards"></div>
+            <div id="thinkingPanel" class="thinking-panel"></div>
           </section>
 
           <section>
@@ -70,7 +84,7 @@
       </section>
     </main>
 
-    <script src="src/sim-core.js"></script>
-    <script src="src/app.js"></script>
+    <script src="src/sim-core.js?v=3"></script>
+    <script src="src/app.js?v=3"></script>
   </body>
 </html>

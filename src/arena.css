@@ -351,6 +351,146 @@ label,
   white-space: nowrap;
 }
 
+.ranked-game-state-panel {
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(88, 212, 255, 0.28);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(135deg, rgba(88, 212, 255, 0.12), transparent 44%, rgba(255, 200, 87, 0.1)),
+    rgba(3, 7, 14, 0.78);
+}
+
+.ranked-state-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ranked-state-header span,
+.ranked-state-header small,
+.state-node span,
+.state-node small,
+.team-assignment-grid span,
+.team-assignment-grid small,
+.rank-settlement-card span,
+.rank-settlement-card small {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ranked-state-header strong {
+  color: var(--acid);
+  font-family: "Russo One", sans-serif;
+  font-size: 17px;
+  text-transform: uppercase;
+}
+
+.ranked-state-header small {
+  grid-column: 1 / -1;
+}
+
+.ranked-state-timeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.state-node {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 6px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.state-node.ready {
+  border-color: rgba(88, 212, 255, 0.45);
+  background:
+    linear-gradient(135deg, rgba(88, 212, 255, 0.14), transparent 60%),
+    rgba(0, 0, 0, 0.25);
+}
+
+.state-node.active {
+  border-color: rgba(217, 255, 71, 0.72);
+  box-shadow: inset 0 0 20px rgba(217, 255, 71, 0.12);
+}
+
+.state-node strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.team-assignment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.team-assignment-grid article {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--red);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(3, 7, 14, 0.66);
+}
+
+.team-assignment-grid article.player-team {
+  border-left-color: var(--cyan);
+  background:
+    linear-gradient(90deg, rgba(88, 212, 255, 0.14), transparent),
+    rgba(3, 7, 14, 0.7);
+}
+
+.team-assignment-grid strong {
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.rank-settlement-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  align-items: center;
+  border: 1px solid rgba(255, 200, 87, 0.32);
+  border-radius: 8px;
+  padding: 9px;
+  background:
+    linear-gradient(90deg, rgba(255, 200, 87, 0.13), transparent 66%),
+    rgba(3, 7, 14, 0.7);
+}
+
+.rank-settlement-card strong {
+  color: var(--gold);
+  font-family: "Russo One", sans-serif;
+  font-size: 18px;
+}
+
+.rank-settlement-card small {
+  grid-column: 1 / -1;
+}
+
 .session-status-panel {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2547,7 +2687,10 @@ code {
   .profile-vault,
   .leaderboard-row,
   .commander-names,
-  .commander-metrics {
+  .commander-metrics,
+  .ranked-state-timeline,
+  .team-assignment-grid,
+  .rank-settlement-card {
     grid-template-columns: 1fr;
   }
 

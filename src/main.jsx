@@ -696,6 +696,7 @@ function App() {
             sessionToken={sessionToken}
             match={match}
             queueState={queueState}
+            autoBattle={autoBattle}
             busy={busy}
             onSubmit={signIn}
             onRestore={restoreProfile}
@@ -810,6 +811,7 @@ function LaunchBay({
   sessionToken,
   match,
   queueState,
+  autoBattle,
   busy,
   onSubmit,
   onRestore,
@@ -837,6 +839,7 @@ function LaunchBay({
         ))}
       </div>
       <RankedFlowPanel profile={profile} sessionToken={sessionToken} match={match} queueState={queueState} login={login} />
+      <RankedGameStatePanel profile={profile} match={match} queueState={queueState} autoBattle={autoBattle} />
       <SessionStatusPanel profile={profile} sessionToken={sessionToken} login={login} />
       <LoginCard login={login} setLogin={setLogin} profile={profile} sessionToken={sessionToken} busy={busy} onSubmit={onSubmit} onRestore={onRestore} />
       <MatchCard
@@ -848,6 +851,82 @@ function LaunchBay({
         onSync={onSync}
       />
     </section>
+  );
+}
+
+function RankedGameStatePanel({ profile, match, queueState, autoBattle }) {
+  const roster = match?.roster?.length ? match.roster : [];
+  const playerSeat = roster.find((seat) => seat.playerId && seat.playerId === profile?.id);
+  const playerTeam = autoBattle?.playerTeam || playerSeat?.team || "-";
+  const rankDelta = Number.isFinite(Number(autoBattle?.rankDelta)) ? Number(autoBattle?.rankDelta) : null;
+  const isSettled = Boolean(autoBattle || match?.state?.winner);
+  const phase = isSettled ? "Rank settled" : match ? "Resolving" : queueState ? "Queue" : profile ? "Armed" : "Booting";
+  const stateNodes = [
+    {
+      label: "Queue",
+      value: queueState ? `${queueState.queueSize}/4 humans` : match ? "closed" : "idle",
+      ready: Boolean(queueState || match || autoBattle),
+      active: Boolean(queueState && !match)
+    },
+    {
+      label: "Matched",
+      value: match ? (match.filledByAi ? "AI fill" : "2v2 humans") : "waiting",
+      ready: Boolean(match || autoBattle),
+      active: Boolean(match && !autoBattle && !match?.state?.winner)
+    },
+    {
+      label: "Resolving",
+      value: match ? "AI auto-battle" : "standby",
+      ready: Boolean(match || autoBattle),
+      active: Boolean(match && !autoBattle && !match?.state?.winner)
+    },
+    {
+      label: "Rank settled",
+      value: rankDelta === null ? "pending" : `${rankDelta > 0 ? "+" : ""}${rankDelta}`,
+      ready: Boolean(autoBattle),
+      active: Boolean(autoBattle)
+    }
+  ];
+  const teamSeats = (team) => roster.filter((seat) => seat.team === team);
+  const settlementCopy = autoBattle
+    ? `${battleResultLabel(autoBattle.winner)} · ${autoBattle.resolvedTurns} turns · Team ${playerTeam}`
+    : match
+      ? "Models are resolving without mid-duel commands."
+      : "Queue a ranked room, then watch the AIs fight unattended.";
+  return (
+    <div className="ranked-game-state-panel" data-testid="ranked-game-state-panel" aria-label="Ranked auto-battle game state">
+      <div className="ranked-state-header">
+        <span>Auto-battle loop</span>
+        <strong>{phase}</strong>
+        <small>{match?.filledByAi ? "Quick AI Fill" : match ? "Human room" : queueState ? "Waiting for room" : "No active room"}</small>
+      </div>
+      <div className="ranked-state-timeline">
+        {stateNodes.map((node, index) => (
+          <div className={`state-node ${node.ready ? "ready" : ""} ${node.active ? "active" : ""}`} key={node.label}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <strong>{node.label}</strong>
+            <small>{node.value}</small>
+          </div>
+        ))}
+      </div>
+      <div className="team-assignment-grid">
+        {["A", "B"].map((team) => {
+          const seats = teamSeats(team);
+          return (
+            <article className={team === playerTeam ? "player-team" : ""} key={team}>
+              <span>{team === playerTeam ? "Your team" : "Opponent team"}</span>
+              <strong>Team {team}</strong>
+              <small>{seats.length ? seats.map((seat) => `${seat.unitId} ${seat.displayName}`).join(" / ") : "awaiting seats"}</small>
+            </article>
+          );
+        })}
+      </div>
+      <div className="rank-settlement-card">
+        <span>Rank settlement</span>
+        <strong>{rankDelta === null ? "Pending" : `${rankDelta > 0 ? "+" : ""}${rankDelta}`}</strong>
+        <small>{settlementCopy}</small>
+      </div>
+    </div>
   );
 }
 

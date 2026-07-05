@@ -137,6 +137,22 @@ function testGameShowsRankedOnboardingAndProviderReadiness() {
   assert.ok(css.includes(".provider-readiness-grid"), "CSS should style provider readiness");
 }
 
+function testRankedGameStatePanelMakesAutoBattleLoopReadable() {
+  assert.ok(main.includes("RankedGameStatePanel"), "launch bay should include a named ranked game state panel");
+  assert.ok(main.includes('data-testid="ranked-game-state-panel"'), "ranked game state panel should be selectable for browser verification");
+  assert.ok(main.includes("Queue"), "ranked state panel should show the queue step");
+  assert.ok(main.includes("Matched"), "ranked state panel should show the matched step");
+  assert.ok(main.includes("Resolving"), "ranked state panel should show the auto-resolve step");
+  assert.ok(main.includes("Rank settled"), "ranked state panel should show rank settlement");
+  assert.ok(main.includes("filledByAi"), "ranked state panel should expose whether AI filled missing humans");
+  assert.ok(main.includes("playerTeam"), "ranked state panel should expose the player's team assignment");
+  assert.ok(main.includes("autoBattle?.rankDelta"), "ranked state panel should read rank delta from the auto duel result");
+  assert.ok(css.includes(".ranked-game-state-panel"), "CSS should style ranked game state as first-class launch chrome");
+  assert.ok(css.includes(".state-node"), "CSS should style the ranked state timeline nodes");
+  assert.ok(css.includes(".team-assignment-grid"), "CSS should style team assignments for spectators");
+  assert.ok(css.includes(".rank-settlement-card"), "CSS should style rank settlement as a visible result");
+}
+
 function testUiExposesBareRulesPacketForModels() {
   assert.ok(main.includes("RulesPacketPanel"), "UI should include a named bare-rules panel");
   assert.ok(main.includes('data-testid="rules-packet-panel"'), "rules packet should be selectable for browser verification");
@@ -286,6 +302,7 @@ testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testGameSurfacesRealAccountAuth();
 testGameShowsRankedOnboardingAndProviderReadiness();
+testRankedGameStatePanelMakesAutoBattleLoopReadable();
 testUiExposesBareRulesPacketForModels();
 testMobileHasGameDockForWatchOnlyLoop();
 testUiPollsQueuedMatchmakingRooms();

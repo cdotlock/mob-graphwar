@@ -910,10 +910,65 @@ function BattlefieldBackdrop({ state }) {
   );
 }
 
+function RouteMazeLayer({ state }) {
+  const obstacles = state.obstacles || [];
+  const mazeBands = obstacles.filter((obstacle) => obstacle.role === "maze-band");
+  const gateSlits = obstacles.filter((obstacle) => obstacle.role === "gate-slit");
+  const threadSlots = obstacles.filter((obstacle) => obstacle.role === "thread-slot");
+  const visibleBands = mazeBands.slice(0, 14);
+  return (
+    <g className="route-maze-layer" data-testid="route-maze-layer" aria-hidden="true">
+      {visibleBands.filter((obstacle) => obstacle.y >= 30).map((obstacle) => (
+        <rect
+          key={`fog-${obstacle.id}`}
+          className={`depth-fog layer-${obstacle.visualLayer || 1}`}
+          x={sx(Math.max(0, obstacle.x - 2))}
+          y={Math.max(0, sy(obstacle.y + obstacle.h) - 24)}
+          width={(obstacle.w + 4) * 10}
+          height={Math.max(26, obstacle.h * 10 + 32)}
+          rx="8"
+        />
+      ))}
+      {visibleBands.map((obstacle) => (
+        <rect
+          key={`band-${obstacle.id}`}
+          className={`maze-band layer-${obstacle.visualLayer || 1}`}
+          x={sx(obstacle.x)}
+          y={sy(obstacle.y + obstacle.h)}
+          width={obstacle.w * 10}
+          height={Math.max(5, obstacle.h * 10)}
+          rx="2"
+        />
+      ))}
+      {gateSlits.slice(0, 12).map((obstacle) => {
+        const x = sx(obstacle.x + obstacle.w / 2);
+        return (
+          <line
+            key={`gate-${obstacle.id}`}
+            className={`gate-slit layer-${obstacle.visualLayer || 1}`}
+            x1={x}
+            y1={sy(obstacle.y + obstacle.h)}
+            x2={x}
+            y2={sy(obstacle.y)}
+          />
+        );
+      })}
+      {threadSlots.slice(0, 10).map((obstacle) => (
+        <path
+          key={`thread-${obstacle.id}`}
+          className={`thread-slot layer-${obstacle.visualLayer || 1}`}
+          d={`M${sx(obstacle.x)},${sy(obstacle.y + obstacle.h / 2)} L${sx(obstacle.x + obstacle.w)},${sy(obstacle.y + obstacle.h / 2)}`}
+        />
+      ))}
+    </g>
+  );
+}
+
 function renderObstacleFacets(obstacle, index) {
   const showLabel = index % 4 === 0 || obstacle.h >= 30 || obstacle.y >= 38;
+  const role = obstacle.role || "blocker";
   return (
-    <g key={obstacle.id} className="obstacle-cluster">
+    <g key={obstacle.id} className={`obstacle-cluster role-${role} layer-${obstacle.visualLayer || 1}`}>
       <polygon className="obstacle-shadow" points={obstacleFacetPoints(obstacle, "shadow")} />
       <polygon className="obstacle-facet" points={obstacleFacetPoints(obstacle, "body")} />
       <polygon className="obstacle-cap" points={obstacleFacetPoints(obstacle, "cap")} />
@@ -938,6 +993,9 @@ function Battlefield({ state, latestEvent }) {
         <span>{complexity.tallCount || 0} towers</span>
         <span>{complexity.ceilingCount || 0} ceilings</span>
         <span>{complexity.suspendedShelves || 0} shelves</span>
+        <span className="maze-bands">{complexity.mazeBands || 0} bands</span>
+        <span className="gate-slits">{complexity.gateSlits || 0} slits</span>
+        <span className="thread-slots">{complexity.threadSlots || 0} slots</span>
         <span className="route-pressure">{complexity.routePressure || 0} pressure</span>
         <span className="battlefield-depth">{complexity.layerCount || 0} layers</span>
       </div>
@@ -969,6 +1027,7 @@ function Battlefield({ state, latestEvent }) {
         <BattlefieldBackdrop state={state} />
         <path className="terrain" d={terrainPath()} />
         <path className="terrain-ridge ridge-near" d={terrainLinePath(1.4)} />
+        <RouteMazeLayer state={state} />
         <g className="obstacle-layer">
           {state.obstacles.map(renderObstacleFacets)}
         </g>

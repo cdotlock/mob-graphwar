@@ -583,6 +583,36 @@
     };
   }
 
+  function inferObstacleRole(obstacle) {
+    const id = String(obstacle.id || "");
+    if (/thread-slot/.test(id)) return "thread-slot";
+    if (/gate-slit|splitter|right-slit|slit/.test(id)) return "gate-slit";
+    if (/ground-rib|low-bumper|low-bunker/.test(id)) return "ground-rib";
+    if (/maze-band|floater|shelf|overhang|high-cap|crown|ceiling|bridge|roof|upper|lock/.test(id)) return "maze-band";
+    if (/spire|needle|tower|pillar|wall/.test(id)) return "tower";
+    return obstacle.h >= 24 ? "tower" : "blocker";
+  }
+
+  function inferVisualLayer(obstacle, role, index) {
+    if (role === "gate-slit") return 3 + (index % 2);
+    if (role === "thread-slot") return 2 + (index % 3);
+    if (role === "maze-band" && obstacle.y >= 38) return 5;
+    if (obstacle.y >= 34) return 4;
+    if (obstacle.y >= 18) return 3;
+    if (obstacle.y > 0) return 2;
+    return obstacle.h >= 24 ? 2 : 1;
+  }
+
+  function normalizeObstacle(obstacle, index) {
+    const role = obstacle.role || inferObstacleRole(obstacle);
+    return {
+      ...obstacle,
+      role,
+      visualLayer: obstacle.visualLayer || inferVisualLayer(obstacle, role, index),
+      tilt: obstacle.tilt == null ? round(((index % 5) - 2) * 0.4, 1) : obstacle.tilt
+    };
+  }
+
   function generateMap(seed) {
     const rng = mulberry32(hashString(`${seed}:map`));
     const template = clone(MAP_TEMPLATES[Math.floor(rng() * MAP_TEMPLATES.length)]);
@@ -741,6 +771,13 @@
         h: round(3 + rng() * 2.2, 1)
       },
       {
+        id: "seed-thread-slot-d",
+        x: clamp(round(47 + rng() * 16, 1), 10, CONFIG.width - 22),
+        y: round(27 + rng() * 7, 1),
+        w: round(8 + rng() * 7, 1),
+        h: round(2.8 + rng() * 2, 1)
+      },
+      {
         id: "seed-splitter-a",
         x: clamp(round(31 + rng() * 9, 1), 10, CONFIG.width - 15),
         y: round(7 + rng() * 8, 1),
@@ -753,6 +790,34 @@
         y: round(7 + rng() * 8, 1),
         w: round(4 + rng() * 3, 1),
         h: round(9 + rng() * 11, 1)
+      },
+      {
+        id: "seed-gate-slit-a",
+        x: clamp(round(36 + rng() * 8, 1), 10, CONFIG.width - 12),
+        y: round(9 + rng() * 9, 1),
+        w: round(1.8 + rng() * 1.4, 1),
+        h: round(10 + rng() * 10, 1)
+      },
+      {
+        id: "seed-gate-slit-b",
+        x: clamp(round(47 + rng() * 8, 1), 10, CONFIG.width - 12),
+        y: round(18 + rng() * 10, 1),
+        w: round(1.8 + rng() * 1.4, 1),
+        h: round(9 + rng() * 10, 1)
+      },
+      {
+        id: "seed-gate-slit-c",
+        x: clamp(round(60 + rng() * 8, 1), 10, CONFIG.width - 12),
+        y: round(13 + rng() * 11, 1),
+        w: round(1.8 + rng() * 1.4, 1),
+        h: round(10 + rng() * 10, 1)
+      },
+      {
+        id: "seed-gate-slit-d",
+        x: clamp(round(70 + rng() * 8, 1), 10, CONFIG.width - 12),
+        y: round(7 + rng() * 9, 1),
+        w: round(1.8 + rng() * 1.4, 1),
+        h: round(10 + rng() * 10, 1)
       },
       {
         id: "seed-crown-a",
@@ -769,6 +834,27 @@
         h: round(2.5 + rng() * 2, 1)
       },
       {
+        id: "seed-maze-band-a",
+        x: clamp(round(21 + rng() * 13, 1), 10, CONFIG.width - 24),
+        y: round(39 + rng() * 8, 1),
+        w: round(10 + rng() * 9, 1),
+        h: round(2.2 + rng() * 1.8, 1)
+      },
+      {
+        id: "seed-maze-band-b",
+        x: clamp(round(40 + rng() * 14, 1), 10, CONFIG.width - 24),
+        y: round(16 + rng() * 8, 1),
+        w: round(10 + rng() * 9, 1),
+        h: round(2.2 + rng() * 1.8, 1)
+      },
+      {
+        id: "seed-maze-band-c",
+        x: clamp(round(63 + rng() * 11, 1), 10, CONFIG.width - 24),
+        y: round(36 + rng() * 8, 1),
+        w: round(10 + rng() * 9, 1),
+        h: round(2.2 + rng() * 1.8, 1)
+      },
+      {
         id: "seed-ground-rib-a",
         x: clamp(round(18 + rng() * 12, 1), 8, CONFIG.width - 14),
         y: 0,
@@ -781,9 +867,23 @@
         y: 0,
         w: round(3 + rng() * 3, 1),
         h: round(8 + rng() * 8, 1)
+      },
+      {
+        id: "seed-ground-rib-c",
+        x: clamp(round(28 + rng() * 10, 1), 8, CONFIG.width - 14),
+        y: 0,
+        w: round(2.5 + rng() * 2.8, 1),
+        h: round(6 + rng() * 7, 1)
+      },
+      {
+        id: "seed-ground-rib-d",
+        x: clamp(round(69 + rng() * 11, 1), 8, CONFIG.width - 14),
+        y: 0,
+        w: round(2.5 + rng() * 2.8, 1),
+        h: round(6 + rng() * 7, 1)
       }
     ];
-    const obstacles = baseObstacles.concat(proceduralObstacles);
+    const obstacles = baseObstacles.concat(proceduralObstacles).map(normalizeObstacle);
     const units = template.units.map((unit, index) => {
       const x = clamp(round(unit.x + jitter(index % 2 === 0 ? 2 : 3), 1), 6, CONFIG.width - 6);
       return {
@@ -801,13 +901,18 @@
     const ceilingCount = obstacles.filter((obstacle) => obstacle.y >= 38).length;
     const suspendedShelves = obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length;
     const chokePoints = obstacles.filter((obstacle) => obstacle.h >= 18 || (obstacle.y > 0 && obstacle.w >= 9)).length;
+    const mazeBands = obstacles.filter((obstacle) => obstacle.role === "maze-band").length;
+    const gateSlits = obstacles.filter((obstacle) => obstacle.role === "gate-slit").length;
+    const threadSlots = obstacles.filter((obstacle) => obstacle.role === "thread-slot").length;
+    const groundRibs = obstacles.filter((obstacle) => obstacle.role === "ground-rib").length;
+    const visualLayers = new Set(obstacles.map((obstacle) => obstacle.visualLayer)).size;
     const layerCount = clamp(
-      Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3),
+      Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3 + visualLayers / 2),
       6,
-      14
+      18
     );
     const routePressure = clamp(
-      Math.round(52 + tallCount * 3 + ceilingCount * 4 + suspendedShelves * 2 + chokePoints + density * 42),
+      Math.round(48 + tallCount * 3 + ceilingCount * 4 + suspendedShelves * 2 + chokePoints + density * 42 + gateSlits * 2 + threadSlots),
       80,
       99
     );
@@ -823,6 +928,11 @@
         ceilingCount,
         suspendedShelves,
         chokePoints,
+        mazeBands,
+        gateSlits,
+        threadSlots,
+        groundRibs,
+        visualLayers,
         layerCount,
         routePressure,
         density: round(density, 3)

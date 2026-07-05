@@ -265,10 +265,65 @@ function testSeededHardMapGeneration() {
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
 
+function testMapGenerationIncludesVisibleTacticalWindows() {
+  const first = Sim.createInitialState({ seed: 9001 });
+  const second = Sim.createInitialState({ seed: 9001 });
+  const different = Sim.createInitialState({ seed: 9002 });
+
+  assert.ok(Array.isArray(first.mapMeta.windows), "map should expose visible tactical windows");
+  assert.ok(first.mapMeta.windows.length >= 2, "map should include multiple tactical windows");
+  assert.deepStrictEqual(first.mapMeta.windows, second.mapMeta.windows, "same seed should produce same tactical windows");
+  assert.notDeepStrictEqual(first.mapMeta.windows, different.mapMeta.windows, "different seeds should vary tactical windows");
+  for (const window of first.mapMeta.windows) {
+    assert.ok(window.id && window.label, "window should include readable identity");
+    assert.ok(Array.isArray(window.tags) && window.tags.length > 0, "window should include tactical tags");
+    assert.ok(window.read, "window should explain the route pressure");
+    assert.ok(window.x >= 0 && window.x + window.w <= Sim.CONFIG.width, "window should fit board width");
+    assert.ok(window.y >= 0 && window.y + window.h <= Sim.CONFIG.height, "window should fit board height");
+  }
+}
+
+function testMapFitAppearsInLegalShotsAndEvents() {
+  const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
+  const state = Sim.createInitialState({ seed: 7351 });
+  const shots = Sim.listLegalShots(state, "A", command);
+  assert.ok(shots.length > 0, "legal shots should exist");
+  assert.ok(shots.every((shot) => shot.mapFit && typeof shot.mapFit.read === "string"), "legal shots should expose map fit");
+  assert.ok(shots.some((shot) => shot.mapFit.matched), "at least one legal shot should read a tactical window");
+
+  Sim.applyTurn(state, { A: command });
+  const event = state.events[0];
+  assert.ok(event.mapFit, "event should include the chosen map fit");
+  assert.strictEqual(event.thinking.mapRead, event.mapFit.read);
+}
+
+function testTacticalWindowsDoNotOverrideCleanHits() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  state.mapMeta.windows = [
+    {
+      id: "full-board-bait",
+      label: "Full Board Bait",
+      x: 0,
+      y: 0,
+      w: Sim.CONFIG.width,
+      h: Sim.CONFIG.height,
+      tags: ["thread", "precision"],
+      read: "bait route should never outrank hit quality"
+    }
+  ];
+  const shots = Sim.listLegalShots(state, "A", "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。");
+  const hitScores = shots.filter((shot) => shot.result === "hitEnemy").map((shot) => shot.score);
+  const missScores = shots.filter((shot) => shot.result !== "hitEnemy" && shot.mapFit.matched).map((shot) => shot.score);
+  assert.ok(hitScores.length > 0, "setup should contain at least one clean hit");
+  assert.ok(missScores.length > 0, "setup should contain at least one window-touching miss");
+  assert.ok(Math.max(...hitScores) > Math.max(...missScores), "window fit must not rank a miss above a clean hit");
+}
+
 function testTraceShapeIncludesMapAndScore() {
   const state = Sim.runBattle({ seed: 7107, commands: commands() });
   const trace = Sim.exportTrace(state);
   assert.ok(trace.mapMeta, "trace should include map metadata");
+  assert.ok(Array.isArray(trace.mapMeta.windows), "trace should include tactical windows");
   assert.ok(trace.score, "trace should include score");
   assert.strictEqual(trace.events.length, state.events.length);
   assert.ok(trace.events.every((event) => event.thinking), "all trace events should include thinking");
@@ -291,6 +346,9 @@ testUnavailableHardTargetIsReportedAsFallback();
   testApplyTurnCanUseProviderCandidate();
   testRicherCardCatalog();
   testSeededHardMapGeneration();
+  testMapGenerationIncludesVisibleTacticalWindows();
+  testMapFitAppearsInLegalShotsAndEvents();
+  testTacticalWindowsDoNotOverrideCleanHits();
   testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

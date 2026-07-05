@@ -14,6 +14,7 @@ function testCandidateExportIsSafe() {
     candidates.every((candidate) => Array.isArray(candidate.combo.traits)),
     "candidate combo should expose readable traits"
   );
+  assert.ok(candidates.every((candidate) => candidate.mapFit === undefined), "candidate should not expose simulated map fit");
   assert.ok(candidates.every((candidate) => candidate.score === undefined), "candidate should not expose local score");
   assert.ok(candidates.every((candidate) => candidate.resultLabel === undefined), "candidate should not expose simulated result");
 }

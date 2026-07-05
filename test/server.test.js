@@ -78,6 +78,9 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.ok(result.json.candidate.combo.name, "response should include selected combo");
   assert.ok(captured.url.endsWith("/chat/completions"), "OpenAI-compatible adapter should call chat completions");
   assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
+  const prompt = JSON.parse(JSON.parse(captured.options.body).messages[1].content);
+  assert.ok(Array.isArray(prompt.state.map.windows), "provider prompt should include visible map windows in state");
+  assert.ok(prompt.candidates.every((candidate) => candidate.mapFit === undefined), "provider candidates should not leak simulated map fit");
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
 }
 

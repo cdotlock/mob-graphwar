@@ -86,6 +86,8 @@ Map generation:
 - Pick one of several hard layouts by seed.
 - Add 3-5 obstacles, including at least one tall central obstruction.
 - Add an elevated block or slot that can punish mid-height shots.
+- Add 1-2 visible tactical windows that describe the intended route pressure,
+  such as high clearance, thread slot, shelf hold, or corner release.
 - Position units so direct fire is usually blocked.
 - Keep all units above ground and targetable with some available card combos.
 
@@ -115,6 +117,10 @@ scores the result using:
   - precision helps near misses
   - volatile improves damage but increases risk penalty
   - clearance helps high maps
+- bounded map-fit influence:
+  - curves that pass through a visible tactical window receive a small bonus
+  - card traits matching that window receive a small extra bonus
+  - a clean hit must still outrank a window-touching miss
 
 The AI thinking trace is derived from this scoring and must not expose chain of
 thought. It is a compact explanation of the selected inputs and outcome.
@@ -161,6 +167,7 @@ Visual style:
 - Team A: electric blue.
 - Team B: ember red.
 - Accents: green/gold for resources and rank.
+- Tactical windows render as dashed gold route boxes with short labels.
 - Cards use compact tactical text and visible tags.
 - Motion is simple: latest path draws in, hit ring pulses, cards press subtly.
 

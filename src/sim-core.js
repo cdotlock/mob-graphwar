@@ -541,6 +541,14 @@
     };
   }
 
+  function normalizeBattleOrders(commands) {
+    const source = commands || {};
+    return {
+      A: String(source.A || "").slice(0, CONFIG.maxCommandLength),
+      B: String(source.B || "").slice(0, CONFIG.maxCommandLength)
+    };
+  }
+
   function createInitialState(options) {
     const opts = options || {};
     const seed = Number.isFinite(Number(opts.seed)) ? Number(opts.seed) : 7351;
@@ -557,6 +565,7 @@
       obstacles: clone(map.obstacles),
       units: clone(map.units),
       initialUnits: clone(map.units),
+      lockedOrders: null,
       events: [],
       paths: [],
       score: null,
@@ -1409,7 +1418,8 @@
     if (state.winner) return state;
     const opts = options || {};
     const team = state.turn % 2 === 0 ? "A" : "B";
-    const command = commands && commands[team] ? commands[team] : "";
+    const orders = state.lockedOrders || normalizeBattleOrders(commands);
+    const command = orders[team] || "";
     const decision = chooseShot(state, team, command, opts);
 
     if (!decision) {
@@ -1420,6 +1430,7 @@
     }
     decision.providerReason = opts.providerReason || null;
     decision.provider = opts.provider || null;
+    if (!state.lockedOrders) state.lockedOrders = orders;
 
     const sim = decision.sim;
     let damage = 0;
@@ -1506,6 +1517,7 @@
       seed: state.seed,
       config: state.config,
       mapMeta: clone(state.mapMeta),
+      lockedOrders: clone(state.lockedOrders),
       obstacles: state.obstacles,
       initialUnits: clone(state.initialUnits || BASE_SCENARIO.units),
       finalUnits: clone(state.units),

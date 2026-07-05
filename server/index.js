@@ -118,7 +118,12 @@ function createServer(options) {
           sendJson(res, 400, { error: "invalid_agent_request" });
           return;
         }
-        const command = String(body.command || "").slice(0, 80);
+        const lockedOrders = body.state && body.state.lockedOrders;
+        const lockedCommand =
+          lockedOrders && typeof lockedOrders === "object" && typeof lockedOrders[body.team] === "string"
+            ? lockedOrders[body.team]
+            : null;
+        const command = String(lockedCommand || body.command || "").slice(0, 80);
         const candidates = Contract.listPublicShotCandidates(body.state, body.team, command);
         if (!candidates.length) {
           sendJson(res, 409, { error: "no_legal_candidates" });

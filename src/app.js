@@ -40,6 +40,10 @@
     };
   }
 
+  function activeOrders() {
+    return state.lockedOrders || commands();
+  }
+
   function esc(value) {
     return String(value)
       .replace(/&/g, "&amp;")
@@ -89,10 +93,12 @@
     const nextTeam = state.winner ? "-" : state.turn % 2 === 0 ? "A" : "B";
     const energy = state.winner ? "-" : Sim.getEnergy(state.turn);
     const score = state.score ? `${state.score.rank} / ${state.score.value}` : "pending";
+    const orderState = state.lockedOrders ? "locked" : "editable";
     statusStrip.innerHTML = [
       statusItem("Turn", `${state.turn}/${Sim.CONFIG.maxTurns}`),
       statusItem("Next", nextTeam),
       statusItem("Energy", energy),
+      statusItem("Orders", orderState),
       statusItem("Map", `${state.mapMeta.name} ${state.mapMeta.difficulty}`),
       statusItem("Team A HP", aHp),
       statusItem("Team B HP", bHp),
@@ -100,7 +106,11 @@
       statusItem("Result", state.winner ? `${state.winner} (${state.reason})` : "running")
     ].join("");
     mapBadge.textContent = `${state.mapMeta.name} - difficulty ${state.mapMeta.difficulty}`;
-    activeBadge.textContent = state.winner ? `Final rank ${score}` : `Team ${nextTeam} locks next shot`;
+    activeBadge.textContent = state.winner
+      ? `Final rank ${score}`
+      : state.lockedOrders
+        ? `Team ${nextTeam} resolves locked order`
+        : "Set battle orders, then lock first shot";
   }
 
   function terrainPath() {
@@ -211,10 +221,10 @@
     if (!event) {
       shotSummary.innerHTML = `
         <div class="summary-row"><span>Status</span><strong>No shots yet</strong></div>
-        <div class="summary-row"><span>Rule</span><code>Lock Shot resolves exactly one AI function.</code></div>
+        <div class="summary-row"><span>Rule</span><code>First Lock Shot freezes both battle orders.</code></div>
       `;
       thinkingPanel.innerHTML = `
-        <div class="thinking-row"><span>Intent</span><strong>Waiting for first lock-in</strong></div>
+        <div class="thinking-row"><span>Intent</span><strong>Waiting for battle orders</strong></div>
         <div class="thinking-row"><span>Constraint</span><strong>Current hand is visible below the board</strong></div>
       `;
       renderCurrentHand();
@@ -298,7 +308,7 @@
     const hand = Sim.dealHand(state.seed, state.turn, team);
     const energy = Sim.getEnergy(state.turn);
     handTitle.textContent = `Current Hand - Team ${team}`;
-    handHint.textContent = `${energy} energy before lock-in`;
+    handHint.textContent = state.lockedOrders ? `${energy} energy, order locked` : `${energy} energy before order lock`;
     renderHandRead(hand, energy);
     handCards.innerHTML = hand.map((card) => cardMarkup(card, false, energy)).join("");
   }
@@ -357,12 +367,18 @@
     renderShotSummary();
     renderLog();
     const live = providerEnabled.checked;
+    const orderLocked = Boolean(state.lockedOrders);
+    commandA.disabled = orderLocked || busy;
+    commandB.disabled = orderLocked || busy;
+    seedInput.disabled = busy;
+    resetBtn.disabled = busy;
     nextBtn.disabled = Boolean(state.winner) || busy;
     runBtn.disabled = Boolean(state.winner) || busy || live;
     autoBtn.disabled = busy || live;
   }
 
   function reset() {
+    if (busy) return;
     stopAuto();
     state = Sim.createInitialState({ seed: Number(seedInput.value) });
     render();
@@ -395,7 +411,7 @@
     return selected ? selected.textContent : providerSelect.value;
   }
 
-  async function requestProviderShot(team, command) {
+  async function requestProviderShot(team, command, battleState) {
     const response = await fetch("/api/agent/shot", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -403,7 +419,7 @@
         provider: providerSelect.value,
         apiKey: providerKey.value,
         model: providerModel.value.trim() || undefined,
-        state,
+        state: battleState,
         team,
         command
       })
@@ -415,22 +431,28 @@
 
   async function nextTurn() {
     if (state.winner || busy) return;
+    const battleState = state;
+    const startTurn = battleState.turn;
     const team = state.turn % 2 === 0 ? "A" : "B";
-    const currentCommands = commands();
+    const currentCommands = battleState.lockedOrders || commands();
     busy = true;
     providerStatus.textContent = providerEnabled.checked ? "Thinking" : "Local";
     render();
     try {
       if (providerEnabled.checked) {
-        const result = await requestProviderShot(team, currentCommands[team]);
-        Sim.applyTurn(state, currentCommands, {
+        const result = await requestProviderShot(team, currentCommands[team], battleState);
+        if (state !== battleState || battleState.turn !== startTurn || battleState.winner) {
+          providerStatus.textContent = "Stale";
+          return;
+        }
+        Sim.applyTurn(battleState, currentCommands, {
           candidateId: result.decision.candidateId,
           provider: `${activeProviderLabel()}${result.model ? ` / ${result.model}` : ""}`,
           providerReason: result.decision.publicReason
         });
         providerStatus.textContent = "Live";
       } else {
-        Sim.applyTurn(state, currentCommands);
+        Sim.applyTurn(battleState, currentCommands);
         providerStatus.textContent = "Local";
       }
     } catch (err) {
@@ -443,8 +465,9 @@
 
   function runBattle() {
     if (providerEnabled.checked) return;
+    const currentCommands = activeOrders();
     while (!state.winner) {
-      Sim.applyTurn(state, commands());
+      Sim.applyTurn(state, currentCommands);
     }
     render();
   }
@@ -458,6 +481,7 @@
   }
 
   function toggleAuto() {
+    if (providerEnabled.checked) return;
     if (autoTimer) {
       stopAuto();
       return;
@@ -497,7 +521,10 @@
   runBtn.addEventListener("click", runBattle);
   autoBtn.addEventListener("click", toggleAuto);
   copyTraceBtn.addEventListener("click", copyTrace);
-  providerEnabled.addEventListener("change", render);
+  providerEnabled.addEventListener("change", () => {
+    if (providerEnabled.checked) stopAuto();
+    render();
+  });
   providerSelect.addEventListener("change", () => {
     updateProviderModel();
     render();

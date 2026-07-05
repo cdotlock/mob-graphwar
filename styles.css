@@ -290,6 +290,13 @@ textarea {
   line-height: 1.45;
 }
 
+textarea:disabled {
+  cursor: not-allowed;
+  color: rgba(237, 246, 235, 0.68);
+  border-color: rgba(98, 208, 113, 0.22);
+  background: linear-gradient(180deg, rgba(14, 26, 17, 0.92), rgba(8, 14, 10, 0.92));
+}
+
 textarea:focus,
 input:focus,
 button:focus-visible {

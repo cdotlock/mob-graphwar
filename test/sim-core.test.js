@@ -19,6 +19,41 @@ function testDeterministicBattle() {
   assert.ok(["S", "A", "B", "C", "D"].includes(first.score.rank), "battle should include a rank");
 }
 
+function testBattleOrdersLockAfterFirstShot() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const firstOrders = {
+    A: "must target B2, high safe arc",
+    B: "must target A2, high safe arc"
+  };
+  const editedOrders = {
+    A: "ignore B2, use volatile",
+    B: "must target A1, low risky direct shot"
+  };
+
+  assert.strictEqual(state.lockedOrders, null, "fresh battle should not start locked");
+  Sim.applyTurn(state, firstOrders);
+  assert.deepStrictEqual(state.lockedOrders, firstOrders, "first shot should lock both battle orders");
+
+  Sim.applyTurn(state, editedOrders);
+  assert.strictEqual(state.events[1].team, "B");
+  assert.strictEqual(state.events[1].command, firstOrders.B, "later turns should use the locked order");
+  assert.notStrictEqual(state.events[1].command, editedOrders.B, "mid-battle edits should not affect the current battle");
+
+  const trace = Sim.exportTrace(state);
+  assert.deepStrictEqual(trace.lockedOrders, firstOrders, "exported trace should include locked battle orders");
+}
+
+function testInvalidProviderCandidateDoesNotLockOrders() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  assert.throws(
+    () => Sim.applyTurn(state, { A: "must target B2, high safe arc", B: "must target A2, high safe arc" }, { candidateId: "missing" }),
+    /unknown_candidate/
+  );
+  assert.strictEqual(state.lockedOrders, null, "failed provider validation should not lock orders");
+  assert.strictEqual(state.events.length, 0, "failed provider validation should not append an event");
+  assert.strictEqual(state.turn, 0, "failed provider validation should not advance the turn");
+}
+
 function testNoInvalidState() {
   const state = Sim.runBattle({ seed: 2219, commands: commands() });
   for (const unit of state.units) {
@@ -240,6 +275,8 @@ function testTraceShapeIncludesMapAndScore() {
 }
 
 testDeterministicBattle();
+testBattleOrdersLockAfterFirstShot();
+testInvalidProviderCandidateDoesNotLockOrders();
 testNoInvalidState();
 testResourceValidation();
 testCommandParsing();

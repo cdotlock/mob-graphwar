@@ -81,6 +81,52 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
 }
 
+async function testProviderShotUsesLockedStateOrder() {
+  let capturedPrompt;
+  const Sim = require("../src/sim-core.js");
+  const lockedOrders = {
+    A: "must target B2, high safe arc",
+    B: "must target A2, high safe arc"
+  };
+  const state = Sim.createInitialState({ seed: 7351 });
+  Sim.applyTurn(state, lockedOrders);
+  const fetchMock = async (url, options) => {
+    const payload = JSON.parse(options.body);
+    capturedPrompt = JSON.parse(payload.messages[1].content);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                candidateId: capturedPrompt.candidates[0].candidateId,
+                publicReason: "Provider followed the locked order."
+              })
+            }
+          }
+        ]
+      })
+    };
+  };
+
+  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/agent/shot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "openai",
+      apiKey: "sk-live-user",
+      state,
+      team: "B",
+      command: "must target A1, low risky direct shot"
+    })
+  });
+
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(capturedPrompt.command, lockedOrders.B, "server should prefer locked state order over request body command");
+}
+
 async function testProviderShotRequiresKey() {
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
   const result = await request(createServer({ env: {} }), "/api/agent/shot", {
@@ -101,6 +147,7 @@ async function testProviderShotRequiresKey() {
   await testHealthAndProviders();
   await testInvalidProviderFails();
   await testProviderShotUsesByokAndValidatesCandidate();
+  await testProviderShotUsesLockedStateOrder();
   await testProviderShotRequiresKey();
   console.log("server tests passed");
 })().catch((err) => {

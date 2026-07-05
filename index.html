@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Mob Graphwar</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="styles.css?v=10" />
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div>
           <h1>Mob Graphwar</h1>
-          <p>One command. One hand. One impossible function shot.</p>
+          <p>One battle order. New hands every turn. One impossible function shot.</p>
         </div>
         <div class="seed-controls">
           <label>
@@ -40,11 +40,11 @@
 
           <section class="command-row" aria-label="Agent commands">
             <label class="command-box team-a">
-              <span>Agent A command <b id="commandCountA">0/80</b></span>
+              <span>Agent A battle order <b id="commandCountA">0/80</b></span>
               <textarea id="commandA" maxlength="80">只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。</textarea>
             </label>
             <label class="command-box team-b">
-              <span>Agent B command <b id="commandCountB">0/80</b></span>
+              <span>Agent B battle order <b id="commandCountB">0/80</b></span>
               <textarea id="commandB" maxlength="80">锁定A2，高抛越墙，保守避友，不用volatile。</textarea>
             </label>
           </section>
@@ -110,7 +110,7 @@
       </section>
     </main>
 
-    <script src="src/sim-core.js?v=8"></script>
-    <script src="src/app.js?v=8"></script>
+    <script src="src/sim-core.js?v=9"></script>
+    <script src="src/app.js?v=9"></script>
   </body>
 </html>

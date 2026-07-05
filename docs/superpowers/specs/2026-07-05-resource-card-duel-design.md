@@ -5,10 +5,11 @@ Date: 2026-07-05
 ## Product Goal
 
 Mob Graphwar is a two-player AI command game inspired by Graphwar. Players do
-not directly write functions. Each turn they see a limited hand of function
-cards, write one short command, lock it in, and then watch their AI fire a
-single shot. There is no movement, fog, scouting, counterspell phase, or reward
-drafting in this prototype.
+not directly write functions. Before the first shot, each player writes one
+short battle order for their AI. That order is locked for the whole battle; each
+turn the AI receives the same order plus a new hand, energy value, shooter, map
+state, and target state, then fires a single shot. There is no movement, fog,
+scouting, counterspell phase, or reward drafting in this prototype.
 
 The point of the game is not to make math hard for an AI. The point is to make
 the AI operate inside a compact card economy, so human wording, card luck, map
@@ -27,16 +28,19 @@ shape, and risk appetite produce visible differences.
 
 1. A deterministic map is generated from the seed.
 2. The active player sees their hand, energy, current units, and terrain.
-3. The player has one command field with an 80-character limit.
-4. After lock-in, the AI produces one shot. The player cannot revise it.
-5. The UI reveals the AI's concise thinking trace:
+3. Before the first shot, both players write one 80-character battle order.
+4. The first lock-in freezes both battle orders for the rest of the battle.
+5. On every turn, the AI interprets the locked order against the current hand,
+   energy, shooter, map, and living targets, then produces one shot. The player
+   cannot revise the current battle.
+6. The UI reveals the AI's concise thinking trace:
    - interpreted intent
    - target priority
    - hand constraints
    - selected combo
    - risk note
-6. The shot animates along the generated curve.
-7. The result is logged: hit, ally hit, blocked, ground, out, or miss.
+7. The shot animates along the generated curve.
+8. The result is logged: hit, ally hit, blocked, ground, out, or miss.
 
 ## Card System
 
@@ -89,6 +93,12 @@ Map generation:
 
 The local AI is deterministic and transparent. It is not a real LLM yet.
 
+The player order is battle-level, not turn-level. This makes the AI feel more
+autonomous: it can keep obeying, overfitting, or creatively interpreting the
+same instruction as the tactical state changes. The difficulty should come from
+limited hands, finite card combinations, hard terrain, and imperfect language,
+not from asking the player to rewrite an optimal prompt every turn.
+
 For each legal one- or two-card combo, it simulates candidate amplitudes and
 scores the result using:
 
@@ -140,6 +150,8 @@ Layout:
 
 - Top command/status bar: seed, round, active team, score/rank.
 - Left or center: large fixed-coordinate battlefield.
+- Middle command row: two battle-order boxes, editable only before the first
+  shot of a battle.
 - Bottom: current hand as cards, with used cards highlighted after a shot.
 - Right: shot inspector with AI thinking trace, expression, result, and log.
 

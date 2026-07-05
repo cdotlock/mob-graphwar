@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Orbitron:wght@700;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Russo+One&display=swap");
 
 :root {
   color-scheme: dark;
@@ -32,7 +32,7 @@ body {
     linear-gradient(225deg, rgba(255, 94, 104, 0.1), transparent 48%),
     #070912;
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Chakra Petch", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 button,
@@ -99,6 +99,10 @@ textarea {
   padding: 16px 0 28px;
 }
 
+.battle-priority-layout {
+  isolation: isolate;
+}
+
 .hero-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
@@ -131,7 +135,7 @@ textarea {
   right: -90px;
   bottom: 12px;
   color: rgba(217, 255, 71, 0.14);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 34px;
   font-weight: 900;
   white-space: nowrap;
@@ -148,7 +152,7 @@ textarea {
 h1 {
   margin: 5px 0 8px;
   max-width: 980px;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 68px;
   line-height: 0.96;
   letter-spacing: 0;
@@ -187,12 +191,13 @@ label,
 
 .rank-chip strong {
   display: block;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 34px;
 }
 
 .game-grid {
   display: grid;
+  grid-template-areas: "lobby battle tactical";
   grid-template-columns: 310px minmax(0, 1fr) 360px;
   gap: 12px;
   align-items: start;
@@ -207,6 +212,92 @@ label,
 .tactical-panel {
   display: grid;
   gap: 12px;
+}
+
+.lobby-panel {
+  grid-area: lobby;
+}
+
+.battle-panel {
+  grid-area: battle;
+}
+
+.tactical-panel {
+  grid-area: tactical;
+}
+
+.launch-bay {
+  display: grid;
+  gap: 12px;
+}
+
+.launch-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(217, 255, 71, 0.28);
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, rgba(217, 255, 71, 0.14), transparent 42%),
+    rgba(3, 7, 14, 0.78);
+}
+
+.launch-header span,
+.launch-steps b {
+  display: block;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.launch-header strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 19px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.launch-header > b {
+  display: grid;
+  place-items: center;
+  min-width: 68px;
+  min-height: 44px;
+  border: 1px solid rgba(217, 255, 71, 0.45);
+  border-radius: 8px;
+  color: #111400;
+  background: var(--acid);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.launch-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.launch-steps span {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--text);
+  background: rgba(3, 7, 14, 0.64);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .login-card,
@@ -400,7 +491,7 @@ label {
 
 .leaderboard-row b {
   color: var(--gold);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 13px;
 }
 
@@ -419,6 +510,86 @@ label {
     linear-gradient(90deg, rgba(88, 212, 255, 0.09), transparent 32%, rgba(255, 94, 104, 0.09)),
     rgba(2, 5, 12, 0.82);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.versus-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 108px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.versus-side,
+.versus-core {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(3, 7, 14, 0.76);
+}
+
+.versus-side {
+  display: grid;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.versus-side::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  opacity: 0.9;
+}
+
+.versus-side.team-a::after {
+  background: var(--cyan);
+}
+
+.versus-side.team-b::after {
+  background: var(--red);
+}
+
+.versus-side.active {
+  border-color: var(--acid);
+  box-shadow: inset 0 0 26px rgba(217, 255, 71, 0.1);
+}
+
+.versus-side span,
+.versus-side small,
+.versus-core span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.versus-side strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.versus-core {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(217, 255, 71, 0.18), rgba(255, 94, 104, 0.08)),
+    rgba(3, 7, 14, 0.86);
+}
+
+.versus-core b {
+  color: var(--acid);
+  font-family: "Russo One", sans-serif;
+  font-size: 34px;
+  line-height: 0.9;
 }
 
 .commander-board {
@@ -569,7 +740,7 @@ label {
   margin-top: 4px;
   overflow: hidden;
   color: var(--acid);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 15px;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -637,7 +808,7 @@ label {
 
 .field-watermark {
   fill: rgba(217, 255, 71, 0.18);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 22px;
   font-weight: 900;
   letter-spacing: 0;
@@ -787,6 +958,58 @@ label {
   stroke-linejoin: round;
 }
 
+.battle-replay-rail {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scroll-snap-type: x mandatory;
+}
+
+.replay-chip {
+  flex: 0 0 158px;
+  scroll-snap-align: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(3, 7, 14, 0.74);
+}
+
+.replay-chip.team-a {
+  border-top: 3px solid var(--cyan);
+}
+
+.replay-chip.team-b {
+  border-top: 3px solid var(--red);
+}
+
+.replay-chip.hitEnemy {
+  box-shadow: inset 0 0 22px rgba(77, 240, 160, 0.08);
+}
+
+.replay-chip span,
+.replay-chip small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.replay-chip strong {
+  display: block;
+  overflow: hidden;
+  margin: 3px 0;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes pathPulse {
   0%,
   100% {
@@ -926,9 +1149,94 @@ label {
   gap: 6px;
 }
 
-.model-war-feed {
+.model-war-feed,
+.model-decision-stack {
   display: grid;
   gap: 9px;
+}
+
+.decision-prime {
+  border-left: 4px solid var(--acid);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(217, 255, 71, 0.08);
+}
+
+.decision-prime.team-a {
+  border-left-color: var(--cyan);
+}
+
+.decision-prime.team-b {
+  border-left-color: var(--red);
+}
+
+.decision-prime span,
+.decision-prime p,
+.decision-row span,
+.decision-row small {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.decision-prime strong {
+  display: block;
+  margin: 3px 0;
+  color: var(--text);
+  font-size: 16px;
+  text-transform: uppercase;
+}
+
+.decision-list {
+  display: grid;
+  gap: 7px;
+}
+
+.decision-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(3, 7, 14, 0.66);
+}
+
+.decision-row i {
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #071018;
+  background: var(--acid);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.decision-row.team-a i {
+  background: var(--cyan);
+}
+
+.decision-row.team-b i {
+  background: var(--red);
+}
+
+.decision-row strong,
+.decision-row small,
+.decision-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decision-row strong {
+  color: var(--text);
+  font-size: 13px;
 }
 
 .auto-duel-panel {
@@ -966,7 +1274,7 @@ label {
   display: block;
   margin-bottom: 3px;
   color: var(--acid);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 17px;
 }
 
@@ -1064,7 +1372,7 @@ label {
 
 .league-row b {
   color: var(--acid);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 14px;
 }
 
@@ -1087,7 +1395,7 @@ label {
 
 .feed-prime strong {
   color: var(--acid);
-  font-family: "Orbitron", sans-serif;
+  font-family: "Russo One", sans-serif;
   font-size: 18px;
   text-transform: uppercase;
 }
@@ -1212,12 +1520,14 @@ code {
   }
 
   .game-grid {
+    grid-template-areas:
+      "battle battle"
+      "lobby tactical";
     grid-template-columns: minmax(0, 1fr) 360px;
   }
 
   .lobby-panel {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1237,6 +1547,13 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .game-grid {
+    grid-template-areas:
+      "battle"
+      "lobby"
+      "tactical";
+  }
+
   .map-intel-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1250,6 +1567,10 @@ code {
   }
 
   .commander-board {
+    grid-template-columns: 1fr;
+  }
+
+  .versus-banner {
     grid-template-columns: 1fr;
   }
 

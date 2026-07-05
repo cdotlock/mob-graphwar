@@ -245,6 +245,34 @@ label {
   color: var(--green);
 }
 
+.queue-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid rgba(217, 255, 71, 0.28);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--acid);
+  background:
+    linear-gradient(90deg, rgba(217, 255, 71, 0.12), transparent),
+    rgba(3, 7, 14, 0.7);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.queue-strip svg {
+  flex: 0 0 auto;
+}
+
+.match-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .seat {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -574,6 +602,84 @@ label {
   gap: 9px;
 }
 
+.league-lab {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(88, 212, 255, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(88, 212, 255, 0.12), transparent 38%),
+    rgba(3, 7, 14, 0.72);
+}
+
+.league-headline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.league-headline strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.league-headline span,
+.league-row span,
+.league-row small,
+.league-matches span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.league-table,
+.league-matches {
+  display: grid;
+  gap: 6px;
+}
+
+.league-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 54px 56px;
+  gap: 8px;
+  align-items: center;
+  border-left: 3px solid var(--cyan);
+  padding: 8px;
+  background: rgba(3, 7, 14, 0.62);
+}
+
+.league-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.league-row b {
+  color: var(--acid);
+  font-family: "Orbitron", sans-serif;
+  font-size: 14px;
+}
+
+.league-matches span {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .feed-prime {
   display: grid;
   gap: 4px;
@@ -771,6 +877,7 @@ code {
 
   .battle-header,
   .command-actions,
+  .match-actions,
   .commander-names,
   .commander-metrics {
     grid-template-columns: 1fr;

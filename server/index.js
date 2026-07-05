@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, "..");
 const DIST_ROOT = path.join(ROOT, "dist");
 const players = new Map();
 const matches = new Map();
+const matchmakingQueue = [];
 let nextPlayerId = 1;
 let nextMatchId = 1;
 const MIME = {
@@ -108,28 +109,97 @@ function publicPlayer(player) {
 
 function createRoster(player, preferredProvider) {
   return [
-    { unitId: "A1", team: "A", control: "human", playerId: player.id, displayName: player.displayName, provider: preferredProvider || "deepseek" },
-    { unitId: "A2", team: "A", control: "ai", displayName: "Auto Ally", provider: "local" },
-    { unitId: "B1", team: "B", control: "ai", displayName: "AI Rival 1", provider: "local" },
-    { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "local" }
+    createHumanSeat(player, preferredProvider, "A1", "A"),
+    createAiSeat("A2", "A", "Auto Ally"),
+    createAiSeat("B1", "B", "AI Rival 1"),
+    createAiSeat("B2", "B", "AI Rival 2")
   ];
 }
 
-function createRankedMatch(player, preferredProvider) {
+function preferredPlayerProvider(player, preferredProvider) {
+  if (preferredProvider) return String(preferredProvider).slice(0, 40);
+  const configured = Object.keys(player.providers || {});
+  return configured[0] || "local";
+}
+
+function createHumanSeat(player, preferredProvider, unitId, team) {
+  const provider = preferredPlayerProvider(player, preferredProvider);
+  const providerConfig = player.providers && player.providers[provider] ? player.providers[provider] : {};
+  return {
+    unitId,
+    team,
+    control: "human",
+    playerId: player.id,
+    displayName: player.displayName,
+    provider,
+    model: providerConfig.model || ""
+  };
+}
+
+function createAiSeat(unitId, team, displayName) {
+  return { unitId, team, control: "ai", displayName, provider: "local", model: "local-baseline" };
+}
+
+function createRankedMatchFromRoster(roster, options) {
+  const opts = options || {};
   const id = `match-${nextMatchId++}`;
-  const seed = 9000 + nextMatchId * 37 + player.id.length;
+  const seed = 9000 + nextMatchId * 37 + roster.length * 11;
   const match = {
     id,
     mode: "ranked_2v2",
     status: "matched",
     seed,
-    roster: createRoster(player, preferredProvider),
-    filledByAi: true,
+    roster,
+    filledByAi: Boolean(opts.filledByAi),
     state: Sim.createInitialState({ seed }),
     rankSettlements: {}
   };
   matches.set(id, match);
   return match;
+}
+
+function createRankedMatch(player, preferredProvider) {
+  return createRankedMatchFromRoster(createRoster(player, preferredProvider), { filledByAi: true });
+}
+
+function createHumanRankedMatch(entries) {
+  const seats = entries.map((entry, index) => {
+    const player = players.get(entry.playerId);
+    const unitId = index < 2 ? `A${index + 1}` : `B${index - 1}`;
+    const team = index < 2 ? "A" : "B";
+    return createHumanSeat(player, entry.preferredProvider, unitId, team);
+  });
+  return createRankedMatchFromRoster(seats, { filledByAi: false });
+}
+
+function removeQueuedPlayer(playerId) {
+  const existing = matchmakingQueue.findIndex((entry) => entry.playerId === playerId);
+  if (existing >= 0) matchmakingQueue.splice(existing, 1);
+}
+
+function queueRankedPlayer(player, preferredProvider) {
+  removeQueuedPlayer(player.id);
+  matchmakingQueue.push({
+    playerId: player.id,
+    preferredProvider: preferredProvider || preferredPlayerProvider(player),
+    joinedAt: Date.now()
+  });
+  if (matchmakingQueue.length >= 4) {
+    return createHumanRankedMatch(matchmakingQueue.splice(0, 4));
+  }
+  return null;
+}
+
+function createAiFallbackMatch(player, preferredProvider) {
+  removeQueuedPlayer(player.id);
+  if (matchmakingQueue.length >= 3) {
+    const entries = matchmakingQueue.splice(0, 3).concat({
+      playerId: player.id,
+      preferredProvider: preferredProvider || preferredPlayerProvider(player)
+    });
+    return createHumanRankedMatch(entries);
+  }
+  return createRankedMatch(player, preferredProvider);
 }
 
 function getPlayerSeat(match, player) {
@@ -177,6 +247,182 @@ function resolveRankDelta(winner, playerTeam) {
   return -22;
 }
 
+function normalizeContestants(rawContestants) {
+  const source = Array.isArray(rawContestants) && rawContestants.length
+    ? rawContestants
+    : [
+        { id: "local-arc", label: "Local Arc", provider: "local", command: "safe high arc target weakest enemy" },
+        { id: "local-bend", label: "Local Bend", provider: "local", command: "bend through center avoid ally" }
+      ];
+  return source.slice(0, 8).map((item, index) => ({
+    id: String(item.id || `model-${index + 1}`).slice(0, 48),
+    label: String(item.label || item.model || item.provider || `Model ${index + 1}`).slice(0, 80),
+    provider: String(item.provider || "local").slice(0, 40),
+    model: String(item.model || "").slice(0, 80),
+    command: String(item.command || "").slice(0, Sim.CONFIG.maxCommandLength),
+    apiKey: typeof item.apiKey === "string" ? item.apiKey : ""
+  }));
+}
+
+function publicContestant(contestant) {
+  return {
+    id: contestant.id,
+    label: contestant.label,
+    provider: contestant.provider,
+    model: contestant.model,
+    commandLength: contestant.command.length,
+    configured: Boolean(contestant.apiKey)
+  };
+}
+
+function createLeagueRows(contestants) {
+  return new Map(contestants.map((contestant) => [contestant.id, {
+    ...publicContestant(contestant),
+    rating: 1000,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    games: 0
+  }]));
+}
+
+function applyLeagueScore(rows, teamA, teamB, winner) {
+  const a = rows.get(teamA.id);
+  const b = rows.get(teamB.id);
+  a.games += 1;
+  b.games += 1;
+  if (winner === "A") {
+    a.wins += 1;
+    b.losses += 1;
+    a.rating += 28;
+    b.rating -= 22;
+  } else if (winner === "B") {
+    b.wins += 1;
+    a.losses += 1;
+    b.rating += 28;
+    a.rating -= 22;
+  } else {
+    a.draws += 1;
+    b.draws += 1;
+    a.rating -= 4;
+    b.rating -= 4;
+  }
+}
+
+function localDecisionFromRules(rulesPayload) {
+  const shot = rulesPayload.legalActions.find((action) => action.action === "shot");
+  if (shot) {
+    return {
+      action: "shot",
+      candidateId: shot.candidateId,
+      publicReason: "Local baseline selected the first legal shot."
+    };
+  }
+  if (rulesPayload.legalActions.some((action) => action.action === "reroll")) {
+    return { action: "reroll", publicReason: "Local baseline rerolled because no shot was legal." };
+  }
+  return { action: "shot", candidateId: null, publicReason: "No legal action available." };
+}
+
+async function contestantDecision(contestant, state, team, env, fetchFn) {
+  const command = contestant.command || "";
+  const rulesPayload = Contract.buildRulesPayload(state, team, command);
+  const provider = getProvider(contestant.provider);
+  const allowedProviders = listProviders(env).map((item) => item.id);
+  if (!provider || contestant.provider === "local" || !allowedProviders.includes(provider.id) || !contestant.apiKey.trim()) {
+    return {
+      command,
+      providerLabel: `${contestant.label} / local`,
+      decision: localDecisionFromRules(rulesPayload)
+    };
+  }
+  const result = await executeProviderDecision(
+    provider,
+    {
+      apiKey: contestant.apiKey,
+      command,
+      candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
+      stateSummary: summarizeState(state),
+      rulesPayload,
+      model: contestant.model
+    },
+    { env, fetch: fetchFn }
+  );
+  return {
+    command,
+    providerLabel: `${contestant.label} / ${contestant.model || provider.defaultModel}`,
+    decision: result.decision
+  };
+}
+
+async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
+  const state = Sim.createInitialState({ seed });
+  let guard = 0;
+  const maxActions = Sim.CONFIG.maxTurns * (Sim.CONFIG.maxRerollsPerTurn + 1) + 4;
+  while (!state.winner && state.turn < Sim.CONFIG.maxTurns && guard < maxActions) {
+    guard += 1;
+    const team = getActiveTeam(state);
+    const contestant = team === "A" ? teamA : teamB;
+    const resolved = await contestantDecision(contestant, state, team, env, fetchFn);
+    if (resolved.decision.action === "reroll") {
+      Sim.applyTurn(state, {}, {
+        action: "reroll",
+        provider: resolved.providerLabel,
+        providerReason: resolved.decision.publicReason
+      });
+      continue;
+    }
+    Sim.applyTurn(
+      state,
+      { [team]: resolved.command },
+      {
+        candidateId: resolved.decision.candidateId || undefined,
+        provider: resolved.providerLabel,
+        providerReason: resolved.decision.publicReason
+      }
+    );
+  }
+  if (!state.winner) advanceMatchToResolution({ state, status: "active" });
+  return state;
+}
+
+async function runLeagueSimulation(body, env, fetchFn) {
+  const contestants = normalizeContestants(body.contestants);
+  if (contestants.length < 2) {
+    const err = new Error("not_enough_contestants");
+    err.status = 400;
+    throw err;
+  }
+  const rounds = Math.max(1, Math.min(12, Number(body.rounds) || 3));
+  const rows = createLeagueRows(contestants);
+  const matchesOut = [];
+  for (let round = 0; round < rounds; round += 1) {
+    const teamA = contestants[round % contestants.length];
+    const teamB = contestants[(round + 1) % contestants.length];
+    const seed = 12000 + round * 73 + contestants.length * 17;
+    const state = await runLeagueBattle(seed, teamA, teamB, env, fetchFn);
+    applyLeagueScore(rows, teamA, teamB, state.winner);
+    matchesOut.push({
+      id: `sim-${round + 1}`,
+      seed,
+      teamA: publicContestant(teamA),
+      teamB: publicContestant(teamB),
+      winner: state.winner,
+      reason: state.reason,
+      events: state.events.length,
+      score: state.score
+        ? { value: state.score.value, rank: state.score.rank, failures: state.score.failures, enemyHits: state.score.enemyHits }
+        : null
+    });
+  }
+  return {
+    rounds,
+    contestants: contestants.map(publicContestant),
+    leaderboard: Array.from(rows.values()).sort((a, b) => b.rating - a.rating || b.wins - a.wins),
+    matches: matchesOut
+  };
+}
+
 function providerErrorStatus(error) {
   if (error.message === "missing_api_key") return 400;
   if (error.message === "unknown_candidate") return 422;
@@ -222,7 +468,21 @@ function createServer(options) {
           sendJson(res, 404, { error: "unknown_player" });
           return;
         }
-        const match = createRankedMatch(player, body.preferredProvider);
+        const allowAiFill = body.allowAiFill !== false;
+        if (!allowAiFill) {
+          const queuedMatch = queueRankedPlayer(player, body.preferredProvider);
+          if (!queuedMatch) {
+            sendJson(res, 202, {
+              status: "queued",
+              queueSize: matchmakingQueue.length,
+              needed: Math.max(0, 4 - matchmakingQueue.length)
+            });
+            return;
+          }
+          sendJson(res, 200, { match: queuedMatch, queueSize: matchmakingQueue.length });
+          return;
+        }
+        const match = createAiFallbackMatch(player, body.preferredProvider);
         sendJson(res, 200, { match });
         return;
       }
@@ -305,6 +565,16 @@ function createServer(options) {
         player.rank.tier = player.rank.rating >= 1200 ? "Gold" : player.rank.rating >= 1050 ? "Silver" : "Bronze";
         match.rankSettlements[player.id] = { rankDelta, rating: player.rank.rating };
         sendJson(res, 200, { match, player: publicPlayer(player), rankDelta, score: finalState.score });
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/simulations/league") {
+        const body = JSON.parse(await readBody(req, 512_000));
+        try {
+          const simulation = await runLeagueSimulation(body, env, fetchFn);
+          sendJson(res, 200, simulation);
+        } catch (err) {
+          sendJson(res, err.status || providerErrorStatus(err), { error: err.message || "simulation_failed" });
+        }
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/agent/shot") {

@@ -91,6 +91,55 @@ async function testLoginMatchmakingAndRankLoop() {
   assert.ok(Number.isFinite(result.json.player.rank.rating), "resolved ranked match should return updated rank");
 }
 
+async function createTestPlayer(displayName) {
+  const session = await request(createServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName,
+      providers: { deepseek: { apiKey: `${displayName}-secret`, model: "deepseek-v4-flash" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+  assert.ok(!session.text.includes(`${displayName}-secret`), "session should redact player API key");
+  return session.json.player;
+}
+
+async function testHumanMatchmakingQueueCanFormRanked2v2() {
+  const players = [];
+  for (const name of ["Alpha", "Bravo", "Cinder", "Delta"]) {
+    players.push(await createTestPlayer(name));
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    const queued = await request(createServer({ env: {} }), "/api/match/join", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ playerId: players[index].id, preferredProvider: "deepseek", allowAiFill: false })
+    });
+    assert.strictEqual(queued.status, 202);
+    assert.strictEqual(queued.json.status, "queued");
+    assert.strictEqual(queued.json.queueSize, index + 1);
+    assert.ok(!queued.text.includes(`${players[index].displayName}-secret`), "queue response should not leak API keys");
+  }
+
+  const matched = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: players[3].id, preferredProvider: "deepseek", allowAiFill: false })
+  });
+  assert.strictEqual(matched.status, 200);
+  assert.strictEqual(matched.json.match.status, "matched");
+  assert.strictEqual(matched.json.match.filledByAi, false);
+  assert.strictEqual(matched.json.match.roster.filter((seat) => seat.control === "human").length, 4);
+  assert.deepStrictEqual(
+    matched.json.match.roster.map((seat) => seat.team),
+    ["A", "A", "B", "B"],
+    "matchmaker should split four humans into two teams"
+  );
+  assert.ok(!matched.text.includes("Alpha-secret"), "match response should not leak queued player keys");
+}
+
 async function testMatchActionsMutateAuthoritativeState() {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
@@ -154,6 +203,27 @@ async function testMatchActionsMutateAuthoritativeState() {
   assert.strictEqual(resolved.json.match.state.events[0].result, playedEvent.result);
   assert.strictEqual(resolved.json.match.state.events[0].provider, "Test Model");
   assert.ok(resolved.json.score.turns >= 1, "rank score should include the played turn");
+}
+
+async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
+  const result = await request(createServer({ env: {} }), "/api/simulations/league", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      rounds: 2,
+      contestants: [
+        { id: "arc-local", label: "Arc Local", provider: "local", command: "safe high arc target B2", apiKey: "arc-secret" },
+        { id: "bend-local", label: "Bend Local", provider: "local", command: "bend through center target A2", apiKey: "bend-secret" }
+      ]
+    })
+  });
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.json.matches.length, 2);
+  assert.strictEqual(result.json.leaderboard.length, 2);
+  assert.ok(result.json.leaderboard.every((row) => Number.isFinite(row.rating)), "leaderboard should expose numeric ratings");
+  assert.ok(result.json.matches.every((match) => match.events > 0 && match.seed), "simulation should run actual battles");
+  assert.ok(!result.text.includes("arc-secret"), "simulation response should not echo API keys");
+  assert.ok(!result.text.includes("bend-secret"), "simulation response should not echo API keys");
 }
 
 async function testProviderShotUsesByokAndValidatesCandidate() {
@@ -311,7 +381,9 @@ async function testProviderShotRequiresKey() {
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
+  await testHumanMatchmakingQueueCanFormRanked2v2();
   await testMatchActionsMutateAuthoritativeState();
+  await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();
   await testProviderCanChooseReroll();

@@ -30,9 +30,18 @@ function testUiSubmitsRankedActionsToServer() {
   assert.ok(main.includes("/action"), "ranked reroll and shot actions should be posted to the match action endpoint");
 }
 
+function testGameSurfacesMatchmakingAndLeagueSimulation() {
+  assert.ok(main.includes("LeagueLab"), "UI should expose a model league simulation panel");
+  assert.ok(main.includes('data-testid="league-lab"'), "league lab should be selectable for browser verification");
+  assert.ok(main.includes("queueSize"), "ranked lobby should surface matchmaking queue state");
+  assert.ok(css.includes(".league-lab"), "CSS should style the model league simulation panel");
+  assert.ok(css.includes(".queue-strip"), "CSS should style the ranked queue state");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
 testUiSubmitsRankedActionsToServer();
+testGameSurfacesMatchmakingAndLeagueSimulation();
 
 console.log("ui-source tests passed");

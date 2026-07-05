@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  Activity,
   Bot,
+  Cpu,
   Crosshair,
   KeyRound,
   LogIn,
+  PlayCircle,
   RadioTower,
   RefreshCw,
   Shield,
@@ -78,8 +81,11 @@ function App() {
   });
   const [battleOrder, setBattleOrder] = useState("");
   const [busy, setBusy] = useState(false);
+  const [leagueBusy, setLeagueBusy] = useState(false);
   const [message, setMessage] = useState("Sign in to enter ranked 2v2.");
   const [lastDecision, setLastDecision] = useState(null);
+  const [queueState, setQueueState] = useState(null);
+  const [leagueResult, setLeagueResult] = useState(null);
 
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
   const activeHand = useMemo(() => (activeTeam === "-" ? [] : Sim.getCurrentHand(battleState, activeTeam)), [battleState, activeTeam]);
@@ -111,25 +117,76 @@ function App() {
     }
   }
 
-  async function joinMatch() {
+  async function joinMatch(options) {
     if (!profile) return;
+    const opts = options || {};
     setBusy(true);
     try {
       const response = await fetch("/api/match/join", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ playerId: profile.id, preferredProvider: login.provider })
+        body: JSON.stringify({ playerId: profile.id, preferredProvider: login.provider, allowAiFill: opts.allowAiFill !== false })
       });
       const payload = await response.json();
+      if (response.status === 202) {
+        setQueueState({ queueSize: payload.queueSize, needed: payload.needed });
+        setMessage(`Waiting for humans. ${payload.queueSize}/4 commanders queued.`);
+        return;
+      }
       if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
       setMatch(payload.match);
       setBattleState(payload.match.state);
       setLastDecision(null);
+      setQueueState(null);
       setMessage(payload.match.filledByAi ? "No full lobby found. AI filled ally and rivals." : "Ranked lobby matched.");
     } catch (err) {
       setMessage(err.message || "Matchmaking failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runLeague() {
+    setLeagueBusy(true);
+    try {
+      const response = await fetch("/api/simulations/league", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          rounds: 4,
+          contestants: [
+            {
+              id: "your-model",
+              label: login.apiKey.trim() ? `${login.provider} ${login.model}` : "Your Local Baseline",
+              provider: login.apiKey.trim() ? login.provider : "local",
+              model: login.model,
+              apiKey: login.apiKey,
+              command: battleOrder || "safe high arc target weakest enemy avoid ally"
+            },
+            {
+              id: "pressure-local",
+              label: "Pressure Local",
+              provider: "local",
+              command: "bend through center target weakest enemy"
+            },
+            {
+              id: "control-local",
+              label: "Control Local",
+              provider: "local",
+              command: "thread high shelf avoid ally"
+            }
+          ]
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "league_failed");
+      setLeagueResult(payload);
+      const leader = payload.leaderboard && payload.leaderboard[0];
+      setMessage(leader ? `League leader: ${leader.label} at ${leader.rating}.` : "League simulation complete.");
+    } catch (err) {
+      setMessage(err.message || "League simulation failed.");
+    } finally {
+      setLeagueBusy(false);
     }
   }
 
@@ -326,7 +383,7 @@ function App() {
       <section className="game-grid">
         <aside className="lobby-panel game-panel">
           <LoginCard login={login} setLogin={setLogin} profile={profile} busy={busy} onSubmit={signIn} />
-          <MatchCard profile={profile} match={match} busy={busy} onJoin={joinMatch} onSettle={settleRank} />
+          <MatchCard profile={profile} match={match} queueState={queueState} busy={busy} onJoin={joinMatch} onSettle={settleRank} />
           <RosterCard match={match} />
         </aside>
 
@@ -352,6 +409,7 @@ function App() {
           <Timeline state={battleState} />
           <ModelWarFeed state={battleState} lastDecision={lastDecision} />
           <ShotIntel event={latestEvent} state={battleState} />
+          <LeagueLab result={leagueResult} busy={leagueBusy} onRun={runLeague} />
         </aside>
       </section>
     </main>
@@ -413,7 +471,7 @@ function LoginCard({ login, setLogin, profile, busy, onSubmit }) {
   );
 }
 
-function MatchCard({ profile, match, busy, onJoin, onSettle }) {
+function MatchCard({ profile, match, queueState, busy, onJoin, onSettle }) {
   return (
     <div className="match-card">
       <div className="panel-title"><RadioTower size={18} /> Ranked Matchmaking</div>
@@ -421,7 +479,14 @@ function MatchCard({ profile, match, busy, onJoin, onSettle }) {
         <span>{match ? match.mode : "No active match"}</span>
         <strong>{match ? match.status : "waiting"}</strong>
       </div>
-      <button disabled={!profile || busy} onClick={onJoin}>Join Ranked 2v2</button>
+      <div className="queue-strip" data-testid="ranked-queue">
+        <Activity size={16} />
+        <span>{queueState ? `${queueState.queueSize}/4 humans queued` : match?.filledByAi ? "AI fallback active" : "Queue idle"}</span>
+      </div>
+      <div className="match-actions">
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Wait for Humans</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Quick AI Fill</button>
+      </div>
       <button disabled={!profile || !match || busy} onClick={onSettle}>Resolve Rank Result</button>
     </div>
   );
@@ -581,6 +646,40 @@ function ShotIntel({ event, state }) {
         <p className="empty-copy">No shots yet. Login, match, and resolve the first model action.</p>
       )}
       {state.score ? <div className="final-score">Final {state.score.rank} · {state.score.value}</div> : null}
+    </div>
+  );
+}
+
+function LeagueLab({ result, busy, onRun }) {
+  const leaders = result?.leaderboard || [];
+  const matches = result?.matches || [];
+  return (
+    <div className="league-lab" data-testid="league-lab">
+      <div className="panel-title"><Cpu size={18} /> Model League Lab</div>
+      <div className="league-headline">
+        <div>
+          <strong>{leaders[0] ? leaders[0].label : "No league run yet"}</strong>
+          <span>{leaders[0] ? `${leaders[0].rating} rating leader` : "Run models through ranked seeds"}</span>
+        </div>
+        <button disabled={busy} onClick={onRun}><PlayCircle size={16} /> Run</button>
+      </div>
+      <div className="league-table">
+        {leaders.length ? leaders.map((row, index) => (
+          <div className="league-row" key={row.id}>
+            <span>#{index + 1}</span>
+            <strong>{row.label}</strong>
+            <b>{row.rating}</b>
+            <small>{row.wins}-{row.losses}-{row.draws}</small>
+          </div>
+        )) : <p className="empty-copy">This runs the same bare rules contract as live model turns, with API keys redacted from results.</p>}
+      </div>
+      {matches.length ? (
+        <div className="league-matches">
+          {matches.slice(0, 3).map((match) => (
+            <span key={match.id}>{match.id} · seed {match.seed} · {match.winner} · {match.events} turns</span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

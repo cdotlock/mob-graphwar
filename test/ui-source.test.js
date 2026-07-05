@@ -66,6 +66,16 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
 }
 
+function testUiOffersOneClickRankedAutoDuel() {
+  assert.ok(main.includes("runAutoDuel"), "UI should expose a one-click ranked auto-duel action");
+  assert.ok(main.includes("/auto-duel"), "UI should call the ranked auto-duel endpoint");
+  assert.ok(main.includes("AutoDuelPanel"), "UI should show the auto-duel result as a named game panel");
+  assert.ok(main.includes('data-testid="auto-duel-panel"'), "auto-duel panel should be selectable for browser verification");
+  assert.ok(main.includes("autoBattle"), "UI should preserve the server battle summary");
+  assert.ok(css.includes(".auto-duel-panel"), "CSS should style the auto-duel battle result panel");
+  assert.ok(css.includes(".auto-duel-summary"), "CSS should style auto-duel summary stats");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testGameGradeHudStylesExist();
@@ -74,5 +84,6 @@ testGameSurfacesMatchmakingAndLeagueSimulation();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
+testUiOffersOneClickRankedAutoDuel();
 
 console.log("ui-source tests passed");

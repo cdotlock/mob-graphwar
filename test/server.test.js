@@ -311,6 +311,47 @@ async function testMatchActionsMutateAuthoritativeState() {
   assert.ok(resolved.json.score.turns >= 1, "rank score should include the played turn");
 }
 
+async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
+  const session = await request(createServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "AutoDuelist",
+      providers: { deepseek: { apiKey: "auto-duel-secret", model: "local" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
+  });
+  assert.strictEqual(joined.status, 200);
+
+  const autoDuel = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: session.json.player.id })
+  });
+  assert.strictEqual(autoDuel.status, 200);
+  assert.strictEqual(autoDuel.json.match.status, "resolved");
+  assert.ok(autoDuel.json.match.state.winner, "auto duel should finish the battle");
+  assert.ok(autoDuel.json.match.state.events.length > 1, "auto duel should play multiple model turns when needed");
+  assert.ok(autoDuel.json.score && Number.isFinite(autoDuel.json.score.value), "auto duel should return rank score");
+  assert.ok(Number.isFinite(autoDuel.json.rankDelta), "auto duel should return rank delta");
+  assert.ok(autoDuel.json.player.rank.games >= 1, "auto duel should settle the player's ranked profile");
+  assert.ok(autoDuel.json.autoBattle, "auto duel should expose a visible battle summary");
+  assert.strictEqual(autoDuel.json.autoBattle.mode, "auto_duel");
+  assert.strictEqual(autoDuel.json.autoBattle.startedTurn, 0);
+  assert.strictEqual(autoDuel.json.autoBattle.finalTurn, autoDuel.json.match.state.events.length);
+  assert.ok(autoDuel.json.autoBattle.resolvedTurns >= 1);
+  assert.ok(autoDuel.json.autoBattle.finalEvent && autoDuel.json.autoBattle.finalEvent.resultLabel);
+  assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve A"));
+  assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve B"));
+  assert.ok(!autoDuel.text.includes("auto-duel-secret"), "auto duel should not leak stored API keys");
+}
+
 async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
   const result = await request(createServer({ env: {} }), "/api/simulations/league", {
     method: "POST",
@@ -491,6 +532,7 @@ async function testProviderShotRequiresKey() {
   await testHumanMatchmakingQueueCanFormRanked2v2();
   await testQueuedPlayersCanPollMatchedRoom();
   await testMatchActionsMutateAuthoritativeState();
+  await testAutoDuelResolvesRankedMatchWithBattleSummary();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();

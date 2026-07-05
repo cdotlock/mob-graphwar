@@ -377,13 +377,86 @@ function buildActionSummary(match, action, team, rerollResult, beforeEventCount)
   };
 }
 
-function advanceMatchToResolution(match) {
+function autoResolveCommandsForTurn(match, options) {
+  const opts = options || {};
+  const team = getActiveTeam(match.state);
+  const commands = {
+    A: "",
+    B: ""
+  };
+  if (opts.playerTeam && opts.command && (opts.playerTeam === "A" || opts.playerTeam === "B")) {
+    commands[opts.playerTeam] = String(opts.command || "").slice(0, Sim.CONFIG.maxCommandLength);
+  }
+  return { team, commands };
+}
+
+function advanceMatchToResolution(match, options) {
+  const opts = options || {};
   while (!match.state.winner && match.state.turn < Sim.CONFIG.maxTurns) {
-    const team = getActiveTeam(match.state);
-    Sim.applyTurn(match.state, { A: "", B: "" }, { provider: team === "A" ? "Auto Resolve A" : "Auto Resolve B" });
+    const turn = autoResolveCommandsForTurn(match, opts);
+    Sim.applyTurn(match.state, turn.commands, { provider: turn.team === "A" ? "Auto Resolve A" : "Auto Resolve B" });
   }
   match.status = "resolved";
   return match.state;
+}
+
+function publicEventSummary(event) {
+  if (!event) return null;
+  return {
+    turn: event.turn,
+    team: event.team,
+    provider: event.provider || "Local AI",
+    shooterId: event.shooterId,
+    targetId: event.targetId,
+    result: event.result,
+    resultLabel: event.resultLabel,
+    combo: event.combo ? event.combo.name : "Mixed Curve",
+    damage: event.damage || 0
+  };
+}
+
+function buildAutoBattleSummary(match, startedTurn, playerTeam, mode) {
+  const start = Math.max(0, Math.min(match.state.events.length, Number(startedTurn) || 0));
+  const playedEvents = match.state.events.slice(start);
+  const providers = Array.from(new Set(playedEvents.map((event) => event.provider || "Local AI")));
+  return {
+    mode: mode || "auto_duel",
+    playerTeam,
+    startedTurn: start,
+    finalTurn: match.state.events.length,
+    resolvedTurns: playedEvents.length,
+    winner: match.state.winner || "draw",
+    score: match.state.score,
+    providers,
+    finalEvent: publicEventSummary(match.state.events[match.state.events.length - 1])
+  };
+}
+
+function settleResolvedMatch(match, player, playerSeat, env, options) {
+  const opts = options || {};
+  const startedTurn = match.state.events.length;
+  const playerTeam = playerSeat ? playerSeat.team : "A";
+  const finalState = advanceMatchToResolution(match, {
+    playerTeam,
+    command: opts.command
+  });
+  let settlement = match.rankSettlements[player.id];
+  if (!settlement) {
+    const rankDelta = resolveRankDelta(finalState.winner, playerTeam);
+    player.rank.rating += rankDelta;
+    player.rank.games += 1;
+    player.rank.tier = player.rank.rating >= 1200 ? "Gold" : player.rank.rating >= 1050 ? "Silver" : "Bronze";
+    settlement = { rankDelta, rating: player.rank.rating };
+    match.rankSettlements[player.id] = settlement;
+    savePersistentStore(env);
+  }
+  return {
+    match,
+    player: publicPlayer(player),
+    rankDelta: settlement.rankDelta,
+    score: finalState.score,
+    autoBattle: buildAutoBattleSummary(match, opts.startedTurn ?? startedTurn, playerTeam, opts.mode || "auto_duel")
+  };
 }
 
 function resolveRankDelta(winner, playerTeam) {
@@ -736,6 +809,24 @@ function createServer(options) {
         }
         return;
       }
+      const autoDuelMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/auto-duel$/);
+      if (req.method === "POST" && autoDuelMatch) {
+        const body = JSON.parse(await readBody(req, 64_000));
+        const match = matches.get(autoDuelMatch[1]);
+        const player = players.get(String(body.playerId || ""));
+        if (!match || !player) {
+          sendJson(res, 404, { error: "unknown_match_or_player" });
+          return;
+        }
+        const playerSeat = getPlayerSeat(match, player);
+        if (!playerSeat) {
+          sendJson(res, 403, { error: "player_not_in_match" });
+          return;
+        }
+        const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
+        sendJson(res, 200, settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command }));
+        return;
+      }
       const resolveMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/resolve$/);
       if (req.method === "POST" && resolveMatch) {
         const body = JSON.parse(await readBody(req, 64_000));
@@ -750,20 +841,7 @@ function createServer(options) {
           sendJson(res, 403, { error: "player_not_in_match" });
           return;
         }
-        const finalState = advanceMatchToResolution(match);
-        const playerTeam = playerSeat ? playerSeat.team : "A";
-        if (match.rankSettlements[player.id]) {
-          const settlement = match.rankSettlements[player.id];
-          sendJson(res, 200, { match, player: publicPlayer(player), rankDelta: settlement.rankDelta, score: finalState.score });
-          return;
-        }
-        const rankDelta = resolveRankDelta(finalState.winner, playerTeam);
-        player.rank.rating += rankDelta;
-        player.rank.games += 1;
-        player.rank.tier = player.rank.rating >= 1200 ? "Gold" : player.rank.rating >= 1050 ? "Silver" : "Bronze";
-        match.rankSettlements[player.id] = { rankDelta, rating: player.rank.rating };
-        savePersistentStore(env);
-        sendJson(res, 200, { match, player: publicPlayer(player), rankDelta, score: finalState.score });
+        sendJson(res, 200, settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve" }));
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/simulations/league") {

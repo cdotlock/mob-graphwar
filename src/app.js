@@ -81,12 +81,6 @@
     return `<div class="status-item"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
   }
 
-  function mapRouteRead() {
-    const windows = (state.mapMeta && state.mapMeta.windows) || [];
-    if (!windows.length) return "Open map";
-    return windows.map((window) => window.label).join(" / ");
-  }
-
   function renderStatus() {
     const aHp = state.units
       .filter((unit) => unit.team === "A")
@@ -149,26 +143,6 @@
         return `<rect class="obstacle" x="${x}" y="${y}" width="${w}" height="${h}" rx="2"><title>${esc(
           obstacle.id
         )}</title></rect>`;
-      })
-      .join("");
-  }
-
-  function renderWindows() {
-    const windows = (state.mapMeta && state.mapMeta.windows) || [];
-    return windows
-      .map((window) => {
-        const x = sx(window.x);
-        const y = sy(window.y + window.h);
-        const w = window.w * 10;
-        const h = window.h * 10;
-        const tags = (window.tags || []).join(" / ");
-        return `
-          <g class="tactical-window">
-            <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4">
-              <title>${esc(window.label)} - ${esc(tags)} - ${esc(window.read)}</title>
-            </rect>
-            <text x="${x + 6}" y="${y - 6}">${esc(window.label)}</text>
-          </g>`;
       })
       .join("");
   }
@@ -237,7 +211,6 @@
       ${renderGrid()}
       <path class="terrain" d="${terrainPath()}" />
       ${renderObstacles()}
-      ${renderWindows()}
       ${renderPaths()}
       ${renderUnits()}
     `;
@@ -253,7 +226,7 @@
       thinkingPanel.innerHTML = `
         <div class="thinking-row"><span>Intent</span><strong>Waiting for battle orders</strong></div>
         <div class="thinking-row"><span>Constraint</span><strong>Current hand is visible below the board</strong></div>
-        <div class="thinking-row"><span>Map</span><strong>${esc(mapRouteRead())}</strong></div>
+        <div class="thinking-row"><span>Terrain</span><strong>${esc(state.mapMeta.name)} difficulty ${esc(state.mapMeta.difficulty)}</strong></div>
       `;
       renderCurrentHand();
       return;
@@ -268,7 +241,6 @@
       summaryRow("Agent", event.provider || "Local"),
       summaryRow("Rules", event.thinking?.commandRules || "soft guidance only"),
       summaryRow("Combo", comboSummary(event)),
-      summaryRow("Map Fit", event.mapFit?.read || "no tactical window pressure"),
       summaryRow("Expression", `<code>${esc(event.expression)}</code>`, true),
       summaryRow("Closest", `${event.closestTargetDistance}u, maxY ${event.maxY}`)
     ].join("");
@@ -357,7 +329,7 @@
         }`,
         true
       ),
-      thinkingRow("Map", thinking.mapRead || event.mapFit?.read || "no tactical window pressure", true),
+      thinkingRow("Terrain", `${state.mapMeta.name} difficulty ${state.mapMeta.difficulty}`, true),
       thinkingRow("Trait", thinking.comboNote || comboSummary(event)),
       thinking.providerReason ? thinkingRow("Provider", thinking.providerReason, true) : "",
       thinkingRow("Risk", thinking.risk || "none"),

@@ -12,7 +12,7 @@
     height: 60,
     viewPadding: 0,
     maxTurns: 16,
-    handSize: 5,
+    handSize: 4,
     baseEnergy: 4,
     maxEnergy: 8,
     maxCardsPerShot: 3,
@@ -320,28 +320,6 @@
         { id: "bridge-block", x: 52, y: 35, w: 15, h: 5 },
         { id: "left-lip", x: 30, y: 17, w: 8, h: 4 }
       ],
-      windows: [
-        {
-          id: "upper-gate",
-          label: "Upper Gate",
-          x: 47,
-          y: 30,
-          w: 14,
-          h: 9,
-          tags: ["clearance", "thread"],
-          read: "clear the spire then thread under the bridge block"
-        },
-        {
-          id: "right-slot",
-          label: "Right Slot",
-          x: 60,
-          y: 20,
-          w: 11,
-          h: 9,
-          tags: ["precision", "shelf"],
-          read: "hold a mid shelf before dropping into the right side"
-        }
-      ],
       units: [
         { id: "A1", team: "A", name: "A1", x: 13, lift: 9 },
         { id: "A2", team: "A", name: "A2", x: 24, lift: 6 },
@@ -358,28 +336,6 @@
         { id: "center-needle", x: 50, y: 0, w: 6, h: 42 },
         { id: "right-needle", x: 66, y: 0, w: 5, h: 28 },
         { id: "ceiling-slab", x: 42, y: 43, w: 20, h: 4 }
-      ],
-      windows: [
-        {
-          id: "needle-thread",
-          label: "Needle Thread",
-          x: 41,
-          y: 31,
-          w: 11,
-          h: 10,
-          tags: ["thread", "precision"],
-          read: "thread between the left and center needles without scraping the ceiling"
-        },
-        {
-          id: "canyon-overpass",
-          label: "Canyon Overpass",
-          x: 56,
-          y: 42,
-          w: 13,
-          h: 8,
-          tags: ["clearance", "corner"],
-          read: "arc over the center needle before bending down"
-        }
       ],
       units: [
         { id: "A1", team: "A", name: "A1", x: 12, lift: 8 },
@@ -398,28 +354,6 @@
         { id: "low-wall", x: 61, y: 0, w: 5, h: 16 },
         { id: "left-shelf", x: 28, y: 21, w: 10, h: 4 }
       ],
-      windows: [
-        {
-          id: "lock-mouth",
-          label: "Lock Mouth",
-          x: 50,
-          y: 25,
-          w: 14,
-          h: 7,
-          tags: ["shelf", "precision"],
-          read: "flatten into the narrow mouth below the upper lock"
-        },
-        {
-          id: "high-release",
-          label: "High Release",
-          x: 40,
-          y: 36,
-          w: 12,
-          h: 9,
-          tags: ["clearance", "weave"],
-          read: "release high over the first tower before the lock closes"
-        }
-      ],
       units: [
         { id: "A1", team: "A", name: "A1", x: 14, lift: 8 },
         { id: "A2", team: "A", name: "A2", x: 25, lift: 18 },
@@ -437,28 +371,6 @@
         { id: "right-roof", x: 58, y: 32, w: 15, h: 5 },
         { id: "right-pillar", x: 70, y: 0, w: 6, h: 24 },
         { id: "low-bunker", x: 24, y: 0, w: 6, h: 14 }
-      ],
-      windows: [
-        {
-          id: "split-crest",
-          label: "Split Crest",
-          x: 43,
-          y: 38,
-          w: 13,
-          h: 8,
-          tags: ["clearance", "corner"],
-          read: "crest over the center pillar before the right roof"
-        },
-        {
-          id: "roof-gap",
-          label: "Roof Gap",
-          x: 56,
-          y: 27,
-          w: 12,
-          h: 8,
-          tags: ["thread", "shelf"],
-          read: "thread the low gap between split roofs"
-        }
       ],
       units: [
         { id: "A1", team: "A", name: "A1", x: 12, lift: 7 },
@@ -544,9 +456,15 @@
     const shapeCount = hand.filter((card) => card.family !== "modifier").length;
     if (shapeCount < 2) {
       const replacements = ["arc", "bend"].slice(0, 2 - shapeCount);
+      const modifierSlots = hand
+        .map((card, index) => ({ card, index }))
+        .filter((item) => item.card.family === "modifier")
+        .map((item) => item.index)
+        .reverse();
       for (let i = 0; i < replacements.length; i += 1) {
         const id = replacements[i];
-        hand[hand.length - 1 - i] = {
+        const slot = modifierSlots[i] ?? hand.length - 1 - i;
+        hand[slot] = {
           ...CARD_LIBRARY[id],
           instanceId: `${team}${turn}-repair-${i}-${id}`
         };
@@ -601,21 +519,35 @@
     const rng = mulberry32(hashString(`${seed}:map`));
     const template = clone(MAP_TEMPLATES[Math.floor(rng() * MAP_TEMPLATES.length)]);
     const jitter = (amount) => Math.round((rng() * amount * 2 - amount) * 10) / 10;
-    const obstacles = template.obstacles.map((obstacle, index) => ({
+    const baseObstacles = template.obstacles.map((obstacle, index) => ({
       ...obstacle,
       x: clamp(round(obstacle.x + jitter(index === 0 ? 2 : 4), 1), 8, CONFIG.width - obstacle.w - 8),
       h: clamp(round(obstacle.h + jitter(4), 1), 10, 45)
     }));
-    const windows = (template.windows || []).map((window, index) => ({
-      id: window.id,
-      label: window.label,
-      x: clamp(round(window.x + jitter(index === 0 ? 1.8 : 2.4), 1), 0, CONFIG.width - window.w),
-      y: clamp(round(window.y + jitter(1.4), 1), 0, CONFIG.height - window.h),
-      w: window.w,
-      h: window.h,
-      tags: window.tags.slice(),
-      read: window.read
-    }));
+    const proceduralObstacles = [
+      {
+        id: "seed-spire-a",
+        x: clamp(round(34 + rng() * 13, 1), 12, CONFIG.width - 12),
+        y: 0,
+        w: round(4.5 + rng() * 2.5, 1),
+        h: round(25 + rng() * 14, 1)
+      },
+      {
+        id: "seed-spire-b",
+        x: clamp(round(55 + rng() * 16, 1), 12, CONFIG.width - 12),
+        y: 0,
+        w: round(4.5 + rng() * 2.5, 1),
+        h: round(24 + rng() * 13, 1)
+      },
+      {
+        id: "seed-floater",
+        x: clamp(round(38 + rng() * 25, 1), 10, CONFIG.width - 25),
+        y: round(24 + rng() * 13, 1),
+        w: round(10 + rng() * 8, 1),
+        h: round(3.5 + rng() * 3, 1)
+      }
+    ];
+    const obstacles = baseObstacles.concat(proceduralObstacles);
     const units = template.units.map((unit, index) => {
       const x = clamp(round(unit.x + jitter(index % 2 === 0 ? 2 : 3), 1), 6, CONFIG.width - 6);
       return {
@@ -629,12 +561,11 @@
     });
     const tallCount = obstacles.filter((obstacle) => obstacle.h >= 24).length;
     const density = obstacles.reduce((sum, obstacle) => sum + obstacle.w * obstacle.h, 0) / (CONFIG.width * CONFIG.height);
-    const difficulty = clamp(Math.round(template.difficulty + tallCount * 2 + density * 80 + rng() * 5), 60, 95);
+    const difficulty = clamp(Math.round(template.difficulty + tallCount * 3 + density * 100 + obstacles.length * 2 + rng() * 5), 75, 99);
     return {
       id: template.id,
       name: template.name,
       difficulty,
-      windows,
       obstacles,
       units
     };
@@ -659,8 +590,7 @@
       mapMeta: {
         id: map.id,
         name: map.name,
-        difficulty: map.difficulty,
-        windows: clone(map.windows)
+        difficulty: map.difficulty
       },
       obstacles: clone(map.obstacles),
       units: clone(map.units),
@@ -828,82 +758,6 @@
       point.y >= obstacle.y &&
       point.y <= obstacle.y + obstacle.h
     );
-  }
-
-  function pointInsideWindow(point, window) {
-    return point.x >= window.x && point.x <= window.x + window.w && point.y >= window.y && point.y <= window.y + window.h;
-  }
-
-  function distanceToWindow(point, window) {
-    const dx = Math.max(window.x - point.x, 0, point.x - (window.x + window.w));
-    const dy = Math.max(window.y - point.y, 0, point.y - (window.y + window.h));
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  function publicMapFit(mapFit) {
-    return {
-      matched: mapFit.matched,
-      windowId: mapFit.windowId,
-      label: mapFit.label,
-      tags: mapFit.tags,
-      tagMatches: mapFit.tagMatches,
-      read: mapFit.read,
-      nearest: mapFit.nearest
-    };
-  }
-
-  function assessMapFit(state, sim, shot) {
-    const windows = (state.mapMeta && state.mapMeta.windows) || [];
-    if (!windows.length || !sim.points || !sim.points.length) {
-      return {
-        matched: false,
-        windowId: null,
-        label: "Open Map",
-        tags: [],
-        tagMatches: [],
-        read: "no tactical window pressure",
-        nearest: null,
-        scoreBonus: 0
-      };
-    }
-
-    const componentTags = new Set(shot.components.flatMap((component) => component.tags || []));
-    const fits = windows.map((window) => {
-      let samples = 0;
-      let nearest = Infinity;
-      for (const point of sim.points) {
-        if (pointInsideWindow(point, window)) samples += 1;
-        nearest = Math.min(nearest, distanceToWindow(point, window));
-      }
-      const tagMatches = (window.tags || []).filter((tag) => componentTags.has(tag));
-      const matched = samples >= 2 || nearest <= 1.2;
-      const scoreBonus = matched ? clamp(10 + samples * 1.8 + tagMatches.length * 8, 0, 42) : clamp(4 - nearest, 0, 4);
-      return {
-        matched,
-        samples,
-        nearest,
-        tagMatches,
-        scoreBonus,
-        window
-      };
-    });
-
-    fits.sort((a, b) => b.scoreBonus - a.scoreBonus || a.nearest - b.nearest);
-    const best = fits[0];
-    const window = best.window;
-    const read = best.matched
-      ? `${window.label}: ${window.read}`
-      : `missed ${window.label}: ${window.read}`;
-    return {
-      matched: best.matched,
-      windowId: window.id,
-      label: window.label,
-      tags: (window.tags || []).slice(),
-      tagMatches: best.tagMatches,
-      read,
-      nearest: round(best.nearest, 2),
-      scoreBonus: round(best.scoreBonus, 2)
-    };
   }
 
   function simulateShot(state, shot) {
@@ -1328,7 +1182,7 @@
     };
   }
 
-  function scoreSimulation(sim, shot, directive, mapFit) {
+  function scoreSimulation(sim, shot, directive) {
     let score = 0;
     const effects = sumEffects(shot.components);
     const combo = assessCombo(shot.components, directive);
@@ -1366,7 +1220,6 @@
     if (shot.components.some((component) => component.tags.includes("precision"))) score += 16;
     if (shot.components.some((component) => component.tags.includes("clearance")) && directive.high) score += 24;
     score += combo.scoreBonus;
-    score += mapFit ? mapFit.scoreBonus : 0;
     return score;
   }
 
@@ -1416,7 +1269,6 @@
       comboName: combo.name,
       comboTraits: combo.traits,
       comboNote: combo.note,
-      mapRead: decision.mapFit ? decision.mapFit.read : "no tactical window pressure",
       providerReason: decision.providerReason || null,
       risk: riskNote(decision.shot, decision.sim, decision.directive),
       projectedResult: resultLabel(decision.sim),
@@ -1460,9 +1312,8 @@
         const shot = makeShot(shooter, target, combo);
         const sim = simulateShot(state, shot);
         if (resultViolatesDirective(sim, directive)) continue;
-        const mapFit = assessMapFit(state, sim, shot);
         const comboIdentity = assessCombo(shot.components, directive);
-        const score = scoreSimulation(sim, shot, directive, mapFit);
+        const score = scoreSimulation(sim, shot, directive);
         choices.push({
           score,
           team,
@@ -1479,7 +1330,6 @@
           directive,
           ruleSummary: targetConstraint.ruleSummary,
           combo: comboIdentity,
-          mapFit,
           shot,
           sim,
           validation
@@ -1513,7 +1363,6 @@
       cost: choice.shot.cost,
       usedCardIds: choice.shot.usedCardIds,
       combo: choice.combo,
-      mapFit: publicMapFit(choice.mapFit),
       expression: formatExpression(choice.shot),
       result: choice.sim.kind,
       resultLabel: resultLabel(choice.sim),
@@ -1645,7 +1494,6 @@
       usedCardIds: decision.shot.usedCardIds,
       components: decision.shot.components,
       combo: decision.combo,
-      mapFit: publicMapFit(decision.mapFit),
       expression: formatExpression(decision.shot),
       thinking: buildThinking(decision),
       result: sim.kind,
@@ -1665,7 +1513,6 @@
       targetId: decision.target.id,
       points: sim.points,
       result: sim.kind,
-      mapFit: publicMapFit(decision.mapFit),
       collisionPoint: sim.point || null
     });
 

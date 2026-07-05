@@ -31,6 +31,8 @@ async function testStaticServerOnlyServesMainEntrypoint() {
   const main = await request(createServer({ env: {} }), "/index.html");
   assert.strictEqual(main.status, 200);
   assert.ok(main.text.includes("Mob Graphwar"));
+  assert.ok(main.text.includes('<textarea id="commandA" maxlength="80"></textarea>'), "Team A should not ship with a default prompt");
+  assert.ok(main.text.includes('<textarea id="commandB" maxlength="80"></textarea>'), "Team B should not ship with a default prompt");
 
   const duplicate = await request(createServer({ env: {} }), "/index%202.html");
   assert.strictEqual(duplicate.status, 404);
@@ -91,7 +93,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.ok(captured.url.endsWith("/chat/completions"), "OpenAI-compatible adapter should call chat completions");
   assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
   const prompt = JSON.parse(JSON.parse(captured.options.body).messages[1].content);
-  assert.ok(Array.isArray(prompt.state.map.windows), "provider prompt should include visible map windows in state");
+  assert.strictEqual(prompt.state.map.windows, undefined, "provider prompt should not include route windows");
   assert.ok(prompt.candidates.every((candidate) => candidate.mapFit === undefined), "provider candidates should not leak simulated map fit");
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
 }

@@ -180,12 +180,11 @@ function testShotEventsExposeCardComboIdentity() {
   Sim.applyTurn(state, { A: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。" });
   const event = state.events[0];
   assert.ok(event.combo, "event should include card-combo identity");
-  assert.strictEqual(event.combo.name, "Guided Overpass");
-  assert.ok(event.combo.traits.includes("clearance"));
-  assert.ok(event.combo.traits.includes("precision"));
+  assert.ok(event.combo.name, "combo should have a player-facing name");
+  assert.ok(event.combo.traits.length > 0, "combo should expose traits");
   assert.ok(event.combo.scoreBonus > 0, "combo should influence shot scoring");
   assert.strictEqual(event.thinking.comboName, event.combo.name);
-  assert.ok(event.thinking.comboNote.includes("precision"));
+  assert.strictEqual(event.thinking.comboNote, event.combo.note);
 }
 
 function testLegalShotsExposeCardComboIdentity() {
@@ -193,19 +192,19 @@ function testLegalShotsExposeCardComboIdentity() {
   const shots = Sim.listLegalShots(state, "A", "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。");
   assert.ok(shots.length > 0, "legal shots should be listed");
   assert.ok(shots.every((shot) => shot.combo && shot.combo.name && Array.isArray(shot.combo.traits)));
-  assert.ok(shots.some((shot) => shot.combo.name === "Guided Overpass"));
+  assert.ok(shots.some((shot) => shot.combo.scoreBonus > 0), "some legal shots should have combo scoring identity");
 }
 
 function testHandAnalysisSummarizesTacticalRead() {
   const hand = Sim.dealHand(7351, 0, "A");
   const analysis = Sim.analyzeHand(hand, 4);
 
-  assert.strictEqual(analysis.archetype, "Guided Overpass");
-  assert.deepStrictEqual(analysis.traits, ["clearance", "precision", "thread"]);
-  assert.strictEqual(analysis.playableCount, 5);
+  assert.strictEqual(analysis.archetype, "Threaded Hook");
+  assert.deepStrictEqual(analysis.traits, ["precision", "thread", "corner"]);
+  assert.strictEqual(analysis.playableCount, 4);
   assert.strictEqual(analysis.risk, "volatile option");
-  assert.ok(analysis.energyRead.includes("4E"));
-  assert.ok(analysis.commandRead.includes("High clearance"));
+  assert.ok(analysis.energyRead.includes("4/4 playable"));
+  assert.ok(analysis.commandRead.includes("Corner"));
 }
 
 function testCardProfilesExposeTacticalCardRoles() {
@@ -253,80 +252,57 @@ function testRicherCardCatalog() {
   assert.ok(cards.every((card) => Array.isArray(card.amplitudes) && card.amplitudes.length > 0), "cards should have amplitudes");
 }
 
+function testCompactHandsStillGuaranteeShapeChoices() {
+  assert.strictEqual(Sim.CONFIG.handSize, 4, "each turn should show a tighter four-card hand");
+  for (let seed = 1; seed <= 24; seed += 1) {
+    for (let turn = 0; turn < 8; turn += 1) {
+      for (const team of ["A", "B"]) {
+        const hand = Sim.dealHand(seed, turn, team);
+        const shapeCount = hand.filter((card) => card.family !== "modifier").length;
+        assert.strictEqual(hand.length, 4, "hand should have exactly four cards");
+        assert.ok(shapeCount >= 2, "hand should preserve at least two shape cards");
+      }
+    }
+  }
+}
+
 function testSeededHardMapGeneration() {
   const first = Sim.createInitialState({ seed: 9001 });
   const second = Sim.createInitialState({ seed: 9001 });
   const different = Sim.createInitialState({ seed: 9002 });
   assert.deepStrictEqual(first.obstacles, second.obstacles, "same seed should produce same map");
   assert.notDeepStrictEqual(first.obstacles, different.obstacles, "different seeds should produce different maps");
-  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 1, "map should include difficulty metadata");
-  assert.ok(first.obstacles.length >= 3, "map should have multiple obstacles");
-  assert.ok(first.obstacles.some((obstacle) => obstacle.h >= 24), "map should include a tall obstruction");
+  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 75, "map should include high difficulty metadata");
+  assert.strictEqual(first.mapMeta.windows, undefined, "map should not expose route windows");
+  assert.ok(first.obstacles.length >= 5, "map should have dense pure terrain complexity");
+  assert.ok(first.obstacles.filter((obstacle) => obstacle.h >= 24).length >= 2, "map should include multiple tall obstructions");
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
 
-function testMapGenerationIncludesVisibleTacticalWindows() {
-  const first = Sim.createInitialState({ seed: 9001 });
-  const second = Sim.createInitialState({ seed: 9001 });
-  const different = Sim.createInitialState({ seed: 9002 });
-
-  assert.ok(Array.isArray(first.mapMeta.windows), "map should expose visible tactical windows");
-  assert.ok(first.mapMeta.windows.length >= 2, "map should include multiple tactical windows");
-  assert.deepStrictEqual(first.mapMeta.windows, second.mapMeta.windows, "same seed should produce same tactical windows");
-  assert.notDeepStrictEqual(first.mapMeta.windows, different.mapMeta.windows, "different seeds should vary tactical windows");
-  for (const window of first.mapMeta.windows) {
-    assert.ok(window.id && window.label, "window should include readable identity");
-    assert.ok(Array.isArray(window.tags) && window.tags.length > 0, "window should include tactical tags");
-    assert.ok(window.read, "window should explain the route pressure");
-    assert.ok(window.x >= 0 && window.x + window.w <= Sim.CONFIG.width, "window should fit board width");
-    assert.ok(window.y >= 0 && window.y + window.h <= Sim.CONFIG.height, "window should fit board height");
-  }
-}
-
-function testMapFitAppearsInLegalShotsAndEvents() {
-  const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
-  const state = Sim.createInitialState({ seed: 7351 });
-  const shots = Sim.listLegalShots(state, "A", command);
-  assert.ok(shots.length > 0, "legal shots should exist");
-  assert.ok(shots.every((shot) => shot.mapFit && typeof shot.mapFit.read === "string"), "legal shots should expose map fit");
-  assert.ok(shots.some((shot) => shot.mapFit.matched), "at least one legal shot should read a tactical window");
-
-  Sim.applyTurn(state, { A: command });
-  const event = state.events[0];
-  assert.ok(event.mapFit, "event should include the chosen map fit");
-  assert.strictEqual(event.thinking.mapRead, event.mapFit.read);
-}
-
-function testTacticalWindowsDoNotOverrideCleanHits() {
-  const state = Sim.createInitialState({ seed: 7351 });
-  state.mapMeta.windows = [
-    {
-      id: "full-board-bait",
-      label: "Full Board Bait",
-      x: 0,
-      y: 0,
-      w: Sim.CONFIG.width,
-      h: Sim.CONFIG.height,
-      tags: ["thread", "precision"],
-      read: "bait route should never outrank hit quality"
+function testHardMapsRemainSolvableByFiniteCardCombos() {
+  for (let seed = 1; seed <= 40; seed += 1) {
+    const state = Sim.createInitialState({ seed });
+    for (const team of ["A", "B"]) {
+      const shots = Sim.listLegalShots(state, team, "");
+      assert.ok(shots.length > 0, `seed ${seed} team ${team} should have legal shots`);
+      assert.ok(
+        shots.some((shot) => !["invalid", "out"].includes(shot.result)),
+        `seed ${seed} team ${team} should have at least one bounded curve`
+      );
+      assert.ok(shots.every((shot) => shot.mapFit === undefined), "legal shots should not expose route-window fit");
     }
-  ];
-  const shots = Sim.listLegalShots(state, "A", "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。");
-  const hitScores = shots.filter((shot) => shot.result === "hitEnemy").map((shot) => shot.score);
-  const missScores = shots.filter((shot) => shot.result !== "hitEnemy" && shot.mapFit.matched).map((shot) => shot.score);
-  assert.ok(hitScores.length > 0, "setup should contain at least one clean hit");
-  assert.ok(missScores.length > 0, "setup should contain at least one window-touching miss");
-  assert.ok(Math.max(...hitScores) > Math.max(...missScores), "window fit must not rank a miss above a clean hit");
+  }
 }
 
 function testTraceShapeIncludesMapAndScore() {
   const state = Sim.runBattle({ seed: 7107, commands: commands() });
   const trace = Sim.exportTrace(state);
   assert.ok(trace.mapMeta, "trace should include map metadata");
-  assert.ok(Array.isArray(trace.mapMeta.windows), "trace should include tactical windows");
+  assert.strictEqual(trace.mapMeta.windows, undefined, "trace should not include tactical windows");
   assert.ok(trace.score, "trace should include score");
   assert.strictEqual(trace.events.length, state.events.length);
   assert.ok(trace.events.every((event) => event.thinking), "all trace events should include thinking");
+  assert.ok(trace.events.every((event) => event.mapFit === undefined), "events should not include route-window fit");
 }
 
 testDeterministicBattle();
@@ -345,10 +321,9 @@ testUnavailableHardTargetIsReportedAsFallback();
   testCardProfilesExposeTacticalCardRoles();
   testApplyTurnCanUseProviderCandidate();
   testRicherCardCatalog();
+  testCompactHandsStillGuaranteeShapeChoices();
   testSeededHardMapGeneration();
-  testMapGenerationIncludesVisibleTacticalWindows();
-  testMapFitAppearsInLegalShotsAndEvents();
-  testTacticalWindowsDoNotOverrideCleanHits();
+  testHardMapsRemainSolvableByFiniteCardCombos();
   testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

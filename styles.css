@@ -697,23 +697,6 @@ button:focus-visible {
   stroke-width: 1;
 }
 
-.tactical-window rect {
-  fill: rgba(228, 187, 98, 0.08);
-  stroke: rgba(228, 187, 98, 0.78);
-  stroke-width: 2;
-  stroke-dasharray: 8 6;
-}
-
-.tactical-window text {
-  fill: rgba(245, 222, 168, 0.9);
-  font-size: 11px;
-  font-weight: 900;
-  paint-order: stroke;
-  stroke: #07110c;
-  stroke-width: 4px;
-  stroke-linejoin: round;
-}
-
 .unit {
   stroke: #07110c;
   stroke-width: 3;

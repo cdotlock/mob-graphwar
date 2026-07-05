@@ -749,7 +749,7 @@ label {
 
 .battle-playback {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 2fr) minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   border: 1px solid rgba(88, 212, 255, 0.28);
@@ -763,6 +763,11 @@ label {
 .battle-playback.playing {
   border-color: rgba(217, 255, 71, 0.46);
   box-shadow: inset 0 0 24px rgba(217, 255, 71, 0.08);
+}
+
+.battle-playback.paused {
+  border-color: rgba(255, 200, 87, 0.42);
+  box-shadow: inset 0 0 18px rgba(255, 200, 87, 0.08);
 }
 
 .battle-playback div {
@@ -808,6 +813,50 @@ label {
   background: linear-gradient(90deg, var(--cyan), var(--acid), var(--red));
   box-shadow: 0 0 18px rgba(217, 255, 71, 0.32);
   transition: width 220ms ease;
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.playback-controls > button {
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+.speed-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(217, 255, 71, 0.24);
+  border-radius: 8px;
+  padding: 4px;
+  background: rgba(3, 7, 14, 0.62);
+}
+
+.speed-strip svg {
+  margin: 0 2px;
+  color: var(--acid);
+}
+
+.speed-strip button {
+  min-height: 30px;
+  min-width: 38px;
+  border-width: 1px;
+  padding: 0 7px;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+}
+
+.speed-strip button.active {
+  border-color: var(--acid);
+  color: #111400;
+  background: var(--acid);
 }
 
 .battlefield-frame {
@@ -1633,6 +1682,19 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .playback-controls {
+    justify-content: stretch;
+  }
+
+  .playback-controls > button {
+    flex: 0 0 42px;
+  }
+
+  .speed-strip {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+
   .commander-board {
     grid-template-columns: 1fr;
   }
@@ -1711,12 +1773,21 @@ code {
   }
 
   .battle-playback {
-    grid-template-columns: minmax(0, 1fr) minmax(74px, 1.2fr) minmax(0, 1fr);
+    grid-template-columns: 1fr;
     padding: 8px;
   }
 
   .battle-playback strong {
     font-size: 11px;
+  }
+
+  .playback-controls {
+    flex-wrap: wrap;
+  }
+
+  .speed-strip {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .commander-metrics {

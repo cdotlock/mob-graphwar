@@ -8,10 +8,14 @@ import {
   KeyRound,
   ListOrdered,
   LogIn,
+  Gauge,
+  PauseCircle,
   PlayCircle,
   RadioTower,
   RefreshCw,
   Shield,
+  SkipBack,
+  SkipForward,
   Swords,
   Trophy
 } from "lucide-react";
@@ -151,6 +155,9 @@ function App() {
   const [match, setMatch] = useState(null);
   const [battleState, setBattleState] = useState(createExhibitionBattle);
   const [battlePlayback, setBattlePlayback] = useState(null);
+  const [playbackDeck, setPlaybackDeck] = useState([]);
+  const [playbackPaused, setPlaybackPaused] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [login, setLogin] = useState({
     displayName: "Clock",
     provider: "deepseek",
@@ -167,6 +174,9 @@ function App() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [autoBattle, setAutoBattle] = useState(null);
   const playbackToken = useRef(0);
+  const playbackFramesRef = useRef([]);
+  const playbackPausedRef = useRef(false);
+  const playbackSpeedRef = useRef(1);
 
   const latestEvent = battleState.events[battleState.events.length - 1];
   const activeTeam = battleState.winner ? "-" : battleState.turn % 2 === 0 ? "A" : "B";
@@ -181,6 +191,14 @@ function App() {
     }, 2500);
     return () => window.clearInterval(timer);
   }, [profile?.id, queueState?.status, queueState?.queueSize, match?.id]);
+
+  useEffect(() => {
+    playbackPausedRef.current = playbackPaused;
+  }, [playbackPaused]);
+
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+  }, [playbackSpeed]);
 
   async function signIn(event) {
     event.preventDefault();
@@ -252,6 +270,9 @@ function App() {
     setMatch(payload.match);
     setBattleState(payload.match.state);
     setBattlePlayback(null);
+    setPlaybackDeck([]);
+    playbackFramesRef.current = [];
+    setPlaybackPaused(false);
     setLastDecision(null);
     setQueueState(null);
     setAutoBattle(null);
@@ -315,6 +336,9 @@ function App() {
       setMatch(payload.match);
       setBattleState(payload.match.state);
       setBattlePlayback(null);
+      setPlaybackDeck([]);
+      playbackFramesRef.current = [];
+      setPlaybackPaused(false);
       setLastDecision(null);
       setQueueState(null);
       setAutoBattle(null);
@@ -370,31 +394,59 @@ function App() {
     }
   }
 
-  async function playAutoBattleFrames(frames, finalMatch, summary) {
+  function showPlaybackFrame(frame, index, total, active) {
+    if (!frame) return;
+    setBattleState(frame.state);
+    setLastDecision(frameDecision(frame));
+    setBattlePlayback({
+      active,
+      index: index + 1,
+      total,
+      action: frame.action,
+      winner: frame.state.winner || null
+    });
+  }
+
+  async function waitPlaybackDelay(baseMs, token) {
+    let remaining = Math.max(80, Math.round(baseMs / Math.max(0.5, playbackSpeedRef.current)));
+    while (remaining > 0) {
+      if (playbackToken.current !== token) return false;
+      if (playbackPausedRef.current) {
+        await delayFrame(120);
+        continue;
+      }
+      const step = Math.min(120, remaining);
+      await delayFrame(step);
+      remaining -= step;
+    }
+    return playbackToken.current === token;
+  }
+
+  async function playAutoBattleFrames(frames, finalMatch, summary, startIndex = 0, preserveDeck = false) {
     const frameList = Array.isArray(frames) && frames.length ? frames : [];
     const token = playbackToken.current + 1;
     playbackToken.current = token;
+    if (!preserveDeck) {
+      setPlaybackDeck(frameList);
+      playbackFramesRef.current = frameList;
+    }
+    setPlaybackPaused(false);
+    playbackPausedRef.current = false;
     if (!frameList.length) {
       setBattleState(finalMatch.state);
       setBattlePlayback(null);
       return;
     }
-    for (let index = 0; index < frameList.length; index += 1) {
+    for (let index = Math.max(0, Math.min(frameList.length - 1, startIndex)); index < frameList.length; index += 1) {
       if (playbackToken.current !== token) return;
       const frame = frameList[index];
-      setBattleState(frame.state);
-      setLastDecision(frameDecision(frame));
-      setBattlePlayback({
-        active: true,
-        index: index + 1,
-        total: frameList.length,
-        action: frame.action,
-        winner: frame.state.winner || null
-      });
-      await delayFrame(index === 0 ? 240 : 520);
+      showPlaybackFrame(frame, index, frameList.length, true);
+      const keepPlaying = await waitPlaybackDelay(index === 0 ? 240 : 520, token);
+      if (!keepPlaying) return;
     }
     if (playbackToken.current !== token) return;
     setBattleState(finalMatch.state);
+    setPlaybackPaused(false);
     setBattlePlayback({
       active: false,
       index: frameList.length,
@@ -402,6 +454,45 @@ function App() {
       action: frameList[frameList.length - 1].action,
       winner: summary?.winner || finalMatch.state.winner || "draw"
     });
+  }
+
+  function stepPlayback(delta) {
+    const frames = playbackFramesRef.current;
+    if (!frames.length) return;
+    playbackToken.current += 1;
+    setPlaybackPaused(true);
+    playbackPausedRef.current = true;
+    const currentIndex = Math.max(0, (battlePlayback?.index || 1) - 1);
+    const nextIndex = Math.min(frames.length - 1, Math.max(0, currentIndex + delta));
+    showPlaybackFrame(frames[nextIndex], nextIndex, frames.length, false);
+  }
+
+  function resumePlayback() {
+    const frames = playbackFramesRef.current;
+    if (!frames.length) return;
+    const startIndex = Math.max(0, (battlePlayback?.index || 1) - 1);
+    const finalMatch = { state: frames[frames.length - 1].state };
+    const summary = { winner: frames[frames.length - 1].state.winner || "draw" };
+    setPlaybackPaused(false);
+    playbackPausedRef.current = false;
+    playAutoBattleFrames(frames, finalMatch, summary, startIndex, true);
+  }
+
+  function togglePlayback() {
+    if (!playbackFramesRef.current.length) return;
+    if (playbackPaused || battlePlayback?.active === false) {
+      resumePlayback();
+      return;
+    }
+    setPlaybackPaused(true);
+    playbackPausedRef.current = true;
+  }
+
+  function changePlaybackSpeed(speed) {
+    const nextSpeed = Number(speed);
+    if (![0.5, 1, 2].includes(nextSpeed)) return;
+    setPlaybackSpeed(nextSpeed);
+    playbackSpeedRef.current = nextSpeed;
   }
 
   async function runAutoDuel() {
@@ -476,7 +567,15 @@ function App() {
         <section className="battle-panel game-panel">
           <BattleHeader state={battleState} activeTeam={activeTeam} message={message} />
           <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
-          <BattlePlaybackHud playback={battlePlayback} />
+          <BattlePlaybackHud
+            playback={battlePlayback}
+            paused={playbackPaused}
+            speed={playbackSpeed}
+            canControl={playbackDeck.length > 0}
+            onToggle={togglePlayback}
+            onStep={stepPlayback}
+            onSpeed={changePlaybackSpeed}
+          />
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
             <Battlefield state={battleState} latestEvent={latestEvent} />
@@ -738,13 +837,15 @@ function SpectatorHud({ state, activeTeam, match }) {
   );
 }
 
-function BattlePlaybackHud({ playback }) {
+function BattlePlaybackHud({ playback, paused, speed, canControl, onToggle, onStep, onSpeed }) {
   const progress = playback?.total ? Math.min(100, Math.max(0, (playback.index / playback.total) * 100)) : 0;
   const action = playback?.action || null;
+  const playLabel = paused || playback?.active === false ? "Play replay" : "Pause replay";
+  const stateLabel = paused ? "Paused replay" : playback?.active ? "Live playback" : "Playback";
   return (
-    <div className={`battle-playback ${playback?.active ? "playing" : ""}`} data-testid="battle-playback">
+    <div className={`battle-playback ${playback?.active && !paused ? "playing" : ""} ${paused ? "paused" : ""}`} data-testid="battle-playback">
       <div>
-        <span>{playback?.active ? "Live playback" : "Playback"}</span>
+        <span>{stateLabel}</span>
         <strong>{action ? `${action.action} · Team ${action.team}` : "standby"}</strong>
       </div>
       <div className="playback-bar" aria-label="Battle playback progress">
@@ -753,6 +854,31 @@ function BattlePlaybackHud({ playback }) {
       <div>
         <span>{playback?.total ? `${playback.index}/${playback.total} frames` : "0/0 frames"}</span>
         <strong>{action?.provider || playback?.winner || "waiting"}</strong>
+      </div>
+      <div className="playback-controls" data-testid="playback-controls">
+        <button type="button" aria-label="Previous replay frame" disabled={!canControl} onClick={() => onStep(-1)}>
+          <SkipBack size={15} />
+        </button>
+        <button type="button" aria-label={playLabel} disabled={!canControl} onClick={onToggle}>
+          {paused || playback?.active === false ? <PlayCircle size={16} /> : <PauseCircle size={16} />}
+        </button>
+        <button type="button" aria-label="Next replay frame" disabled={!canControl} onClick={() => onStep(1)}>
+          <SkipForward size={15} />
+        </button>
+        <div className="speed-strip" aria-label="Replay speed">
+          <Gauge size={14} />
+          {[0.5, 1, 2].map((value) => (
+            <button
+              type="button"
+              className={speed === value ? "active" : ""}
+              disabled={!canControl}
+              onClick={() => onSpeed(value)}
+              key={value}
+            >
+              {value}x
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

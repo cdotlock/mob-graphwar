@@ -125,6 +125,23 @@ function testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState() {
   assert.ok(css.includes(".playback-bar"), "CSS should style frame playback progress");
 }
 
+function testSpectatorReplayHasWatchOnlyControls() {
+  assert.ok(main.includes("playbackDeck"), "UI should retain replay frames for spectator controls");
+  assert.ok(main.includes("playbackPaused"), "UI should expose pause state for the replay loop");
+  assert.ok(main.includes("playbackSpeed"), "UI should expose replay speed state");
+  assert.ok(main.includes("stepPlayback"), "UI should allow stepping through already-resolved replay frames");
+  assert.ok(main.includes("resumePlayback"), "UI should allow resuming replay without posting a gameplay action");
+  assert.ok(main.includes("changePlaybackSpeed"), "UI should allow speed changes without changing battle rules");
+  assert.ok(main.includes("Paused replay"), "paused playback should be labeled as paused, not live");
+  assert.ok(main.includes('data-testid="playback-controls"'), "replay controls should be selectable for browser verification");
+  assert.ok(main.includes('aria-label="Previous replay frame"'), "replay controls should expose a previous-frame button");
+  assert.ok(main.includes('aria-label="Next replay frame"'), "replay controls should expose a next-frame button");
+  assert.ok(main.includes('aria-label="Replay speed"'), "replay controls should expose speed choices");
+  assert.ok(!main.includes('fetch(`/api/match/${match.id}/action`'), "replay controls must not submit server-side gameplay actions");
+  assert.ok(css.includes(".playback-controls"), "CSS should style replay controls as game HUD controls");
+  assert.ok(css.includes(".speed-strip"), "CSS should style replay speed choices");
+}
+
 function testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels() {
   assert.ok(
     main.indexOf("<Battlefield") < main.indexOf("<DuelCommanders"),
@@ -152,6 +169,7 @@ testBattlefieldReadsAsGameSurface();
 testUiExplainsRetainedHandsAndSwapAction();
 testUiOffersOneClickRankedAutoDuel();
 testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState();
+testSpectatorReplayHasWatchOnlyControls();
 testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels();
 testBattleHeaderDoesNotCallDrawAWin();
 

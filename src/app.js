@@ -220,6 +220,7 @@
       summaryRow("Command", event.command || "(empty)"),
       summaryRow("Result", `${event.resultLabel}, damage ${event.damage}`),
       summaryRow("Energy", `${event.cost}/${event.energy}`),
+      summaryRow("Rules", event.thinking?.commandRules || "soft guidance only"),
       summaryRow("Expression", `<code>${esc(event.expression)}</code>`, true),
       summaryRow("Closest", `${event.closestTargetDistance}u, maxY ${event.maxY}`)
     ].join("");
@@ -262,6 +263,7 @@
     const targets = (thinking.targetPriority || []).map((target) => `${target.id}(${target.hp})`).join(" -> ");
     thinkingPanel.innerHTML = [
       thinkingRow("Intent", thinking.intent || "balanced shot"),
+      thinkingRow("Rules", thinking.commandRules || "soft guidance only", true),
       thinkingRow("Targets", targets || event.targetId),
       thinkingRow("Hand", thinking.handConstraint || `${event.hand.length} cards`),
       thinkingRow("Combo", thinking.selectedCombo || event.components.map((component) => component.label).join(" + ")),
@@ -270,8 +272,10 @@
     ].join("");
   }
 
-  function thinkingRow(label, value) {
-    return `<div class="thinking-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+  function thinkingRow(label, value, featured) {
+    return `<div class="thinking-row${featured ? " thinking-rule" : ""}"><span>${esc(label)}</span><strong>${esc(
+      value
+    )}</strong></div>`;
   }
 
   function renderLog() {

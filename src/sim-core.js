@@ -476,10 +476,29 @@
     const text = raw.toLowerCase();
     const has = (terms) => terms.some((term) => text.includes(term));
     const targetIds = Array.from(new Set((raw.match(/[AB][12]/gi) || []).map((id) => id.toUpperCase())));
+    const hardTarget =
+      has(["must", "only", "exact", "lock", "force target"]) || /必须|只打|只瞄|仅打|锁定|指定|就打/.test(raw);
+    const safe = has(["safe", "avoid", "careful", "conservative"]) || /安全|避|绕开|避免|小心|别误伤|保守|稳/.test(raw);
+    const forbidRisk =
+      safe ||
+      has(["no risk", "no volatile", "avoid volatile", "no risky", "no gamble"]) ||
+      /不冒险|别冒险|不要冒险|不用冒险|禁止冒险|禁用冒险|不要高危|不用高危|禁用高危|不要volatile|不用volatile|禁用volatile/i.test(
+        raw
+      );
+    const requiredTargetIds = hardTarget ? targetIds : [];
+    const ruleSummary = [];
+    if (requiredTargetIds.length) ruleSummary.push(`hard target ${requiredTargetIds.join(" then ")}`);
+    if (forbidRisk) ruleSummary.push("no volatile/risk cards");
+    if (safe) ruleSummary.push("avoid ally hits");
     return {
       raw,
       targetIds,
-      safe: has(["safe", "avoid", "careful"]) || /安全|避|绕开|避免|小心|别误伤/.test(raw),
+      requiredTargetIds,
+      hardTarget,
+      forbidRisk,
+      avoidAllyHits: safe,
+      ruleSummary: ruleSummary.length ? ruleSummary : ["soft guidance only"],
+      safe,
       aggressive: has(["aggressive", "finish", "force", "kill"]) || /激进|击杀|收割|强打/.test(raw),
       high:
         has(["high", "lob", "arc", "over"]) || /高|上缘|高抛|高弧|越过|越塔|越墙|绕塔|绕墙/.test(raw),
@@ -588,6 +607,56 @@
       })
       .sort((a, b) => b.score - a.score)
       .map((entry) => entry.enemy);
+  }
+
+  function summarizeRules(directive, targetRule) {
+    const ruleSummary = [];
+    if (targetRule) {
+      ruleSummary.push(targetRule);
+    } else if (directive.requiredTargetIds && directive.requiredTargetIds.length) {
+      ruleSummary.push(`hard target ${directive.requiredTargetIds.join(" then ")}`);
+    }
+    if (directive.forbidRisk) ruleSummary.push("no volatile/risk cards");
+    if (directive.avoidAllyHits) ruleSummary.push("avoid ally hits");
+    return ruleSummary.length ? ruleSummary : ["soft guidance only"];
+  }
+
+  function applyTargetConstraints(targets, directive) {
+    if (!directive.requiredTargetIds || !directive.requiredTargetIds.length) {
+      return { targets, ruleSummary: summarizeRules(directive, null) };
+    }
+    const required = targets.filter((target) => directive.requiredTargetIds.includes(target.id));
+    if (required.length) {
+      return {
+        targets: required,
+        ruleSummary: summarizeRules(directive, `hard target ${directive.requiredTargetIds.join(" then ")}`)
+      };
+    }
+    return {
+      targets,
+      ruleSummary: summarizeRules(
+        directive,
+        `requested target ${directive.requiredTargetIds.join(" then ")} unavailable; fallback to live targets`
+      )
+    };
+  }
+
+  function componentIsRisk(component) {
+    return component.family === "risk" || (component.tags || []).includes("volatile");
+  }
+
+  function comboViolatesDirective(combo, directive) {
+    if (directive.forbidRisk && combo.components.some(componentIsRisk)) {
+      return "forbidden_risk";
+    }
+    return null;
+  }
+
+  function resultViolatesDirective(sim, directive) {
+    if (directive.avoidAllyHits && sim.kind === "hitAlly") {
+      return "forbidden_ally_hit";
+    }
+    return null;
   }
 
   function componentValue(component, tau) {
@@ -932,6 +1001,7 @@
       intent: describeIntent(decision.directive),
       targetPriority: decision.targetPriority,
       handConstraint: `${decision.hand.length} cards, ${decision.energy} energy, ${CONFIG.maxShapeCards} shapes + ${CONFIG.maxModifierCards} modifier max`,
+      commandRules: (decision.ruleSummary || decision.directive.ruleSummary).join("; "),
       selectedCombo: usedLabels.length ? usedLabels.join(" + ") : "baseline line",
       risk: riskNote(decision.shot, decision.sim, decision.directive),
       projectedResult: resultLabel(decision.sim),
@@ -948,16 +1018,20 @@
     const directive = parseDirective(command);
     const hand = dealHand(state.seed, state.turn, team);
     const energy = getEnergy(state.turn);
-    const targets = rankTargets(state, shooter, directive);
+    const rankedTargets = rankTargets(state, shooter, directive);
+    const targetConstraint = applyTargetConstraints(rankedTargets, directive);
+    const targets = targetConstraint.targets;
     const combos = generateComponentCombos(hand, energy, directive);
 
     let best = null;
     for (const target of targets) {
       for (const combo of combos) {
+        if (comboViolatesDirective(combo, directive)) continue;
         const validation = validateResourceUse(hand, combo.components, energy);
         if (!validation.ok) continue;
         const shot = makeShot(shooter, target, combo);
         const sim = simulateShot(state, shot);
+        if (resultViolatesDirective(sim, directive)) continue;
         const score = scoreSimulation(sim, shot, directive);
         if (!best || score > best.score) {
           best = {
@@ -974,6 +1048,7 @@
             hand,
             energy,
             directive,
+            ruleSummary: targetConstraint.ruleSummary,
             shot,
             sim,
             validation
@@ -991,16 +1066,19 @@
     const directive = parseDirective(command);
     const hand = dealHand(state.seed, state.turn, team);
     const energy = getEnergy(state.turn);
-    const targets = rankTargets(state, shooter, directive);
+    const targetConstraint = applyTargetConstraints(rankTargets(state, shooter, directive), directive);
+    const targets = targetConstraint.targets;
     const combos = generateComponentCombos(hand, energy, directive);
     const shots = [];
 
     for (const target of targets) {
       for (const combo of combos) {
+        if (comboViolatesDirective(combo, directive)) continue;
         const validation = validateResourceUse(hand, combo.components, energy);
         if (!validation.ok) continue;
         const shot = makeShot(shooter, target, combo);
         const sim = simulateShot(state, shot);
+        if (resultViolatesDirective(sim, directive)) continue;
         shots.push({
           targetId: target.id,
           cards: shot.components.map((component) => ({

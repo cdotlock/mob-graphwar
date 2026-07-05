@@ -63,6 +63,73 @@ function testCommandParsing() {
   assert.strictEqual(chinese.high, true);
   assert.strictEqual(chinese.safe, true);
   assert.deepStrictEqual(chinese.targetIds, ["B2", "B1"]);
+
+  const hard = Sim.parseDirective("must target B2, no volatile cards, safe shot");
+  assert.deepStrictEqual(hard.requiredTargetIds, ["B2"]);
+  assert.strictEqual(hard.forbidRisk, true);
+  assert.ok(hard.ruleSummary.includes("hard target B2"));
+  assert.ok(hard.ruleSummary.includes("no volatile/risk cards"));
+
+  const chineseRiskBan = Sim.parseDirective("禁用冒险牌，不用volatile，锁定A2");
+  assert.strictEqual(chineseRiskBan.forbidRisk, true);
+  assert.strictEqual(chineseRiskBan.avoidAllyHits, false);
+  assert.deepStrictEqual(chineseRiskBan.requiredTargetIds, ["A2"]);
+}
+
+function testHardTargetConstraintChangesShotChoice() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  Sim.applyTurn(state, { A: "must target B2, high safe arc" });
+  const event = state.events[0];
+  assert.strictEqual(event.targetId, "B2");
+  assert.ok(event.thinking.commandRules.includes("hard target B2"));
+  assert.deepStrictEqual(
+    event.thinking.targetPriority.map((target) => target.id),
+    ["B2"]
+  );
+}
+
+function testUnavailableHardTargetIsReportedAsFallback() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  state.units.find((unit) => unit.id === "B2").hp = 0;
+  Sim.applyTurn(state, { A: "must target B2, high safe arc" });
+  const event = state.events[0];
+  assert.strictEqual(event.targetId, "B1");
+  assert.ok(event.thinking.commandRules.includes("requested target B2 unavailable"));
+  assert.deepStrictEqual(
+    event.thinking.targetPriority.map((target) => target.id),
+    ["B1"]
+  );
+}
+
+function testSafeCommandForbidsRiskCards() {
+  const state = Sim.runBattle({
+    seed: 7352,
+    commands: {
+      A: "safe high arc avoid ally target B2",
+      B: "safe high arc avoid ally target A2"
+    }
+  });
+  const riskySafeEvents = state.events.filter((event) =>
+    event.components.some((component) => component.family === "risk" || component.tags.includes("volatile"))
+  );
+  assert.deepStrictEqual(
+    riskySafeEvents.map((event) => ({ turn: event.turn, team: event.team, cards: event.components.map((c) => c.label) })),
+    []
+  );
+  assert.ok(state.events.every((event) => event.thinking.commandRules.includes("no volatile/risk cards")));
+}
+
+function testLegalShotsHonorSafeConstraints() {
+  const state = Sim.createInitialState({ seed: 7352 });
+  const shots = Sim.listLegalShots(state, "A", "safe high arc avoid ally target B2");
+  assert.ok(shots.length > 0, "safe command should still produce legal shots");
+  assert.ok(shots.every((shot) => shot.result !== "hitAlly"), "safe legal shots should not include ally hits");
+  assert.ok(
+    shots.every((shot) =>
+      shot.cards.every((card) => card.family !== "risk" && !(card.tags || []).includes("volatile"))
+    ),
+    "safe legal shots should not include risk or volatile cards"
+  );
 }
 
 function testRicherCardCatalog() {
@@ -101,6 +168,10 @@ testDeterministicBattle();
 testNoInvalidState();
 testResourceValidation();
 testCommandParsing();
+testHardTargetConstraintChangesShotChoice();
+testUnavailableHardTargetIsReportedAsFallback();
+testSafeCommandForbidsRiskCards();
+testLegalShotsHonorSafeConstraints();
 testRicherCardCatalog();
 testSeededHardMapGeneration();
 testTraceShapeIncludesMapAndScore();

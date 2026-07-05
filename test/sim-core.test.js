@@ -130,6 +130,35 @@ function testLegalShotsHonorSafeConstraints() {
     ),
     "safe legal shots should not include risk or volatile cards"
   );
+
+  const weaveState = Sim.createInitialState({ seed: 120 });
+  const weaveShots = Sim.listLegalShots(weaveState, "A", "safe avoid ally no volatile target B2");
+  assert.ok(weaveShots.length > 0, "safe weave setup should produce legal shots");
+  assert.ok(
+    weaveShots.every((shot) => !(shot.combo.traits || []).includes("volatile")),
+    "safe legal shot combo traits should not imply volatile risk"
+  );
+}
+
+function testShotEventsExposeCardComboIdentity() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  Sim.applyTurn(state, { A: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。" });
+  const event = state.events[0];
+  assert.ok(event.combo, "event should include card-combo identity");
+  assert.strictEqual(event.combo.name, "Guided Overpass");
+  assert.ok(event.combo.traits.includes("clearance"));
+  assert.ok(event.combo.traits.includes("precision"));
+  assert.ok(event.combo.scoreBonus > 0, "combo should influence shot scoring");
+  assert.strictEqual(event.thinking.comboName, event.combo.name);
+  assert.ok(event.thinking.comboNote.includes("precision"));
+}
+
+function testLegalShotsExposeCardComboIdentity() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const shots = Sim.listLegalShots(state, "A", "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。");
+  assert.ok(shots.length > 0, "legal shots should be listed");
+  assert.ok(shots.every((shot) => shot.combo && shot.combo.name && Array.isArray(shot.combo.traits)));
+  assert.ok(shots.some((shot) => shot.combo.name === "Guided Overpass"));
 }
 
 function testRicherCardCatalog() {
@@ -172,6 +201,8 @@ testHardTargetConstraintChangesShotChoice();
 testUnavailableHardTargetIsReportedAsFallback();
 testSafeCommandForbidsRiskCards();
 testLegalShotsHonorSafeConstraints();
+testShotEventsExposeCardComboIdentity();
+testLegalShotsExposeCardComboIdentity();
 testRicherCardCatalog();
 testSeededHardMapGeneration();
 testTraceShapeIncludesMapAndScore();

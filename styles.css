@@ -382,7 +382,7 @@ button:focus-visible {
 
 .card {
   position: relative;
-  min-height: 128px;
+  min-height: 142px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   padding: 10px;
@@ -406,6 +406,24 @@ button:focus-visible {
 .card.used {
   border-color: rgba(228, 187, 98, 0.9);
   box-shadow: 0 0 0 1px rgba(228, 187, 98, 0.24), 0 0 24px rgba(228, 187, 98, 0.18);
+}
+
+.card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 1px 0 8px;
+  color: #9fc4a0;
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.card-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card h3 {

@@ -922,9 +922,114 @@
     );
   }
 
+  function uniqueValues(values) {
+    return Array.from(new Set(values));
+  }
+
+  function componentTags(components) {
+    return uniqueValues(components.flatMap((component) => component.tags || []));
+  }
+
+  function componentFamilies(components) {
+    return uniqueValues(components.map((component) => component.family));
+  }
+
+  function assessCombo(components, directive) {
+    const parts = components || [];
+    if (!parts.length) {
+      return {
+        name: "Raw Line",
+        traits: ["baseline"],
+        scoreBonus: 0,
+        note: "No card spend; only exposed lines work."
+      };
+    }
+
+    const tags = componentTags(parts);
+    const families = componentFamilies(parts);
+    const has = (tag) => tags.includes(tag);
+    const usesFamily = (family) => families.includes(family);
+    const volatileCount = parts.filter((component) => (component.tags || []).includes("volatile")).length;
+    const precisionCount = parts.filter((component) => (component.tags || []).includes("precision")).length;
+    const clearanceCount = parts.filter((component) => (component.tags || []).includes("clearance")).length;
+    const cornerCount = parts.filter((component) => (component.tags || []).includes("corner")).length;
+
+    if (usesFamily("risk") && precisionCount > 0) {
+      return {
+        name: "Armed Needle",
+        traits: uniqueValues(["damage", "precision", "volatile"].concat(directive.aggressive ? ["finisher"] : [])),
+        scoreBonus: directive.aggressive ? 42 : 26,
+        note: "precision support reins in a volatile damage card."
+      };
+    }
+    if (usesFamily("risk")) {
+      return {
+        name: "Loose Charge",
+        traits: uniqueValues(["damage", "volatile"].concat(volatileCount > 1 ? ["overheat"] : [])),
+        scoreBonus: directive.aggressive ? 24 : -10,
+        note: "Damage pressure without stabilization."
+      };
+    }
+    if (clearanceCount > 0 && precisionCount > 0) {
+      return {
+        name: "Guided Overpass",
+        traits: ["clearance", "precision", "stable"],
+        scoreBonus: directive.high ? 38 : 24,
+        note: "precision stabilizes a high clearance route."
+      };
+    }
+    if (clearanceCount >= 2) {
+      return {
+        name: "Sky Stack",
+        traits: ["clearance", "height", "ceiling-risk"],
+        scoreBonus: directive.high ? 26 : 10,
+        note: "Stacked lift can clear brutal cover but may overcook."
+      };
+    }
+    if (cornerCount > 0 && (has("thread") || usesFamily("modifier"))) {
+      return {
+        name: "Threaded Hook",
+        traits: ["corner", "thread", "technical"],
+        scoreBonus: directive.bend ? 34 : 20,
+        note: "A corner card gets a narrow threading helper."
+      };
+    }
+    if (has("shelf") && precisionCount > 0) {
+      return {
+        name: "Hold Line",
+        traits: ["shelf", "precision", "stable"],
+        scoreBonus: 18,
+        note: "Shelf control keeps the mid-curve readable."
+      };
+    }
+    if (has("weave")) {
+      return {
+        name: "Weave Line",
+        traits: uniqueValues(["weave"].concat(has("precision") ? ["precision"] : volatileCount > 0 ? ["volatile"] : ["drift"])),
+        scoreBonus: has("precision") ? 16 : 4,
+        note: "Oscillation searches for a side-door angle."
+      };
+    }
+    if (has("cheap")) {
+      return {
+        name: "Tempo Shot",
+        traits: ["cheap", "efficient"],
+        scoreBonus: 8,
+        note: "Low spend keeps the shot efficient."
+      };
+    }
+    return {
+      name: "Mixed Curve",
+      traits: tags.slice(0, 3),
+      scoreBonus: 10,
+      note: "A compact mix of card effects."
+    };
+  }
+
   function scoreSimulation(sim, shot, directive) {
     let score = 0;
     const effects = sumEffects(shot.components);
+    const combo = assessCombo(shot.components, directive);
     if (sim.kind === "hitEnemy") {
       score += sim.unitId === shot.target.id ? 1000 : 720;
       score += effects.damageBonus * 3;
@@ -958,6 +1063,7 @@
     }
     if (shot.components.some((component) => component.tags.includes("precision"))) score += 16;
     if (shot.components.some((component) => component.tags.includes("clearance")) && directive.high) score += 24;
+    score += combo.scoreBonus;
     return score;
   }
 
@@ -997,17 +1103,21 @@
 
   function buildThinking(decision) {
     const usedLabels = decision.shot.components.map((component) => component.label);
+    const combo = decision.combo || assessCombo(decision.shot.components, decision.directive);
     return {
       intent: describeIntent(decision.directive),
       targetPriority: decision.targetPriority,
       handConstraint: `${decision.hand.length} cards, ${decision.energy} energy, ${CONFIG.maxShapeCards} shapes + ${CONFIG.maxModifierCards} modifier max`,
       commandRules: (decision.ruleSummary || decision.directive.ruleSummary).join("; "),
       selectedCombo: usedLabels.length ? usedLabels.join(" + ") : "baseline line",
+      comboName: combo.name,
+      comboTraits: combo.traits,
+      comboNote: combo.note,
       risk: riskNote(decision.shot, decision.sim, decision.directive),
       projectedResult: resultLabel(decision.sim),
       publicReason: `${decision.shooter.id} aimed at ${decision.target.id} with ${
         usedLabels.length ? usedLabels.join(" + ") : "baseline"
-      } because ${describeIntent(decision.directive)}.`
+      } as ${combo.name} because ${describeIntent(decision.directive)}.`
     };
   }
 
@@ -1032,6 +1142,7 @@
         const shot = makeShot(shooter, target, combo);
         const sim = simulateShot(state, shot);
         if (resultViolatesDirective(sim, directive)) continue;
+        const comboIdentity = assessCombo(shot.components, directive);
         const score = scoreSimulation(sim, shot, directive);
         if (!best || score > best.score) {
           best = {
@@ -1049,6 +1160,7 @@
             energy,
             directive,
             ruleSummary: targetConstraint.ruleSummary,
+            combo: comboIdentity,
             shot,
             sim,
             validation
@@ -1079,6 +1191,7 @@
         const shot = makeShot(shooter, target, combo);
         const sim = simulateShot(state, shot);
         if (resultViolatesDirective(sim, directive)) continue;
+        const comboIdentity = assessCombo(shot.components, directive);
         shots.push({
           targetId: target.id,
           cards: shot.components.map((component) => ({
@@ -1090,6 +1203,7 @@
           })),
           cost: shot.cost,
           usedCardIds: shot.usedCardIds,
+          combo: comboIdentity,
           expression: formatExpression(shot),
           result: sim.kind,
           resultLabel: resultLabel(sim),
@@ -1216,6 +1330,7 @@
       })),
       usedCardIds: decision.shot.usedCardIds,
       components: decision.shot.components,
+      combo: decision.combo,
       expression: formatExpression(decision.shot),
       thinking: buildThinking(decision),
       result: sim.kind,

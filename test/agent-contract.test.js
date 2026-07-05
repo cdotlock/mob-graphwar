@@ -9,6 +9,11 @@ function testCandidateExportIsSafe() {
   assert.ok(candidates.length <= Contract.MAX_PUBLIC_CANDIDATES, "candidate list should be bounded");
   assert.ok(candidates.every((candidate) => candidate.candidateId), "candidate should have stable id");
   assert.ok(candidates.every((candidate) => !candidate.expression.includes("function")), "candidate should not expose code");
+  assert.ok(candidates.every((candidate) => candidate.combo && candidate.combo.name), "candidate should expose combo identity");
+  assert.ok(
+    candidates.every((candidate) => Array.isArray(candidate.combo.traits)),
+    "candidate combo should expose readable traits"
+  );
 }
 
 function testDecisionValidation() {

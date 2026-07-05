@@ -221,6 +221,7 @@
       summaryRow("Result", `${event.resultLabel}, damage ${event.damage}`),
       summaryRow("Energy", `${event.cost}/${event.energy}`),
       summaryRow("Rules", event.thinking?.commandRules || "soft guidance only"),
+      summaryRow("Combo", comboSummary(event)),
       summaryRow("Expression", `<code>${esc(event.expression)}</code>`, true),
       summaryRow("Closest", `${event.closestTargetDistance}u, maxY ${event.maxY}`)
     ].join("");
@@ -233,10 +234,17 @@
     return `<div class="summary-row"><span>${esc(label)}</span><strong>${raw ? value : esc(value)}</strong></div>`;
   }
 
+  function comboSummary(event) {
+    if (!event.combo) return event.components.map((component) => component.label).join(" + ") || "baseline";
+    const traits = (event.combo.traits || []).join(" / ");
+    return `${event.combo.name}${traits ? ` - ${traits}` : ""}`;
+  }
+
   function cardMarkup(card, used) {
     const tags = (card.tags || []).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("");
     return `
       <article class="card ${esc(card.rarity || "basic")}${used ? " used" : ""}">
+        <div class="card-meta"><span>${esc(card.family)}</span><span>${esc(card.rarity || "basic")}</span></div>
         <h3>${esc(card.label)} <small>${card.cost}E</small></h3>
         <p>${esc(card.description)}</p>
         <div class="tag-row">${tags}</div>
@@ -266,7 +274,14 @@
       thinkingRow("Rules", thinking.commandRules || "soft guidance only", true),
       thinkingRow("Targets", targets || event.targetId),
       thinkingRow("Hand", thinking.handConstraint || `${event.hand.length} cards`),
-      thinkingRow("Combo", thinking.selectedCombo || event.components.map((component) => component.label).join(" + ")),
+      thinkingRow(
+        "Combo",
+        `${thinking.comboName || "Mixed Curve"} - ${
+          thinking.selectedCombo || event.components.map((component) => component.label).join(" + ") || "baseline"
+        }`,
+        true
+      ),
+      thinkingRow("Trait", thinking.comboNote || comboSummary(event)),
       thinkingRow("Risk", thinking.risk || "none"),
       thinkingRow("Reason", thinking.publicReason || "Local deterministic agent selected the highest scoring legal shot.")
     ].join("");
@@ -288,7 +303,9 @@
           <li class="${cls}">
             <strong>Turn ${event.turn} - Team ${event.team} - ${esc(event.resultLabel)}</strong>
             <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} using ${event.cost}/${event.energy} energy.</div>
-            <div>${esc(event.components.map((component) => component.label).join(" + ") || "baseline")}</div>
+            <div>${esc(event.combo ? event.combo.name : "Mixed Curve")} - ${esc(
+              event.components.map((component) => component.label).join(" + ") || "baseline"
+            )}</div>
           </li>`;
       })
       .join("");

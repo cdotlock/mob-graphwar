@@ -27,6 +27,7 @@
       targetId: shot.targetId,
       cards: shot.cards,
       cost: shot.cost,
+      combo: shot.combo,
       resultLabel: shot.resultLabel,
       score: shot.score,
       expression: shot.expression

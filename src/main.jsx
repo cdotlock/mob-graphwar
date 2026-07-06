@@ -477,6 +477,7 @@ function App() {
     }
     const opts = options || {};
     setBusy(true);
+    setMessage(opts.allowAiFill === false ? "Entering human commander queue." : "Launching AI-fill ranked duel. Matchmaking first, auto-battle next.");
     try {
       const response = await fetch("/api/match/join", {
         method: "POST",
@@ -708,7 +709,7 @@ function App() {
   }
 
   return (
-    <main className="arena-shell battle-priority-layout mobile-game-compact" data-ui-version="react-arena-v2">
+    <main className={`arena-shell battle-priority-layout mobile-game-compact mode-${activeMode}`} data-ui-version="react-arena-v2">
       <section className="hero-band">
         <div className="brand-zone">
           <span className="kicker">MOB GRAPHWAR ARENA</span>
@@ -774,8 +775,8 @@ function App() {
             onOpenAuth={() => setAuthModalOpen(true)}
           />
         ) : null}
-        {activeMode === "lab" ? (
-          <LabView
+        {activeMode === "api" ? (
+          <ApiDocsView
             result={leagueResult}
             busy={leagueBusy}
             state={battleState}
@@ -824,9 +825,9 @@ function ProductTabs({ activeMode, profile, match, queueState, autoBattle, onSel
       icon: Trophy
     },
     {
-      id: "lab",
-      label: "Lab",
-      status: autoBattle ? `${autoBattle.resolvedTurns} turns` : "model league",
+      id: "api",
+      label: "API Docs",
+      status: autoBattle ? `${autoBattle.resolvedTurns} turns` : "simulation API",
       icon: Cpu
     }
   ];
@@ -848,13 +849,11 @@ function ProductTabs({ activeMode, profile, match, queueState, autoBattle, onSel
           </button>
         );
       })}
-      {!profile ? (
-        <button type="button" className="product-tab auth-shortcut" onClick={onOpenAuth}>
-          <LogIn size={18} />
-          <span>Sign in</span>
-          <small>unlock ranked</small>
-        </button>
-      ) : null}
+      <button type="button" className="product-tab auth-shortcut" onClick={onOpenAuth}>
+        {profile ? <KeyRound size={18} /> : <LogIn size={18} />}
+        <span>{profile ? "Account" : "Sign in"}</span>
+        <small>{profile ? "model setup" : "unlock ranked"}</small>
+      </button>
     </nav>
   );
 }
@@ -888,8 +887,8 @@ function PlayView({
   onPlaybackSpeed
 }) {
   return (
-    <section className="game-grid play-view map-first" data-testid="play-view">
-      <aside className="lobby-panel compact game-panel" data-game-section="launch">
+    <section className="play-shell play-view map-first" data-testid="play-view">
+      <section className="play-command-row game-panel" data-game-section="launch">
         <LaunchBay
           login={login}
           profile={profile}
@@ -903,9 +902,9 @@ function PlayView({
           onSync={onSync}
         />
         <RosterCard match={match} />
-      </aside>
+      </section>
 
-      <section className="battle-panel game-panel" data-game-section="watch">
+      <section className="battle-panel primary-battle game-panel" data-game-section="watch">
         <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} />
         <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
         <BattlePlaybackHud
@@ -928,29 +927,28 @@ function PlayView({
             playback={battlePlayback}
             lastDecision={visibleDecision}
           />
-          <BattleDetailsDrawer
-            state={battleState}
-            match={match}
-            activeTeam={activeTeam}
-            activeUnitId={activeUnitId}
-            latestEvent={latestEvent}
-            playback={battlePlayback}
-            lastDecision={visibleDecision}
-            profile={profile}
-            autoBattle={autoBattle}
-          />
         </section>
+        <HandRack className="battle-hand-bench" hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
+        <TacticalIntelDrawer
+          state={battleState}
+          autoBattle={autoBattle}
+          profile={profile}
+          playback={battlePlayback}
+          latestEvent={latestEvent}
+          visibleDecision={visibleDecision}
+        />
+        <BattleDetailsDrawer
+          state={battleState}
+          match={match}
+          activeTeam={activeTeam}
+          activeUnitId={activeUnitId}
+          latestEvent={latestEvent}
+          playback={battlePlayback}
+          lastDecision={visibleDecision}
+          profile={profile}
+          autoBattle={autoBattle}
+        />
       </section>
-
-      <aside className="tactical-panel game-panel" data-game-section="intel">
-        <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
-        <Timeline state={battleState} />
-        <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
-        <PostMatchRecap autoBattle={autoBattle} state={battleState} profile={profile} playback={battlePlayback} />
-        <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
-        <ModelWarFeed state={battleState} lastDecision={visibleDecision} />
-        <ShotIntel event={latestEvent} state={battleState} />
-      </aside>
     </section>
   );
 }
@@ -1043,13 +1041,13 @@ function LeagueBoardGrid({ leagueResult }) {
   );
 }
 
-function LabView({ result, busy, state, activeUnitId, standingOrder, onRun }) {
+function ApiDocsView({ result, busy, state, activeUnitId, standingOrder, onRun }) {
   return (
-    <section className="lab-view" data-testid="lab-view">
+    <section className="lab-view api-docs-view" data-testid="api-docs-view">
       <div className="lab-hero">
-        <span>Model evaluation lab</span>
-        <strong>Find the best model, prompt, and model + prompt pair.</strong>
-        <p>Use controlled simulations for repeatable model league results before pushing strategies into ranked.</p>
+        <span>Simulation API docs</span>
+        <strong>Run model leagues and inspect the exact rules packet.</strong>
+        <p>Use public simulation endpoints to benchmark models, prompts, and model + prompt pairs outside the ranked UI.</p>
       </div>
       <div className="lab-grid">
         <LeagueLab result={result} busy={busy} onRun={onRun} />
@@ -1438,6 +1436,8 @@ function ProviderReadinessGrid({ login, profile }) {
 
 function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
   const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id}` : "No room synced";
+  const aiFillLabel = busy ? "Resolving Duel" : match && !match.state?.winner ? "Run Auto Duel" : "Start Ranked: AI Fill";
+  const humanLabel = busy ? "Waiting" : "Start Ranked: Humans";
   return (
     <div className="match-card">
       <div className="panel-title"><RadioTower size={18} /> Ranked Matchmaking</div>
@@ -1459,8 +1459,8 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
         <button disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
       <div className="match-actions">
-        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Start Ranked: Humans</button>
-        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Start Ranked: AI Fill</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>{humanLabel}</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>{aiFillLabel}</button>
       </div>
     </div>
   );
@@ -2159,67 +2159,19 @@ function BattlefieldBackdrop({ state }) {
   );
 }
 
-function isRouteGuideObstacle(obstacle) {
-  return ["route-contour", "gate-slit", "thread-slot"].includes(obstacle.role);
-}
-
-function RouteGuideLayer({ state }) {
-  const obstacles = state.obstacles || [];
-  const guides = obstacles.filter(isRouteGuideObstacle).slice(0, 28);
-  return (
-    <g className="route-guide-layer" data-testid="route-maze-layer" aria-hidden="true">
-      {guides.map((obstacle) => {
-        if (obstacle.role === "gate-slit") {
-          const x = sx(obstacle.x + obstacle.w / 2);
-          return (
-            <line
-              key={obstacle.id}
-              className={`route-guide gate-slit layer-${obstacle.visualLayer || 1}`}
-              x1={x}
-              y1={sy(obstacle.y + obstacle.h)}
-              x2={x}
-              y2={sy(obstacle.y)}
-            />
-          );
-        }
-        if (obstacle.role === "thread-slot") {
-          return (
-            <path
-              key={obstacle.id}
-              className={`route-guide thread-slot layer-${obstacle.visualLayer || 1}`}
-              d={`M${sx(obstacle.x)},${sy(obstacle.y + obstacle.h / 2)} L${sx(obstacle.x + obstacle.w)},${sy(obstacle.y + obstacle.h / 2)}`}
-            />
-          );
-        }
-        return (
-          <rect
-            key={obstacle.id}
-            className={`route-guide route-contour layer-${obstacle.visualLayer || 1}`}
-            x={sx(obstacle.x)}
-            y={sy(obstacle.y + obstacle.h)}
-            width={obstacle.w * 10}
-            height={Math.max(4, obstacle.h * 10)}
-            rx="7"
-          />
-        );
-      })}
-    </g>
-  );
-}
-
 function FlatMapObstacleLayer({ state }) {
-  const solids = (state.obstacles || []).filter((obstacle) => !isRouteGuideObstacle(obstacle));
+  const solids = (state.obstacles || []).filter((obstacle) => obstacle.solid !== false);
   return (
     <g className="flat-map-obstacle-layer" aria-hidden="true">
       {solids.map((obstacle) => (
         <rect
           key={obstacle.id}
-          className={`map-obstacle ${obstacle.role || "blocker"} layer-${obstacle.visualLayer || 1}`}
+          className="map-obstacle solid-blocker"
           x={sx(obstacle.x)}
           y={sy(obstacle.y + obstacle.h)}
           width={obstacle.w * 10}
           height={Math.max(5, obstacle.h * 10)}
-          rx={obstacle.role === "maze-room" ? 10 : 5}
+          rx="4"
         />
       ))}
     </g>
@@ -2230,7 +2182,6 @@ function MapLegend() {
   const items = [
     { label: "passable ground", className: "ground" },
     { label: "solid blockers", className: "blocker" },
-    { label: "route lanes", className: "lane" },
     { label: "current shot", className: "shot" }
   ];
   return (
@@ -2286,7 +2237,6 @@ function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, play
         </defs>
         <BattlefieldBackdrop state={state} />
         <path className="terrain" d={terrainPath()} />
-        <RouteGuideLayer state={state} />
         <FlatMapObstacleLayer state={state} />
         {state.paths.map((path, index) => (
           <polyline key={`${path.turn}-${index}`} className={`shot-path team-${path.team.toLowerCase()} ${index === state.paths.length - 1 ? "latest" : ""}`} points={pointList(path.points)} />
@@ -2325,9 +2275,9 @@ function BattleReplayRail({ state }) {
   );
 }
 
-function HandRack({ hand, activeTeam, activeUnitId }) {
+function HandRack({ hand, activeTeam, activeUnitId, className = "" }) {
   return (
-    <div className="hand-rack">
+    <div className={`hand-rack ${className}`.trim()}>
       <div className="panel-title"><KeyRound size={18} /> Retained Hand</div>
       <p className="hand-rule">{activeUnitId} / Team {activeTeam} cards stay after shots. Active model may choose Swap Hand x3 before firing.</p>
       <div className="card-grid">
@@ -2341,6 +2291,25 @@ function HandRack({ hand, activeTeam, activeUnitId }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function TacticalIntelDrawer({ state, autoBattle, profile, playback, latestEvent, visibleDecision }) {
+  return (
+    <details className="tactical-drawer" data-testid="tactical-drawer" data-game-section="intel">
+      <summary>
+        <span>Match console</span>
+        <strong>timeline, decisions, replay proof</strong>
+      </summary>
+      <div className="tactical-drawer-grid">
+        <Timeline state={state} />
+        <AutoDuelPanel autoBattle={autoBattle} state={state} />
+        <PostMatchRecap autoBattle={autoBattle} state={state} profile={profile} playback={playback} />
+        <ModelDecisionStack state={state} lastDecision={visibleDecision} />
+        <ModelWarFeed state={state} lastDecision={visibleDecision} />
+        <ShotIntel event={latestEvent} state={state} />
+      </div>
+    </details>
   );
 }
 

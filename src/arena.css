@@ -111,6 +111,10 @@ textarea {
   margin-bottom: 12px;
 }
 
+.mode-play .hero-band {
+  display: none;
+}
+
 .brand-zone,
 .rank-chip,
 .game-panel {
@@ -377,6 +381,115 @@ label,
 
 .app-view-stack {
   min-width: 0;
+}
+
+.play-shell {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.play-shell.map-first {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.play-shell .battle-panel,
+.play-shell .play-command-row {
+  grid-area: auto;
+}
+
+.play-command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.34fr);
+  gap: 10px;
+  align-items: stretch;
+  padding: 10px;
+}
+
+.play-command-row .launch-bay {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.32fr) minmax(260px, 0.42fr) minmax(340px, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.play-command-row .launch-header,
+.play-command-row .compact-launch-summary,
+.play-command-row .match-card,
+.play-command-row .locked-play-card,
+.play-command-row .roster-card {
+  min-height: 0;
+}
+
+.play-command-row .launch-header {
+  padding: 10px;
+}
+
+.play-command-row .launch-header strong {
+  font-size: 16px;
+}
+
+.play-command-row .compact-launch-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.play-command-row .compact-launch-summary span {
+  padding: 7px;
+}
+
+.play-command-row .match-card {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+}
+
+.play-command-row .match-card .panel-title,
+.play-command-row .spectator-lock-strip,
+.play-command-row .sync-strip,
+.play-command-row .match-actions {
+  grid-column: 1 / -1;
+}
+
+.play-command-row .match-status,
+.play-command-row .queue-strip {
+  min-height: 38px;
+  padding: 8px;
+}
+
+.play-command-row .spectator-lock-strip {
+  min-height: 34px;
+  padding: 7px 9px;
+}
+
+.play-command-row .sync-strip {
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.play-command-row .match-actions button {
+  min-height: 40px;
+}
+
+.play-command-row .locked-play-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.play-command-row .locked-play-card p {
+  display: none;
+}
+
+.play-command-row .roster-card {
+  align-content: start;
+  gap: 7px;
+  overflow: hidden;
+}
+
+.play-command-row .roster-card .empty-copy {
+  font-size: 12px;
 }
 
 .auth-modal-backdrop {
@@ -1289,6 +1402,39 @@ label {
   gap: 12px;
 }
 
+.primary-battle {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 8px;
+  padding: 10px;
+}
+
+.primary-battle .battle-header,
+.primary-battle .spectator-hud {
+  grid-column: auto;
+}
+
+.primary-battle .battle-playback,
+.primary-battle .arena-stage,
+.primary-battle .battle-hand-bench,
+.primary-battle .tactical-drawer,
+.primary-battle .secondary-battle-panels {
+  grid-column: 1 / -1;
+}
+
+.primary-battle .battle-header,
+.primary-battle .spectator-hud {
+  gap: 8px;
+}
+
+.primary-battle .battle-playback {
+  min-height: 54px;
+}
+
+.primary-battle .battle-playback.idle {
+  display: none;
+}
+
 .arena-stage {
   display: grid;
   gap: 10px;
@@ -1299,6 +1445,91 @@ label {
     linear-gradient(90deg, rgba(88, 212, 255, 0.09), transparent 32%, rgba(255, 94, 104, 0.09)),
     rgba(2, 5, 12, 0.82);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.primary-battle .arena-stage {
+  gap: 8px;
+  padding: 8px;
+}
+
+.primary-battle .versus-banner {
+  display: none;
+}
+
+.battle-hand-bench {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  border: 1px solid rgba(217, 255, 71, 0.28);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(90deg, rgba(217, 255, 71, 0.08), transparent 58%, rgba(88, 212, 255, 0.06)),
+    rgba(3, 7, 14, 0.72);
+}
+
+.battle-hand-bench .hand-rule {
+  font-size: 12px;
+}
+
+.battle-hand-bench .card-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.battle-hand-bench .battle-card {
+  gap: 6px;
+  min-height: 112px;
+  padding: 9px;
+}
+
+.battle-hand-bench .battle-card h3 {
+  font-size: 16px;
+}
+
+.battle-hand-bench .battle-card p {
+  display: none;
+}
+
+.tactical-drawer {
+  overflow: hidden;
+  border: 1px solid rgba(88, 212, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(3, 7, 14, 0.72);
+}
+
+.tactical-drawer summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 9px 11px;
+  cursor: pointer;
+  color: var(--acid);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tactical-drawer summary::marker {
+  color: var(--cyan);
+}
+
+.tactical-drawer summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tactical-drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 10px;
 }
 
 .secondary-battle-panels {
@@ -1354,7 +1585,7 @@ label {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 11px;
+  padding: 8px;
   background: rgba(3, 7, 14, 0.76);
 }
 
@@ -1400,7 +1631,7 @@ label {
   overflow: hidden;
   color: var(--text);
   font-family: "Russo One", sans-serif;
-  font-size: 18px;
+  font-size: 15px;
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1418,7 +1649,7 @@ label {
 .versus-core b {
   color: var(--acid);
   font-family: "Russo One", sans-serif;
-  font-size: 34px;
+  font-size: 28px;
   line-height: 0.9;
 }
 
@@ -2837,6 +3068,9 @@ label {
 .battlefield-frame {
   position: relative;
   overflow: hidden;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
   border: 1px solid rgba(142, 209, 220, 0.28);
   border-radius: 8px;
   background: #071018;
@@ -2909,12 +3143,6 @@ label {
   background: #27363a;
 }
 
-.map-legend .lane i {
-  height: 0;
-  border-top: 2px dashed rgba(217, 255, 71, 0.72);
-  background: transparent;
-}
-
 .map-legend .shot i {
   height: 0;
   border-top: 3px solid var(--cyan);
@@ -2968,68 +3196,19 @@ label {
   stroke-width: 2.8;
 }
 
-.route-guide-layer,
 .flat-map-obstacle-layer {
   pointer-events: none;
 }
 
-.route-guide {
-  fill: none;
-  opacity: 0.42;
-  stroke: rgba(217, 255, 71, 0.45);
-  stroke-dasharray: 9 12;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.route-guide.route-contour {
-  fill: rgba(217, 255, 71, 0.018);
-  stroke: rgba(217, 255, 71, 0.24);
-  stroke-dasharray: 12 14;
-}
-
-.route-guide.gate-slit {
-  stroke: rgba(88, 212, 255, 0.5);
-  stroke-dasharray: 4 9;
-  stroke-width: 2;
-}
-
-.route-guide.thread-slot {
-  stroke: rgba(77, 240, 160, 0.48);
-  stroke-dasharray: 3 10;
-  stroke-width: 2;
-}
-
 .map-obstacle {
-  fill: rgba(43, 56, 60, 0.96);
-  stroke: rgba(214, 222, 220, 0.32);
-  stroke-width: 1.2;
+  fill: #2f3a3d;
+  stroke: rgba(226, 235, 232, 0.38);
+  stroke-width: 1.4;
   filter: none;
 }
 
-.map-obstacle.maze-room {
-  fill: rgba(46, 67, 67, 0.84);
-  stroke: rgba(88, 212, 255, 0.28);
-}
-
-.map-obstacle.maze-corridor-wall {
-  fill: rgba(32, 44, 48, 0.98);
-  stroke: rgba(244, 247, 251, 0.2);
-}
-
-.map-obstacle.ceiling-lock {
-  fill: rgba(74, 51, 58, 0.95);
-  stroke: rgba(255, 94, 104, 0.36);
-}
-
-.map-obstacle.maze-band {
-  fill: rgba(54, 63, 55, 0.92);
-  stroke: rgba(217, 255, 71, 0.22);
-}
-
-.map-obstacle.layer-5 {
-  stroke-width: 2;
+.map-obstacle.solid-blocker {
+  opacity: 0.98;
 }
 
 .shot-path {
@@ -3811,6 +3990,14 @@ code {
     font-size: 54px;
   }
 
+  .play-command-row {
+    grid-template-columns: 1fr;
+  }
+
+  .play-command-row .launch-bay {
+    grid-template-columns: 1fr;
+  }
+
   .game-grid {
     grid-template-areas:
       "battle battle"
@@ -3835,7 +4022,9 @@ code {
 
   .hero-band,
   .game-grid,
-  .lobby-panel {
+  .lobby-panel,
+  .play-command-row,
+  .play-command-row .launch-bay {
     grid-template-columns: 1fr;
   }
 
@@ -3930,11 +4119,25 @@ code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .primary-battle {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-battle .battle-header,
+  .primary-battle .spectator-hud {
+    grid-column: 1;
+  }
+
   .spectator-hud {
     grid-template-columns: 1fr;
   }
 
   .battle-playback {
+    grid-template-columns: 1fr;
+  }
+
+  .battle-hand-bench .card-grid,
+  .tactical-drawer-grid {
     grid-template-columns: 1fr;
   }
 

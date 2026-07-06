@@ -3,6 +3,7 @@
 function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const isDeepSeek = provider.id === "deepseek";
   const isOpenRouter = provider.id === "openrouter";
+  const usesApiKeyHeader = provider.requestAuth === "api-key" || provider.modelList?.auth === "api-key";
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
@@ -39,7 +40,7 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
     url: `${String(payload.baseUrl || provider.defaultBaseUrl).replace(/\/$/, "")}/chat/completions`,
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`
+      ...(usesApiKeyHeader ? { "api-key": apiKey } : { authorization: `Bearer ${apiKey}` })
     },
     body
   };

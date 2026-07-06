@@ -261,8 +261,12 @@ function testLaunchHudUsesCompactLocalizedLockedState() {
   assert.ok(launchBay.includes("locale={locale}"), "launch bay should pass locale into locked ranked state");
   assert.ok(lockedPlayCard.includes("locale"), "locked ranked state should accept locale");
   assert.ok(lockedPlayCard.includes("tx(locale"), "locked ranked state should not hardcode English inside the Chinese UI");
-  assert.ok(css.includes("grid-template-columns: minmax(220px, 0.34fr) minmax(520px, 1fr) minmax(260px, 0.38fr)"), "main battle screen should use compact setup/battle/thinking columns");
+  assert.ok(css.includes("grid-template-columns: minmax(240px, 0.32fr) minmax(620px, 1fr) minmax(240px, 0.32fr)"), "main battle screen should use compact balanced setup/battle/thinking columns");
+  assert.ok(css.includes("align-items: start"), "main battle columns should not stretch the battlefield to match a tall setup rail");
+  assert.ok(css.includes(".setup-field-grid"), "left-side setup controls should be compressed into a compact grid");
+  assert.ok(css.includes("grid-template-columns: repeat(2, minmax(0, 1fr))"), "setup controls should use two compact columns where possible");
   assert.ok(css.includes(".battle-setup-panel input,"), "left-side setup inputs should be compact inside the game screen");
+  assert.ok(css.includes("max-height: 58px"), "standing order prompt should be height-capped to keep the first screen balanced");
 }
 
 function testGraphwarFirstScreenCentersModelPromptFunctionDuel() {
@@ -463,11 +467,16 @@ function testCombatCinematicLayerMakesAiVsAiFeelLikeGame() {
 }
 
 function testUiExplainsRetainedHandsAndSwapAction() {
+  const handRack = componentSource("HandRack");
   assert.ok(main.includes("Retained Hand"), "hand panel should use retained-hand game language");
   assert.ok(main.includes("Swap Hand x3"), "hand panel should explain the active model can swap hand up to three times");
   assert.ok(main.includes("swap_hand"), "model feed should surface the provider action vocabulary");
   assert.ok(main.includes("action?.hand"), "agent thinking should be able to display the hand received after swap_hand");
   assert.ok(main.includes("swapHandRead"), "UI should label model-selected swap hands clearly");
+  assert.ok(handRack.includes("functionCardName(card)"), "hand cards should render the direct function name as the primary card name");
+  assert.ok(handRack.includes("card-function-name"), "function card names should have a dedicated readable style hook");
+  assert.ok(!handRack.includes("f:{card.family}"), "hand cards should not present card family as the primary function label");
+  assert.ok(css.includes(".card-function-name"), "function card names should be styled as the main hand-card text");
   assert.ok(!main.includes("choose rerolls and shots"), "model feed should not use old reroll wording");
 }
 

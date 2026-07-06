@@ -31,15 +31,16 @@ const DEFAULT_ROSTER = [
 
 const MODEL_PROVIDERS = [
   { id: "openrouter", label: "OpenRouter", model: DEFAULT_OPENROUTER_MODEL, models: [{ id: DEFAULT_OPENROUTER_MODEL, label: "Free Models Router", free: true }] },
-  { id: "openai", label: "OpenAI", model: "gpt-4.1-mini" },
-  { id: "anthropic", label: "Anthropic", model: "claude-3-5-haiku-latest" },
+  { id: "openai", label: "OpenAI", model: "gpt-5.5" },
+  { id: "anthropic", label: "Anthropic", model: "claude-sonnet-5" },
   { id: "gemini", label: "Gemini", model: "gemini-3.5-flash" },
-  { id: "xai", label: "Grok / xAI", model: "grok-4.3" },
-  { id: "moonshot", label: "Kimi / Moonshot", model: "kimi-k2.7" },
-  { id: "zhipu", label: "Zhipu", model: "glm-4-flash" },
+  { id: "xai", label: "Grok / xAI", model: "grok-build-0.1" },
+  { id: "moonshot", label: "Kimi / Moonshot", model: "kimi-k2.6" },
+  { id: "zhipu", label: "Z.ai / Zhipu", model: "glm-5.2" },
   { id: "deepseek", label: "DeepSeek", model: "deepseek-v4-flash" },
   { id: "stepfun", label: "StepFun", model: "step-3.7-flash" },
-  { id: "minimax", label: "MiniMax", model: "MiniMax-M1" }
+  { id: "minimax", label: "MiniMax", model: "MiniMax-M3" },
+  { id: "mimo", label: "MiMo / Xiaomi", model: "mimo-v2.5-pro" }
 ];
 
 const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
@@ -1331,16 +1332,18 @@ function BattleSetupPanel({
         <strong>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : tx(locale, "rankedLocked")}</strong>
         <small>{status}</small>
       </div>
-      <label>{tx(locale, "provider")}<select value={login.provider} onChange={(event) => selectProvider(event.target.value)}>
-        {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
-      </select></label>
-      <label>{locale === "zh" ? "搜索模型" : "Search models"}<input data-testid="model-search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={locale === "zh" ? "OpenAI / Claude / Gemini / Kimi..." : "OpenAI / Claude / Gemini / Kimi..."} /></label>
-      <label>{tx(locale, "model")}<select data-testid="inline-model-select" value={login.model} onFocus={refreshModels} onChange={(event) => setLogin({ ...login, model: event.target.value })}>
-        {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id} · {model.free ? "free" : "paid"}</option>)}
-      </select></label>
-      <label>{tx(locale, "apiKey")}<input type="password" value={login.apiKey} onChange={(event) => setLogin({ ...login, apiKey: event.target.value })} onBlur={refreshModels} placeholder="BYOK" /></label>
+      <div className="setup-field-grid">
+        <label>{tx(locale, "provider")}<select value={login.provider} onChange={(event) => selectProvider(event.target.value)}>
+          {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
+        </select></label>
+        <label>{tx(locale, "autoRounds")}<input data-testid="auto-rounds" type="number" min="1" max="25" value={login.autoRounds} onChange={(event) => setLogin({ ...login, autoRounds: event.target.value })} /></label>
+        <label className="wide">{locale === "zh" ? "搜索模型" : "Search models"}<input data-testid="model-search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={locale === "zh" ? "OpenAI / Claude / Gemini / Kimi..." : "OpenAI / Claude / Gemini / Kimi..."} /></label>
+        <label className="wide">{tx(locale, "model")}<select data-testid="inline-model-select" value={login.model} onFocus={refreshModels} onChange={(event) => setLogin({ ...login, model: event.target.value })}>
+          {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id} · {model.free ? "free" : "paid"}</option>)}
+        </select></label>
+        <label className="wide">{tx(locale, "apiKey")}<input type="password" value={login.apiKey} onChange={(event) => setLogin({ ...login, apiKey: event.target.value })} onBlur={refreshModels} placeholder="BYOK" /></label>
+      </div>
       <label className="standing-order-field">{tx(locale, "standingOrder")}<textarea maxLength={80} value={login.standingOrder} onChange={(event) => setLogin({ ...login, standingOrder: event.target.value })} placeholder={locale === "zh" ? "例：高弧线越过障碍，优先打残血，别误伤队友" : "Example: high arc over cover, focus low HP, avoid allies"} /></label>
-      <label>{tx(locale, "autoRounds")}<input data-testid="auto-rounds" type="number" min="1" max="25" value={login.autoRounds} onChange={(event) => setLogin({ ...login, autoRounds: event.target.value })} /></label>
       <div className="setup-actions">
         {!canRank ? (
           <button type="button" onClick={onOpenAuth}>{tx(locale, "signInToPlay")}</button>
@@ -1349,7 +1352,7 @@ function BattleSetupPanel({
         )}
         <button type="button" disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
-      <p>{canRank ? tx(locale, "watchOnly") : tx(locale, "rankedLockedHelp")}</p>
+      <p className="setup-footnote">{canRank ? tx(locale, "watchOnly") : tx(locale, "rankedLockedHelp")}</p>
     </aside>
   );
 }
@@ -2755,6 +2758,10 @@ function BattleReplayRail({ state }) {
   );
 }
 
+function functionCardName(card) {
+  return card?.label || card?.id || "Function";
+}
+
 function HandRack({ hand, activeTeam, activeUnitId, className = "", locale }) {
   return (
     <div className={`hand-rack ${className}`.trim()}>
@@ -2763,8 +2770,8 @@ function HandRack({ hand, activeTeam, activeUnitId, className = "", locale }) {
       <div className="card-grid">
         {hand.map((card) => (
           <article className={`battle-card ${card.rarity}`} key={card.instanceId}>
-            <span>f:{card.family}</span>
-            <h3>{card.label}<b>{card.cost}E</b></h3>
+            <span>{card.cost}E · {card.family}</span>
+            <h3><strong className="card-function-name">{functionCardName(card)}</strong><b>{card.cost}E</b></h3>
             <p>{card.tags.join(" / ")}</p>
             <div>{card.tags.map((tag) => <small key={tag}>{tag}</small>)}</div>
           </article>

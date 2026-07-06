@@ -128,7 +128,7 @@ async function testLoginMatchmakingAndRankLoop() {
       displayName: "Clock",
       providers: {
         deepseek: { apiKey: "sk-user", model: "deepseek-v4-flash" },
-        openai: { apiKey: "", model: "gpt-4.1-mini" }
+        openai: { apiKey: "", model: "gpt-5.5" }
       }
     })
   });
@@ -305,14 +305,14 @@ async function testRegisterLoginAndProviderUpdatePersistAcrossRestart() {
       handle: "CLOCK_AI",
       password: "Swordfish!9",
       providers: {
-        openai: { apiKey: "sk-auth-login", model: "gpt-4.1-mini" }
+        openai: { apiKey: "sk-auth-login", model: "gpt-5.5" }
       }
     })
   });
   assert.strictEqual(loggedIn.status, 200);
   assert.strictEqual(loggedIn.json.player.id, registered.json.player.id);
   assert.strictEqual(loggedIn.json.player.handle, "clock_ai");
-  assert.strictEqual(loggedIn.json.player.providers.openai.model, "gpt-4.1-mini");
+  assert.strictEqual(loggedIn.json.player.providers.openai.model, "gpt-5.5");
   assert.strictEqual(loggedIn.json.player.providers.openai.configured, true);
   assert.ok(!loggedIn.text.includes("sk-auth-login"), "login response should not echo API keys");
   assert.ok(!loggedIn.text.includes("Swordfish!9"), "login response should not echo password");
@@ -351,7 +351,7 @@ async function testSessionTokenProtectsRankedAndProviderRoutes() {
   const noProviderSession = await request(createServer({ env: {} }), "/api/profile/providers", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ providers: { openai: { apiKey: "sk-no-session", model: "gpt-4.1-mini" } } })
+    body: JSON.stringify({ providers: { openai: { apiKey: "sk-no-session", model: "gpt-5.5" } } })
   });
   assert.strictEqual(noProviderSession.status, 401);
   assert.strictEqual(noProviderSession.json.error, "missing_session");
@@ -359,7 +359,7 @@ async function testSessionTokenProtectsRankedAndProviderRoutes() {
   const badProviderSession = await request(createServer({ env: {} }), "/api/profile/providers", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer bad-token" },
-    body: JSON.stringify({ providers: { openai: { apiKey: "sk-bad-session", model: "gpt-4.1-mini" } } })
+    body: JSON.stringify({ providers: { openai: { apiKey: "sk-bad-session", model: "gpt-5.5" } } })
   });
   assert.strictEqual(badProviderSession.status, 401);
   assert.strictEqual(badProviderSession.json.error, "invalid_session");
@@ -369,13 +369,13 @@ async function testSessionTokenProtectsRankedAndProviderRoutes() {
     headers: authHeaders(registered, { "content-type": "application/json" }),
     body: JSON.stringify({
       providers: {
-        anthropic: { apiKey: "sk-provider-session", model: "claude-3-5-haiku-latest" }
+        anthropic: { apiKey: "sk-provider-session", model: "claude-sonnet-5" }
       }
     })
   });
   assert.strictEqual(updated.status, 200);
   assert.strictEqual(updated.json.player.providers.anthropic.configured, true);
-  assert.strictEqual(updated.json.player.providers.anthropic.model, "claude-3-5-haiku-latest");
+  assert.strictEqual(updated.json.player.providers.anthropic.model, "claude-sonnet-5");
   assert.ok(!updated.text.includes("sk-provider-session"), "provider update response should not leak API keys");
 
   const noJoinSession = await request(createServer({ env: {} }), "/api/match/join", {

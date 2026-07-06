@@ -22,6 +22,21 @@ function testProviderCatalogRedactsKeys() {
   assert.strictEqual(getProvider("unknown"), null);
 }
 
+function testFallbackCatalogUsesCurrentMainstreamModels() {
+  assert.strictEqual(getProvider("openai").defaultModel, "gpt-5.5");
+  assert.strictEqual(getProvider("anthropic").defaultModel, "claude-sonnet-5");
+  assert.strictEqual(getProvider("gemini").defaultModel, "gemini-3.5-flash");
+  assert.strictEqual(getProvider("xai").defaultModel, "grok-build-0.1");
+  assert.strictEqual(getProvider("moonshot").defaultModel, "kimi-k2.6");
+  assert.strictEqual(getProvider("zhipu").defaultBaseUrl, "https://api.z.ai/api/paas/v4");
+  assert.strictEqual(getProvider("zhipu").defaultModel, "glm-5.2");
+  assert.strictEqual(getProvider("deepseek").defaultModel, "deepseek-v4-flash");
+  assert.strictEqual(getProvider("stepfun").defaultModel, "step-3.7-flash");
+  assert.strictEqual(getProvider("minimax").defaultModel, "MiniMax-M3");
+  assert.strictEqual(getProvider("mimo").defaultBaseUrl, "https://api.xiaomimimo.com/v1");
+  assert.strictEqual(getProvider("mimo").defaultModel, "mimo-v2.5-pro");
+}
+
 async function testProviderCatalogIncludesSelectableModels() {
   const catalog = await listProviderCatalog(
     { OPENROUTER_API_KEY: "sk-router", OPENAI_API_KEY: "sk-test" },
@@ -76,7 +91,7 @@ async function testProviderCatalogIncludesSelectableModels() {
   assert.ok(openrouter.models.some((model) => model.id === "openai/gpt-5.5" && model.free === false), "paid OpenRouter models should remain selectable");
   assert.ok(!openrouter.models.some((model) => model.id === "google/image-model"), "image-output OpenRouter models should not appear in the function-writing game");
   assert.ok(!openrouter.models.some((model) => model.id === "google/nano-banana-pro"), "named image-generation OpenRouter models should not appear in the function-writing game");
-  assert.ok(openai.models.some((model) => model.id === "gpt-4.1-mini"), "static providers should expose their configured model as an option");
+  assert.ok(openai.models.some((model) => model.id === "gpt-5.5"), "static providers should expose their configured model as an option");
   assert.ok(!JSON.stringify(catalog).includes("sk-router"), "catalog should still redact keys");
 }
 
@@ -115,8 +130,8 @@ async function testOpenRouterCatalogIsCuratedForGameModelSelection() {
               created: 2001
             },
             {
-              id: "anthropic/claude-sonnet-latest",
-              name: "Anthropic: Claude Sonnet Latest",
+              id: "anthropic/claude-sonnet-5",
+              name: "Anthropic: Claude Sonnet 5",
               pricing: { prompt: "0.000003", completion: "0.000015" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 200000,
@@ -139,24 +154,24 @@ async function testOpenRouterCatalogIsCuratedForGameModelSelection() {
               created: 2011
             },
             {
-              id: "moonshotai/kimi-k2.7",
-              name: "Moonshot AI: Kimi K2.7",
+              id: "moonshotai/kimi-k2.7-code",
+              name: "Moonshot AI: Kimi K2.7 Code",
               pricing: { prompt: "0.000001", completion: "0.000004" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 256000,
               created: 2_000_000_000
             },
             {
-              id: "z-ai/glm-4.7",
-              name: "Z.ai: GLM 4.7",
+              id: "z-ai/glm-5.2",
+              name: "Z.ai: GLM 5.2",
               pricing: { prompt: "0.000001", completion: "0.000003" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 128000,
               created: 2013
             },
             {
-              id: "deepseek/deepseek-v4.1",
-              name: "DeepSeek: DeepSeek V4.1",
+              id: "deepseek/deepseek-v4-pro",
+              name: "DeepSeek: DeepSeek V4 Pro",
               pricing: { prompt: "0.000001", completion: "0.000003" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 128000,
@@ -171,24 +186,24 @@ async function testOpenRouterCatalogIsCuratedForGameModelSelection() {
               created: 2015
             },
             {
-              id: "minimax/minimax-m2",
-              name: "MiniMax: MiniMax M2",
+              id: "minimax/minimax-m3",
+              name: "MiniMax: MiniMax M3",
               pricing: { prompt: "0.000001", completion: "0.000003" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 128000,
               created: 2016
             },
             {
-              id: "mimo/mimo-vl-7b",
-              name: "Mimo: Mimo VL 7B",
+              id: "xiaomi/mimo-v2.5-pro",
+              name: "Xiaomi: MiMo V2.5 Pro",
               pricing: { prompt: "0.000001", completion: "0.000003" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 128000,
               created: 2017
             },
             {
-              id: "openai/gpt-4.1-mini",
-              name: "OpenAI: GPT-4.1 Mini",
+              id: "openai/gpt-5.5",
+              name: "OpenAI: GPT-5.5",
               pricing: { prompt: "0.0000004", completion: "0.0000016" },
               architecture: { input_modalities: ["text"], output_modalities: ["text"] },
               context_length: 128000,
@@ -222,16 +237,16 @@ async function testOpenRouterCatalogIsCuratedForGameModelSelection() {
   assert.strictEqual(ids[0], "openrouter/auto", "OpenRouter auto router should be the first recommended option");
   assert.strictEqual(ids[1], "openrouter/free", "OpenRouter free router should remain easy to choose");
   for (const id of [
-    "anthropic/claude-sonnet-latest",
+    "anthropic/claude-sonnet-5",
     "google/gemini-3.5-flash",
     "x-ai/grok-4.3",
-    "moonshotai/kimi-k2.7",
-    "z-ai/glm-4.7",
-    "deepseek/deepseek-v4.1",
+    "moonshotai/kimi-k2.7-code",
+    "z-ai/glm-5.2",
+    "deepseek/deepseek-v4-pro",
     "stepfun/step-3.7-flash",
-    "minimax/minimax-m2",
-    "mimo/mimo-vl-7b",
-    "openai/gpt-4.1-mini"
+    "minimax/minimax-m3",
+    "xiaomi/mimo-v2.5-pro",
+    "openai/gpt-5.5"
   ]) {
     assert.ok(ids.includes(id), `${id} should be kept as an allowed mainstream OpenRouter family`);
   }
@@ -249,6 +264,7 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
       XAI_API_KEY: "sk-xai",
       MOONSHOT_API_KEY: "sk-moonshot",
       MINIMAX_API_KEY: "sk-minimax",
+      MIMO_API_KEY: "sk-mimo",
       STEPFUN_API_KEY: "sk-stepfun",
       ZHIPU_API_KEY: "sk-zhipu",
       ANTHROPIC_API_KEY: "sk-anthropic",
@@ -299,7 +315,9 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
                   ? "stepfun-live"
           : host.includes("minimax")
             ? "minimax-live"
-            : host.includes("bigmodel")
+            : host.includes("xiaomimimo")
+              ? "mimo-live"
+            : host.includes("api.z.ai")
               ? "glm-live"
               : "gpt-live";
         return {
@@ -317,6 +335,7 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
     xai: "grok-live",
     moonshot: "kimi-live",
     minimax: "minimax-live",
+    mimo: "mimo-live",
     stepfun: "stepfun-live",
     zhipu: "glm-live",
     anthropic: "claude-haiku-live",
@@ -332,10 +351,12 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
   assert.ok(calls.some((call) => call.url === "https://api.x.ai/v1/models"), "xAI should use its OpenAI-compatible models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.moonshot.ai/v1/models"), "Kimi should use its OpenAI-compatible models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.minimax.io/v1/models"), "MiniMax should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.xiaomimimo.com/v1/models"), "MiMo should use its live models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.stepfun.ai/v1/models"), "StepFun should use its OpenAI-compatible models endpoint");
-  assert.ok(calls.some((call) => call.url === "https://open.bigmodel.cn/api/paas/v4/models"), "Zhipu should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.z.ai/api/paas/v4/models"), "Z.ai should use its live models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.anthropic.com/v1/models"), "Anthropic should use its live models endpoint");
   assert.ok(calls.some((call) => call.headers.authorization === "Bearer sk-openai"), "OpenAI model list should use bearer auth");
+  assert.ok(calls.some((call) => call.headers["api-key"] === "sk-mimo"), "MiMo model list should use api-key auth");
   assert.ok(calls.some((call) => call.headers["x-api-key"] === "sk-anthropic"), "Anthropic model list should use x-api-key auth");
   assert.ok(!JSON.stringify(catalog).includes("sk-openai"), "dynamic catalog should redact OpenAI key");
   assert.ok(!JSON.stringify(catalog).includes("sk-anthropic"), "dynamic catalog should redact Anthropic key");
@@ -420,6 +441,24 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
   assert.ok(userPayload.legalActions.some((action) => action.action === "shot"));
 }
 
+function testMiMoUsesApiKeyHeaderForOpenAICompatibleChat() {
+  const mimo = getProvider("mimo");
+  const request = buildOpenAICompatibleRequest(
+    mimo,
+    {
+      command: "write a clean function shot",
+      candidates: [{ candidateId: "A-0-0-B2-arc", targetId: "B2" }],
+      stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } }
+    },
+    "sk-mimo"
+  );
+
+  assert.strictEqual(request.url, "https://api.xiaomimimo.com/v1/chat/completions");
+  assert.strictEqual(request.headers["api-key"], "sk-mimo");
+  assert.strictEqual(request.headers.authorization, undefined);
+  assert.strictEqual(request.body.model, "mimo-v2.5-pro");
+}
+
 function testAnthropicUsesSameBareRulesPayload() {
   const anthropic = getProvider("anthropic");
   const state = Sim.createInitialState({ seed: 7351 });
@@ -497,12 +536,14 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
 
 (async () => {
   testProviderCatalogRedactsKeys();
+  testFallbackCatalogUsesCurrentMainstreamModels();
   await testProviderCatalogIncludesSelectableModels();
   await testOpenRouterCatalogIsCuratedForGameModelSelection();
   await testProviderCatalogFetchesDynamicModelsForConfiguredProviders();
   testNormalizeDecision();
   testDeepSeekUsesCurrentJsonModeDefaults();
   testOpenRouterUsesFreeJsonModeDefaults();
+  testMiMoUsesApiKeyHeaderForOpenAICompatibleChat();
   testAnthropicUsesSameBareRulesPayload();
   testRealDeepSeekSmokeScriptIsDiscoverable();
   await testProviderRequestTimeoutUsesEnvLimit();

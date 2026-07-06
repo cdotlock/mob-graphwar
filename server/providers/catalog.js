@@ -23,7 +23,7 @@ const PROVIDERS = [
     baseUrlEnv: "OPENAI_BASE_URL",
     modelEnv: "OPENAI_MODEL",
     defaultBaseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-4.1-mini",
+    defaultModel: "gpt-5.5",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
@@ -34,7 +34,7 @@ const PROVIDERS = [
     baseUrlEnv: "ANTHROPIC_BASE_URL",
     modelEnv: "ANTHROPIC_MODEL",
     defaultBaseUrl: "https://api.anthropic.com/v1",
-    defaultModel: "claude-3-5-haiku-latest",
+    defaultModel: "claude-sonnet-5",
     modelList: { path: "/models", auth: "anthropic", parser: "anthropic" }
   },
   {
@@ -56,7 +56,7 @@ const PROVIDERS = [
     baseUrlEnv: "XAI_BASE_URL",
     modelEnv: "XAI_MODEL",
     defaultBaseUrl: "https://api.x.ai/v1",
-    defaultModel: "grok-4.3",
+    defaultModel: "grok-build-0.1",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
@@ -67,19 +67,19 @@ const PROVIDERS = [
     baseUrlEnv: "MOONSHOT_BASE_URL",
     modelEnv: "MOONSHOT_MODEL",
     defaultBaseUrl: "https://api.moonshot.ai/v1",
-    defaultModel: "kimi-k2.7",
+    defaultModel: "kimi-k2.6",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
     id: "zhipu",
-    label: "Zhipu",
+    label: "Z.ai / Zhipu",
     adapter: "openai-compatible",
     keyEnv: "ZHIPU_API_KEY",
     alternateKeyEnv: "ZAI_API_KEY",
     baseUrlEnv: "ZHIPU_BASE_URL",
     modelEnv: "ZHIPU_MODEL",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-4-flash",
+    defaultBaseUrl: "https://api.z.ai/api/paas/v4",
+    defaultModel: "glm-5.2",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
@@ -113,8 +113,19 @@ const PROVIDERS = [
     baseUrlEnv: "MINIMAX_BASE_URL",
     modelEnv: "MINIMAX_MODEL",
     defaultBaseUrl: "https://api.minimax.io/v1",
-    defaultModel: "MiniMax-M1",
+    defaultModel: "MiniMax-M3",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
+  },
+  {
+    id: "mimo",
+    label: "MiMo / Xiaomi",
+    adapter: "openai-compatible",
+    keyEnv: "MIMO_API_KEY",
+    baseUrlEnv: "MIMO_BASE_URL",
+    modelEnv: "MIMO_MODEL",
+    defaultBaseUrl: "https://api.xiaomimimo.com/v1",
+    defaultModel: "mimo-v2.5-pro",
+    modelList: { path: "/models", auth: "api-key", parser: "openai-compatible" }
   },
 ];
 
@@ -122,13 +133,21 @@ const PROVIDER_MODEL_FALLBACKS = {
   openrouter: [
     { id: "openrouter/auto", label: "Auto Router", family: "auto", free: false, contextLength: 200000 },
     { id: "openrouter/free", label: "Free Models Router", free: true, contextLength: 200000 },
-    { id: "openai/gpt-oss-120b:free", label: "OpenAI: gpt-oss-120b (free)", family: "openai", free: true, contextLength: 131072 },
+    { id: "anthropic/claude-sonnet-5", label: "Anthropic: Claude Sonnet 5", family: "anthropic", free: false, contextLength: 200000 },
+    { id: "z-ai/glm-5.2", label: "Z.ai: GLM 5.2", family: "zhipu", free: false, contextLength: 1000000 },
+    { id: "moonshotai/kimi-k2.7-code", label: "MoonshotAI: Kimi K2.7 Code", family: "kimi", free: false, contextLength: 256000 },
+    { id: "minimax/minimax-m3", label: "MiniMax: MiniMax M3", family: "minimax", free: false, contextLength: 1000000 },
+    { id: "x-ai/grok-build-0.1", label: "xAI: Grok Build 0.1", family: "grok", free: false, contextLength: null },
+    { id: "openai/gpt-5.5", label: "OpenAI: GPT-5.5", family: "openai", free: false, contextLength: 1000000 },
+    { id: "xiaomi/mimo-v2.5-pro", label: "Xiaomi: MiMo V2.5 Pro", family: "mimo", free: false, contextLength: null },
     { id: "google/gemini-3.5-flash", label: "Google: Gemini 3.5 Flash", family: "gemini", free: false, contextLength: 1000000 },
-    { id: "anthropic/claude-3-5-haiku", label: "Anthropic: Claude Haiku", family: "anthropic", free: false, contextLength: 200000 }
+    { id: "deepseek/deepseek-v4-flash", label: "DeepSeek: DeepSeek V4 Flash", family: "deepseek", free: false, contextLength: 1000000 }
   ],
   openai: [
-    { id: "gpt-4.1-mini", label: "gpt-4.1-mini", free: false, contextLength: null },
-    { id: "gpt-4.1", label: "gpt-4.1", free: false, contextLength: null }
+    { id: "gpt-5.5", label: "gpt-5.5", free: false, contextLength: null },
+    { id: "gpt-5.5-pro", label: "gpt-5.5-pro", free: false, contextLength: null },
+    { id: "gpt-5.4-mini", label: "gpt-5.4-mini", free: false, contextLength: null },
+    { id: "gpt-5.4-nano", label: "gpt-5.4-nano", free: false, contextLength: null }
   ],
   deepseek: [
     { id: "deepseek-v4-flash", label: "deepseek-v4-flash", free: false, contextLength: null },
@@ -139,28 +158,36 @@ const PROVIDER_MODEL_FALLBACKS = {
     { id: "gemini-3.5-pro", label: "gemini-3.5-pro", free: false, contextLength: null }
   ],
   xai: [
+    { id: "grok-build-0.1", label: "grok-build-0.1", free: false, contextLength: null },
     { id: "grok-4.3", label: "grok-4.3", free: false, contextLength: null },
-    { id: "grok-4.3-fast", label: "grok-4.3-fast", free: false, contextLength: null }
+    { id: "grok-4.20", label: "grok-4.20", free: false, contextLength: null }
   ],
   moonshot: [
-    { id: "kimi-k2.7", label: "kimi-k2.7", free: false, contextLength: null },
-    { id: "kimi-k2.7-code", label: "kimi-k2.7-code", free: false, contextLength: null }
+    { id: "kimi-k2.6", label: "kimi-k2.6", free: false, contextLength: null },
+    { id: "kimi-k2.5", label: "kimi-k2.5", free: false, contextLength: null }
   ],
   minimax: [
-    { id: "MiniMax-M1", label: "MiniMax-M1", free: false, contextLength: null },
-    { id: "MiniMax-M2", label: "MiniMax-M2", free: false, contextLength: null }
+    { id: "MiniMax-M3", label: "MiniMax-M3", free: false, contextLength: null },
+    { id: "MiniMax-M2.7", label: "MiniMax-M2.7", free: false, contextLength: null }
+  ],
+  mimo: [
+    { id: "mimo-v2.5-pro", label: "mimo-v2.5-pro", free: false, contextLength: null },
+    { id: "mimo-v2.5-pro-ultraspeed", label: "mimo-v2.5-pro-ultraspeed", free: false, contextLength: null },
+    { id: "mimo-v2.5", label: "mimo-v2.5", free: false, contextLength: null }
   ],
   stepfun: [
     { id: "step-3.7-flash", label: "step-3.7-flash", free: false, contextLength: null },
     { id: "step-3.7", label: "step-3.7", free: false, contextLength: null }
   ],
   zhipu: [
-    { id: "glm-4-flash", label: "glm-4-flash", free: false, contextLength: null },
-    { id: "glm-4.5", label: "glm-4.5", free: false, contextLength: null }
+    { id: "glm-5.2", label: "glm-5.2", free: false, contextLength: null },
+    { id: "glm-5.1", label: "glm-5.1", free: false, contextLength: null },
+    { id: "glm-5-turbo", label: "glm-5-turbo", free: false, contextLength: null }
   ],
   anthropic: [
-    { id: "claude-3-5-haiku-latest", label: "claude-3-5-haiku-latest", free: false, contextLength: null },
-    { id: "claude-3-5-sonnet-latest", label: "claude-3-5-sonnet-latest", free: false, contextLength: null }
+    { id: "claude-sonnet-5", label: "claude-sonnet-5", free: false, contextLength: null },
+    { id: "claude-opus-4-8", label: "claude-opus-4-8", free: false, contextLength: null },
+    { id: "claude-haiku-4-5-20251001", label: "claude-haiku-4-5-20251001", free: false, contextLength: null }
   ]
 };
 const providerModelCache = new Map();
@@ -248,7 +275,7 @@ function openRouterModelRank(model) {
   const identity = `${model.id || ""} ${model.label || ""}`.toLowerCase();
   const familyRank = OPENROUTER_FAMILY_ORDER.indexOf(family);
   const created = Number(model.created) || 0;
-  const latestBoost = /latest|preview|3\.5|4\.3|k2\.7|3\.7|v4|m2|glm-4\.|gpt-4\.1|gpt-5|sonnet|opus|pro/.test(identity)
+  const latestBoost = /latest|preview|3\.5|4\.3|4\.20|build|k2\.[67]|3\.7|v4|m3|glm-5|gpt-5|sonnet|opus|pro/.test(identity)
     ? 50_000
     : 0;
   const freePenalty = model.free ? 5_000 : 0;
@@ -358,6 +385,7 @@ function modelListHeaders(provider, apiKey) {
       "anthropic-version": "2023-06-01"
     };
   }
+  if (auth === "api-key") return apiKey ? { "api-key": apiKey } : {};
   if (!apiKey && auth === "optional-bearer") return {};
   return apiKey ? { authorization: `Bearer ${apiKey}` } : {};
 }

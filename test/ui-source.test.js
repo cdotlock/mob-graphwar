@@ -169,6 +169,8 @@ function testSimulationApiIsVisibleAsProductSurface() {
   assert.ok(main.includes("exported league endpoint"), "simulation API panel should frame automated model evaluation as a product surface");
   assert.ok(css.includes(".simulation-api-panel"), "CSS should style the simulation API panel");
   assert.ok(css.includes(".api-contract-grid"), "CSS should style simulation API contract facts");
+  assert.ok(css.includes(".api-docs-view .map-topology-scanner"), "API docs should let the final topology panel span the full documentation grid");
+  assert.ok(css.includes("grid-column: 1 / -1"), "full-width API docs panels should span all columns instead of leaving a blank right column");
 }
 
 function testGameSurfacesPersistentProfileAndLeaderboard() {

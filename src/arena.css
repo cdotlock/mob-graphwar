@@ -4117,6 +4117,10 @@ label {
     rgba(3, 7, 14, 0.74);
 }
 
+.api-docs-view .map-topology-scanner {
+  grid-column: 1 / -1;
+}
+
 .api-contract-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

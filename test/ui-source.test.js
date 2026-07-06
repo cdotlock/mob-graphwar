@@ -269,6 +269,23 @@ function testBattleBroadcastPanelMakesAiVsAiReadable() {
   assert.ok(css.includes(".broadcast-result"), "CSS should style the result callout");
 }
 
+function testCombatCinematicLayerMakesAiVsAiFeelLikeGame() {
+  assert.ok(main.includes("CombatCinematicLayer"), "battle stage should include a named cinematic combat layer");
+  assert.ok(main.includes('data-testid="combat-cinematic-layer"'), "cinematic combat layer should be selectable for browser verification");
+  assert.ok(main.includes("AI STRIKE LANE"), "cinematic layer should frame the model duel as a strike lane");
+  assert.ok(main.includes("MODEL LOCK"), "cinematic layer should show the active or latest model lock");
+  assert.ok(main.includes("TARGET VECTOR"), "cinematic layer should show the target vector");
+  assert.ok(main.includes("FUNCTION COMBO"), "cinematic layer should show the function-card combo as a game attack");
+  assert.ok(main.includes("teamHealth(state, \"A\")"), "cinematic layer should derive Team A state from real health");
+  assert.ok(main.includes("teamHealth(state, \"B\")"), "cinematic layer should derive Team B state from real health");
+  assert.ok(main.includes("latestPath"), "cinematic layer should read real trajectory state");
+  assert.ok(main.includes("playback?.action"), "cinematic layer should follow replay frames during auto-duel playback");
+  assert.ok(css.includes(".combat-cinematic-layer"), "CSS should style the cinematic layer");
+  assert.ok(css.includes(".cinematic-team-card"), "CSS should style competing AI team cards");
+  assert.ok(css.includes(".cinematic-core"), "CSS should style the central versus/lock-on core");
+  assert.ok(css.includes(".strike-vector-card"), "CSS should style attack telemetry as game chrome");
+}
+
 function testUiExplainsRetainedHandsAndSwapAction() {
   assert.ok(main.includes("Retained Hand"), "hand panel should use retained-hand game language");
   assert.ok(main.includes("Swap Hand x3"), "hand panel should explain the active model can swap hand up to three times");
@@ -349,6 +366,7 @@ testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
 testLiveModelTelemetryMakesAiDuelVisible();
 testBattleBroadcastPanelMakesAiVsAiReadable();
+testCombatCinematicLayerMakesAiVsAiFeelLikeGame();
 testUiExplainsRetainedHandsAndSwapAction();
 testUiAutoStartsRankedAutoDuel();
 testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState();

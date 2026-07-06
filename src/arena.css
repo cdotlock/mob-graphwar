@@ -1033,6 +1033,213 @@ label {
   line-height: 0.9;
 }
 
+.combat-cinematic-layer {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.72fr) minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(88, 212, 255, 0.34);
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    linear-gradient(90deg, rgba(88, 212, 255, 0.13), rgba(217, 255, 71, 0.08), rgba(255, 94, 104, 0.13)),
+    rgba(2, 6, 13, 0.88);
+  box-shadow:
+    inset 0 0 34px rgba(88, 212, 255, 0.07),
+    0 14px 34px rgba(0, 0, 0, 0.25);
+}
+
+.combat-cinematic-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(255, 255, 255, 0.09) 24px, transparent 25px),
+    repeating-linear-gradient(0deg, transparent 0 18px, rgba(217, 255, 71, 0.08) 19px, transparent 20px);
+}
+
+.combat-cinematic-layer.team-a {
+  border-color: rgba(88, 212, 255, 0.48);
+}
+
+.combat-cinematic-layer.team-b {
+  border-color: rgba(255, 94, 104, 0.48);
+}
+
+.cinematic-team-card,
+.cinematic-core,
+.strike-vector-card {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), transparent 42%),
+    rgba(3, 7, 14, 0.78);
+}
+
+.cinematic-team-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-left: 4px solid var(--line);
+}
+
+.cinematic-team-card.team-a {
+  border-left-color: var(--cyan);
+}
+
+.cinematic-team-card.team-b {
+  grid-column: 3;
+  border-left-color: var(--red);
+}
+
+.cinematic-team-card.active {
+  border-color: var(--acid);
+  box-shadow: inset 0 0 24px rgba(217, 255, 71, 0.1);
+}
+
+.cinematic-team-card div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.cinematic-team-card span,
+.cinematic-team-card small,
+.cinematic-core span,
+.cinematic-core small,
+.strike-vector-card span,
+.strike-vector-card b {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cinematic-team-card strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cinematic-hp-rail {
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.cinematic-hp-rail i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--acid), var(--cyan));
+}
+
+.cinematic-team-card.team-b .cinematic-hp-rail i {
+  background: linear-gradient(90deg, var(--gold), var(--red));
+}
+
+.cinematic-team-card > b {
+  color: var(--acid);
+  font-family: "Russo One", sans-serif;
+  font-size: 20px;
+}
+
+.cinematic-core {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  padding: 10px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(217, 255, 71, 0.2), transparent 58%),
+    rgba(3, 7, 14, 0.86);
+}
+
+.cinematic-core strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cinematic-vs-rail {
+  display: grid;
+  grid-template-columns: minmax(18px, 1fr) auto minmax(18px, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.cinematic-vs-rail i {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--acid), transparent);
+}
+
+.cinematic-vs-rail b {
+  color: var(--acid);
+  font-family: "Russo One", sans-serif;
+  font-size: 28px;
+  line-height: 0.9;
+}
+
+.strike-vector-card {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: rgba(88, 212, 255, 0.16);
+}
+
+.strike-vector-card span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  background: rgba(3, 7, 14, 0.84);
+}
+
+.strike-vector-card b {
+  color: var(--acid);
+}
+
+.strike-vector-card strong {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(2, 6, 13, 0.92);
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .arena-director-hud {
   display: grid;
   grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) minmax(120px, 0.65fr) minmax(150px, 0.8fr) minmax(190px, 1.1fr);
@@ -2811,6 +3018,25 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .combat-cinematic-layer {
+    grid-template-columns: 1fr;
+  }
+
+  .cinematic-core,
+  .cinematic-team-card.team-b,
+  .strike-vector-card {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .cinematic-core {
+    order: -1;
+  }
+
+  .strike-vector-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .arena-director-hud {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3003,6 +3229,39 @@ code {
   .battle-playback {
     grid-template-columns: 1fr;
     padding: 8px;
+  }
+
+  .combat-cinematic-layer {
+    padding: 7px;
+  }
+
+  .cinematic-team-card,
+  .cinematic-core {
+    padding: 8px;
+  }
+
+  .cinematic-team-card strong {
+    font-size: 13px;
+  }
+
+  .cinematic-team-card > b {
+    font-size: 17px;
+  }
+
+  .cinematic-core strong {
+    font-size: 12px;
+  }
+
+  .cinematic-vs-rail b {
+    font-size: 22px;
+  }
+
+  .strike-vector-card {
+    grid-template-columns: 1fr;
+  }
+
+  .strike-vector-card strong {
+    font-size: 12px;
   }
 
   .arena-director-hud {

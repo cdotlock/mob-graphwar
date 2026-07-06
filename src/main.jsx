@@ -744,6 +744,15 @@ function App() {
           />
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
+            <CombatCinematicLayer
+              state={battleState}
+              match={match}
+              activeTeam={activeTeam}
+              activeUnitId={activeUnitId}
+              latestEvent={latestEvent}
+              playback={battlePlayback}
+              lastDecision={visibleDecision}
+            />
             <ArenaDirectorHud
               state={battleState}
               match={match}
@@ -1227,6 +1236,82 @@ function VersusBanner({ state, match, activeTeam }) {
         <small>{b.health.hp}/{b.health.max} HP · {b.health.alive} online</small>
       </div>
     </div>
+  );
+}
+
+function CombatCinematicLayer({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const latestPath = state.paths[state.paths.length - 1] || null;
+  const action = playback?.action || null;
+  const teamA = teamHealth(state, "A");
+  const teamB = teamHealth(state, "B");
+  const actionCombo = typeof action?.event?.combo === "string" ? action.event.combo : action?.event?.combo?.name;
+  const actingUnitId = action?.unitId || latestEvent?.unitId || latestEvent?.shooterId || (activeUnitId === "-" ? "A1" : activeUnitId);
+  const actingSeat = roster.find((seat) => seat.unitId === actingUnitId);
+  const actingTeam = action?.team || latestEvent?.team || actingSeat?.team || activeTeam || (String(actingUnitId).startsWith("B") ? "B" : "A");
+  const targetId = latestEvent?.targetId || action?.targetId || action?.event?.targetId || (actingTeam === "A" ? "B1" : "A1");
+  const targetSeat = roster.find((seat) => seat.unitId === targetId);
+  const combo = latestEvent?.combo?.name || action?.combo?.name || actionCombo || lastDecision?.result || "Awaiting function combo";
+  const result = latestEvent?.resultLabel || action?.resultLabel || lastDecision?.publicReason || (state.winner ? battleResultLabel(state.winner) : "Models reading route pressure");
+  const pathLabel = latestPath ? `${latestPath.points.length} point trajectory` : "trajectory pending";
+  const frameLabel = playback?.active ? `frame ${playback.index}/${playback.total}` : state.winner ? "settled" : "live sim";
+  const laneTeam = String(actingTeam || activeTeam || "A").toLowerCase();
+  const complexity = state.mapMeta?.complexity || {};
+  const side = (team, health) => {
+    const seats = roster.filter((seat) => seat.team === team);
+    const focusSeat = seats.find((seat) => seat.unitId === actingUnitId || seat.unitId === targetId) || seats[0];
+    const hpPct = health.max ? Math.max(0, Math.min(100, (health.hp / health.max) * 100)) : 0;
+    return {
+      seats,
+      focusSeat,
+      hpPct,
+      health,
+      active: actingTeam === team,
+      modelLine: seats.map((seat) => seat.provider).join(" / ") || "local"
+    };
+  };
+  const sides = { A: side("A", teamA), B: side("B", teamB) };
+  return (
+    <motion.section
+      className={`combat-cinematic-layer team-${laneTeam}`}
+      data-testid="combat-cinematic-layer"
+      aria-label="AI strike lane"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+    >
+      {["A", "B"].map((team) => (
+        <article className={`cinematic-team-card team-${team.toLowerCase()} ${sides[team].active ? "active" : ""}`} key={team}>
+          <div>
+            <span>Team {team}</span>
+            <strong>{sides[team].focusSeat?.displayName || `Team ${team}`}</strong>
+          </div>
+          <small>{sides[team].modelLine}</small>
+          <div className="cinematic-hp-rail" aria-label={`Team ${team} health`}>
+            <i style={{ width: `${sides[team].hpPct}%` }} />
+          </div>
+          <b>{sides[team].health.hp}/{sides[team].health.max} HP</b>
+          <small>{sides[team].health.alive} models online</small>
+        </article>
+      ))}
+      <div className="cinematic-core">
+        <span>AI STRIKE LANE</span>
+        <strong>{actingUnitId} {actingSeat?.displayName || "model"}</strong>
+        <div className="cinematic-vs-rail" aria-hidden="true">
+          <i />
+          <b>VS</b>
+          <i />
+        </div>
+        <small>{frameLabel} / pressure {complexity.routePressure || 0}</small>
+      </div>
+      <article className="strike-vector-card">
+        <span><b>MODEL LOCK</b>{actingSeat ? `${actingUnitId} ${actingSeat.provider}${actingSeat.model ? ` / ${actingSeat.model}` : ""}` : actingUnitId}</span>
+        <span><b>TARGET VECTOR</b>{targetSeat ? `${targetId} ${targetSeat.displayName}` : targetId}</span>
+        <span><b>FUNCTION COMBO</b>{combo}</span>
+        <span><b>TRAJECTORY</b>{pathLabel}</span>
+        <strong>{result}</strong>
+      </article>
+    </motion.section>
   );
 }
 

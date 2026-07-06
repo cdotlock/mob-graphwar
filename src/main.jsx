@@ -1,24 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AnimatePresence, motion } from "framer-motion";
-import {
-  Activity,
-  Bot,
-  Cpu,
-  KeyRound,
-  ListOrdered,
-  LogIn,
-  Gauge,
-  PauseCircle,
-  PlayCircle,
-  RadioTower,
-  RefreshCw,
-  Shield,
-  SkipBack,
-  SkipForward,
-  Swords,
-  Trophy
-} from "lucide-react";
+import Activity from "lucide-react/dist/esm/icons/activity.js";
+import Bot from "lucide-react/dist/esm/icons/bot.js";
+import Cpu from "lucide-react/dist/esm/icons/cpu.js";
+import Gauge from "lucide-react/dist/esm/icons/gauge.js";
+import KeyRound from "lucide-react/dist/esm/icons/key-round.js";
+import ListOrdered from "lucide-react/dist/esm/icons/list-ordered.js";
+import LogIn from "lucide-react/dist/esm/icons/log-in.js";
+import PauseCircle from "lucide-react/dist/esm/icons/pause-circle.js";
+import PlayCircle from "lucide-react/dist/esm/icons/play-circle.js";
+import RadioTower from "lucide-react/dist/esm/icons/radio-tower.js";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
+import Shield from "lucide-react/dist/esm/icons/shield.js";
+import SkipBack from "lucide-react/dist/esm/icons/skip-back.js";
+import SkipForward from "lucide-react/dist/esm/icons/skip-forward.js";
+import Swords from "lucide-react/dist/esm/icons/swords.js";
+import Trophy from "lucide-react/dist/esm/icons/trophy.js";
 import "./arena.css";
 
 const Sim = window.GraphwarSim;
@@ -44,6 +41,22 @@ const EXHIBITION_COMMANDS = {
   A: "safe high arc target weakest enemy avoid ally",
   B: "thread center with bend target weakest enemy"
 };
+
+function MotionSection({ children, className = "", initial, animate, exit, transition, ...props }) {
+  return (
+    <section className={`motion-lite ${className}`.trim()} {...props}>
+      {children}
+    </section>
+  );
+}
+
+function MotionDiv({ children, className = "", initial, animate, exit, transition, ...props }) {
+  return (
+    <div className={`motion-lite ${className}`.trim()} {...props}>
+      {children}
+    </div>
+  );
+}
 
 function createExhibitionBattle() {
   return Sim.runBattle({ seed: 9461, commands: EXHIBITION_COMMANDS });
@@ -1279,7 +1292,7 @@ function CombatCinematicLayer({ state, match, activeTeam, activeUnitId, latestEv
   };
   const sides = { A: side("A", teamA), B: side("B", teamB) };
   return (
-    <motion.section
+    <MotionSection
       className={`combat-cinematic-layer team-${laneTeam}`}
       data-testid="combat-cinematic-layer"
       aria-label="AI strike lane"
@@ -1318,7 +1331,7 @@ function CombatCinematicLayer({ state, match, activeTeam, activeUnitId, latestEv
         <span><b>TRAJECTORY</b>{pathLabel}</span>
         <strong>{result}</strong>
       </article>
-    </motion.section>
+    </MotionSection>
   );
 }
 
@@ -1336,7 +1349,7 @@ function ArenaDirectorHud({ state, match, profile, activeTeam, activeUnitId, lat
   const tempo = playback?.active ? "live replay" : state.winner ? "settled" : match ? "models armed" : "exhibition";
   const hudTeam = activeTeam !== "-" ? activeTeam : latestEvent?.team || "A";
   return (
-    <motion.section
+    <MotionSection
       className={`arena-director-hud team-${String(hudTeam).toLowerCase()} ${state.winner ? "settled" : "live"}`}
       data-testid="arena-director-hud"
       initial={{ opacity: 0, y: 10 }}
@@ -1364,21 +1377,19 @@ function ArenaDirectorHud({ state, match, profile, activeTeam, activeUnitId, lat
         <strong>{rankText}</strong>
         <small>{state.score ? `${state.score.rank} ${state.score.value}` : `${profile?.rank?.tier || "Bronze"} queue`}</small>
       </div>
-      <AnimatePresence mode="wait">
-        <motion.div
-          className={`director-feed team-${String(latestEvent?.team || hudTeam).toLowerCase()}`}
-          key={latestKey}
-          initial={{ opacity: 0, x: 14 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -14 }}
-          transition={{ duration: 0.22, ease: "easeOut" }}
-        >
-          <span>{latestEvent ? `T${latestEvent.turn + 1} ${latestEvent.unitId || latestEvent.shooterId}` : "pre-battle"}</span>
-          <strong>{latestEvent ? latestEvent.resultLabel : "waiting for first shot"}</strong>
-          <small>{stats.enemyHits} hits / {stats.failures} failed lines / {stats.damage} dmg</small>
-        </motion.div>
-      </AnimatePresence>
-    </motion.section>
+      <MotionDiv
+        className={`director-feed team-${String(latestEvent?.team || hudTeam).toLowerCase()}`}
+        key={latestKey}
+        initial={{ opacity: 0, x: 14 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -14 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+      >
+        <span>{latestEvent ? `T${latestEvent.turn + 1} ${latestEvent.unitId || latestEvent.shooterId}` : "pre-battle"}</span>
+        <strong>{latestEvent ? latestEvent.resultLabel : "waiting for first shot"}</strong>
+        <small>{stats.enemyHits} hits / {stats.failures} failed lines / {stats.damage} dmg</small>
+      </MotionDiv>
+    </MotionSection>
   );
 }
 

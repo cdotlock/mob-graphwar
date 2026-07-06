@@ -69,21 +69,37 @@ function testGameModeShellMakesProductFeelLikeGame() {
   assert.ok(css.includes("padding-bottom: 142px"), "mobile layout should reserve room for stacked game docks");
 }
 
+function testHeroOrnamentStaysBounded() {
+  assert.ok(css.includes(".brand-zone::after"), "hero should keep the game-mode ornament in CSS");
+  assert.ok(!css.includes("right: -90px"), "hero ornament should not bleed across the title and rank chip");
+  assert.ok(css.includes("max-width: 42%"), "hero ornament should have a bounded desktop width");
+  assert.ok(css.includes("z-index: 0"), "hero ornament should sit behind readable hero copy");
+}
+
 function testArenaDirectorHudMakesBattleReadAsLiveGame() {
-  assert.ok(packageJson.includes('"framer-motion"'), "the React game shell should use a motion framework for game-grade state transitions");
-  assert.ok(main.includes('from "framer-motion"'), "main UI should import framer-motion primitives");
   assert.ok(main.includes("ArenaDirectorHud"), "battle stage should include a named arena director HUD");
   assert.ok(main.includes('data-testid="arena-director-hud"'), "arena director HUD should be selectable for browser verification");
   assert.ok(main.includes("battleStats"), "HUD should compute battle stats from real events");
   assert.ok(main.includes("currentActorLabel"), "HUD should expose the active or last AI actor");
   assert.ok(main.includes("rankDelta"), "HUD should surface ranked stake after auto duel settlement");
   assert.ok(main.includes("routePressure"), "HUD should expose map route pressure in the game chrome");
-  assert.ok(main.includes("<AnimatePresence"), "latest model action should animate as the feed changes");
   assert.ok(main.indexOf("<ArenaDirectorHud") < main.indexOf("<Battlefield"), "director HUD should appear before the battlefield inside the stage");
   assert.ok(css.includes(".arena-director-hud"), "CSS should style the director HUD as first-class game chrome");
   assert.ok(css.includes(".director-callout"), "CSS should style the live actor callout");
   assert.ok(css.includes(".director-rank-stake"), "CSS should style ranked stake information");
   assert.ok(css.includes(".director-feed"), "CSS should style live model action feed");
+}
+
+function testProductionBundleUsesBoundedEntrypoints() {
+  assert.ok(!packageJson.includes('"framer-motion"'), "production build should not carry framer-motion for lightweight HUD fades");
+  assert.ok(!main.includes('from "framer-motion"'), "main UI should avoid the framer-motion barrel during production builds");
+  assert.ok(main.includes("MotionSection"), "game HUD transitions should use local lightweight motion components");
+  assert.ok(main.includes("MotionDiv"), "replayed feed transitions should use a local lightweight motion component");
+  assert.ok(!main.includes('from "lucide-react"'), "main UI should not import the lucide-react barrel");
+  assert.ok(
+    main.includes("lucide-react/dist/esm/icons/play-circle.js"),
+    "main UI should import only the icon modules it renders"
+  );
 }
 
 function testStaticEntrypointLoadsSimBeforeReactBundle() {
@@ -379,7 +395,9 @@ testModelWarFeedIsVisibleInSource();
 testFourSeatAgentBattleMatrixExists();
 testGameGradeHudStylesExist();
 testGameModeShellMakesProductFeelLikeGame();
+testHeroOrnamentStaysBounded();
 testArenaDirectorHudMakesBattleReadAsLiveGame();
+testProductionBundleUsesBoundedEntrypoints();
 testStaticEntrypointLoadsSimBeforeReactBundle();
 testUiKeepsRankedDuelSpectatorOnly();
 testGameSurfacesMatchmakingAndLeagueSimulation();

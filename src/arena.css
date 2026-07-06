@@ -129,15 +129,25 @@ textarea {
   overflow: hidden;
 }
 
+.brand-zone > * {
+  position: relative;
+  z-index: 1;
+}
+
 .brand-zone::after {
   content: "RANKED 2V2 / MODEL WAR / FUNCTION CARDS";
   position: absolute;
-  right: -90px;
-  bottom: 12px;
-  color: rgba(217, 255, 71, 0.14);
+  right: 18px;
+  bottom: 16px;
+  z-index: 0;
+  max-width: 42%;
+  overflow: hidden;
+  color: rgba(217, 255, 71, 0.12);
   font-family: "Russo One", sans-serif;
-  font-size: 34px;
+  font-size: 14px;
   font-weight: 900;
+  text-align: right;
+  text-overflow: clip;
   white-space: nowrap;
 }
 

@@ -212,6 +212,26 @@ function testGameShowsRankedOnboardingAndProviderReadiness() {
   assert.ok(css.includes(".provider-readiness-grid"), "CSS should style provider readiness");
 }
 
+function testModelSetupUsesFetchedModelSelect() {
+  const loginCard = componentSource("LoginCard");
+  assert.ok(main.includes("loadProviders"), "client should request the provider/model catalog from the server");
+  assert.ok(main.includes("/api/providers"), "client should fetch provider models instead of relying only on hardcoded options");
+  assert.ok(loginCard.includes('data-testid="model-select"'), "model setup should expose a selectable model list");
+  assert.ok(loginCard.includes("<select"), "model setup should use a select control for models");
+  assert.ok(!loginCard.includes('label>Model<input'), "model setup should not require players to type model names manually");
+}
+
+function testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch() {
+  assert.ok(main.includes("AgentThoughtPanel"), "battle watch view should include a named current-agent thinking panel");
+  assert.ok(main.includes('data-testid="agent-thought-panel"'), "agent thinking panel should be selectable for browser verification");
+  assert.ok(main.includes("language-toggle"), "UI should expose an English/Chinese language switch");
+  assert.ok(main.includes("中文"), "Chinese UI copy should be present in the bundle");
+  assert.ok(main.includes("智能体思考"), "agent thinking panel should have Chinese copy");
+  assert.ok(css.includes(".battle-core-layout"), "battlefield and agent thinking should share one compact grid");
+  assert.ok(css.includes(".agent-thought-panel"), "CSS should style the current-agent thinking panel");
+  assert.ok(css.includes(".language-toggle"), "CSS should style the language switch");
+}
+
 function testRankedGameStatePanelMakesAutoBattleLoopReadable() {
   assert.ok(main.includes("RankedGameStatePanel"), "launch bay should include a named ranked game state panel");
   assert.ok(main.includes('data-testid="ranked-game-state-panel"'), "ranked game state panel should be selectable for browser verification");
@@ -467,9 +487,9 @@ function testWatchFirstProductShellUsesTabsAndModalAuth() {
   assert.ok(main.includes("PlayView"), "ranked play should be a named top-level view");
   assert.ok(main.includes("authModalOpen"), "app should track auth modal visibility as UI state");
   assert.ok(main.includes("onOpenAuth"), "locked ranked actions should open the auth modal");
-  assert.ok(main.includes('label: "API Docs"'), "unclear Lab navigation should be renamed to API Docs");
-  assert.ok(main.includes('profile ? "Account" : "Sign in"'), "account/model setup should stay reachable after login");
-  assert.ok(main.includes('profile ? "model setup" : "unlock ranked"'), "signed-in auth shortcut should describe model setup");
+  assert.ok(main.includes('apiDocs: "API Docs"'), "unclear Lab navigation should be renamed to API Docs");
+  assert.ok(main.includes('profile ? tx(locale, "account") : tx(locale, "signIn")'), "account/model setup should stay reachable after login");
+  assert.ok(main.includes('profile ? tx(locale, "modelSetup") : tx(locale, "unlockRanked")'), "signed-in auth shortcut should describe model setup");
   assert.ok(main.includes("mode-${activeMode}"), "play mode should be able to compress the first screen differently from docs pages");
   assert.ok(css.includes(".auth-modal-backdrop"), "CSS should provide modal scrim isolation");
   assert.ok(css.includes(".auth-modal"), "CSS should style the account/model modal");
@@ -568,6 +588,8 @@ testSimulationApiIsVisibleAsProductSurface();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testGameSurfacesRealAccountAuth();
 testGameShowsRankedOnboardingAndProviderReadiness();
+testModelSetupUsesFetchedModelSelect();
+testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch();
 testRankedGameStatePanelMakesAutoBattleLoopReadable();
 testUiExposesBareRulesPacketForModels();
 testMobileHasGameDockForWatchOnlyLoop();

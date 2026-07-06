@@ -20,16 +20,17 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import "./arena.css";
 
 const Sim = window.GraphwarSim;
+const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 const DEFAULT_ROSTER = [
   { unitId: "A1", team: "A", control: "human", commanderId: "you", displayName: "You", provider: "local" },
   { unitId: "A2", team: "A", control: "human", commanderId: "you", displayName: "You", provider: "local" },
-  { unitId: "B1", team: "B", control: "ai", commanderId: "ai-opponent", displayName: "AI Rival", provider: "openrouter", model: "openrouter/free" },
-  { unitId: "B2", team: "B", control: "ai", commanderId: "ai-opponent", displayName: "AI Rival", provider: "openrouter", model: "openrouter/free" }
+  { unitId: "B1", team: "B", control: "ai", commanderId: "ai-opponent", displayName: "AI Rival", provider: "openrouter", model: DEFAULT_OPENROUTER_MODEL },
+  { unitId: "B2", team: "B", control: "ai", commanderId: "ai-opponent", displayName: "AI Rival", provider: "openrouter", model: DEFAULT_OPENROUTER_MODEL }
 ];
 
 const MODEL_PROVIDERS = [
-  { id: "openrouter", label: "OpenRouter", model: "openrouter/free" },
+  { id: "openrouter", label: "OpenRouter", model: DEFAULT_OPENROUTER_MODEL, models: [{ id: DEFAULT_OPENROUTER_MODEL, label: "Free Models Router", free: true }] },
   { id: "deepseek", label: "DeepSeek", model: "deepseek-v4-flash" },
   { id: "openai", label: "OpenAI", model: "gpt-4.1-mini" },
   { id: "minimax", label: "MiniMax", model: "MiniMax-M1" },
@@ -39,10 +40,148 @@ const MODEL_PROVIDERS = [
 
 const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
 const SESSION_STORAGE_KEY = "mob-graphwar-session-token";
+const LOCALE_STORAGE_KEY = "mob-graphwar-locale";
 const EXHIBITION_COMMANDS = {
   A: "safe high arc target weakest enemy avoid ally",
   B: "thread center with bend target weakest enemy"
 };
+
+const I18N = {
+  en: {
+    play: "Play",
+    leaderboard: "Leaderboard",
+    apiDocs: "API Docs",
+    signIn: "Sign in",
+    account: "Account",
+    modelSetup: "model setup",
+    unlockRanked: "unlock ranked",
+    rankRating: "Rank Rating",
+    rankedDuel: "Ranked Duel",
+    loginToArm: "Login to arm model",
+    ready: "Ready",
+    guest: "Guest",
+    model: "Model",
+    room: "Room",
+    control: "Control",
+    localFallback: "Local fallback",
+    watchOnly: "Watch-only after launch",
+    signInRequired: "sign in required",
+    roomArmed: "room armed",
+    queueLive: "queue live",
+    publicLadder: "public ladder",
+    simulationApi: "simulation API",
+    language: "中文",
+    accountModelSetup: "Account / Model Key",
+    updateRankedModel: "Update ranked model",
+    signInToPlay: "Sign in to play ranked",
+    register: "Register",
+    handle: "Handle",
+    displayName: "Display name",
+    password: "Password",
+    provider: "Provider",
+    apiKey: "API key",
+    standingOrder: "Standing order",
+    restore: "Restore",
+    saveModel: "Save Model Key",
+    createAccount: "Create Account",
+    noAccount: "No active ranked account",
+    providerReady: "API key armed",
+    providerFallback: "local fallback until keyed",
+    agentThinking: "Agent Thinking",
+    activeAgent: "Active agent",
+    commander: "Commander",
+    decision: "Decision",
+    routeBonus: "Route bonus",
+    handRead: "Hand read",
+    commandRead: "Command read",
+    targetRead: "Target read",
+    waitingDecision: "Waiting for model decision",
+    cards: "cards",
+    turn: "Turn",
+    difficulty: "difficulty",
+    liveRoute: "live route view",
+    retainedHand: "Retained Hand",
+    handRule: "cards stay after shots. Active model may choose Swap Hand x3 before firing."
+  },
+  zh: {
+    play: "开始游戏",
+    leaderboard: "排行榜",
+    apiDocs: "API 文档",
+    signIn: "登录",
+    account: "账号",
+    modelSetup: "模型设置",
+    unlockRanked: "解锁排位",
+    rankRating: "排位分",
+    rankedDuel: "排位对战",
+    loginToArm: "登录后选择模型",
+    ready: "就绪",
+    guest: "游客",
+    model: "模型",
+    room: "房间",
+    control: "控制",
+    localFallback: "本地兜底",
+    watchOnly: "开战后只能观看",
+    signInRequired: "需要登录",
+    roomArmed: "房间已就绪",
+    queueLive: "匹配中",
+    publicLadder: "公开榜单",
+    simulationApi: "模拟接口",
+    language: "EN",
+    accountModelSetup: "账号 / 模型设置",
+    updateRankedModel: "更新排位模型",
+    signInToPlay: "登录后开始排位",
+    register: "注册",
+    handle: "账号名",
+    displayName: "显示名",
+    password: "密码",
+    provider: "供应商",
+    apiKey: "API Key",
+    standingOrder: "开局指令",
+    restore: "恢复",
+    saveModel: "保存模型",
+    createAccount: "创建账号",
+    noAccount: "未登录排位账号",
+    providerReady: "API key 已就绪",
+    providerFallback: "未填 key 时使用本地兜底",
+    agentThinking: "智能体思考",
+    activeAgent: "当前智能体",
+    commander: "指挥官",
+    decision: "决策",
+    routeBonus: "路线奖励",
+    handRead: "手牌判断",
+    commandRead: "指令理解",
+    targetRead: "目标选择",
+    waitingDecision: "等待模型决策",
+    cards: "手牌",
+    turn: "回合",
+    difficulty: "难度",
+    liveRoute: "实时轨迹",
+    retainedHand: "保留手牌",
+    handRule: "射击后保留。当前模型开火前最多可换手牌 3 次。"
+  }
+};
+
+function tx(locale, key) {
+  return I18N[locale]?.[key] || I18N.en[key] || key;
+}
+
+function providerOptions(catalog) {
+  return Array.isArray(catalog) && catalog.length ? catalog : MODEL_PROVIDERS;
+}
+
+function modelOptionsFor(catalog, providerId) {
+  const provider = providerOptions(catalog).find((item) => item.id === providerId) || providerOptions(catalog)[0];
+  const models = Array.isArray(provider?.models) && provider.models.length
+    ? provider.models
+    : provider?.model
+      ? [{ id: provider.model, label: provider.model }]
+      : [{ id: DEFAULT_OPENROUTER_MODEL, label: DEFAULT_OPENROUTER_MODEL }];
+  return models.filter((model) => model && model.id);
+}
+
+function defaultModelFor(catalog, providerId) {
+  return modelOptionsFor(catalog, providerId)[0]?.id || DEFAULT_OPENROUTER_MODEL;
+}
 
 function MotionSection({ children, className = "", initial, animate, exit, transition, ...props }) {
   return (
@@ -248,7 +387,7 @@ function App() {
     displayName: "Clock",
     password: "",
     provider: "openrouter",
-    model: "openrouter/free",
+    model: DEFAULT_OPENROUTER_MODEL,
     apiKey: "",
     standingOrder: ""
   });
@@ -262,6 +401,8 @@ function App() {
   const [autoBattle, setAutoBattle] = useState(null);
   const [activeMode, setActiveMode] = useState("play");
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [providerCatalog, setProviderCatalog] = useState(MODEL_PROVIDERS);
+  const [locale, setLocale] = useState(() => window.localStorage.getItem(LOCALE_STORAGE_KEY) || "zh");
   const playbackToken = useRef(0);
   const playbackFramesRef = useRef([]);
   const playbackPausedRef = useRef(false);
@@ -279,7 +420,12 @@ function App() {
 
   useEffect(() => {
     loadLeaderboard().catch(() => {});
+    loadProviders().catch(() => {});
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  }, [locale]);
 
   useEffect(() => {
     if (!profile || !queueState || match) return undefined;
@@ -406,6 +552,22 @@ function App() {
     if (!response.ok) throw new Error(payload.error || "leaderboard_failed");
     setLeaderboard(payload.players || []);
     return payload.players || [];
+  }
+
+  async function loadProviders() {
+    const response = await fetch("/api/providers");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "providers_failed");
+    const providers = providerOptions(payload.providers);
+    setProviderCatalog(providers);
+    setLogin((current) => {
+      const provider = providers.find((item) => item.id === current.provider) || providers[0];
+      if (!provider) return current;
+      const models = modelOptionsFor(providers, provider.id);
+      const model = models.some((item) => item.id === current.model) ? current.model : defaultModelFor(providers, provider.id);
+      return { ...current, provider: provider.id, model };
+    });
+    return providers;
   }
 
   async function syncMatchRoom(matchId = match?.id, playerId = profile?.id) {
@@ -662,6 +824,10 @@ function App() {
     playbackSpeedRef.current = nextSpeed;
   }
 
+  function toggleLocale() {
+    setLocale((current) => (current === "zh" ? "en" : "zh"));
+  }
+
   function selectGameMode(mode) {
     const id = typeof mode === "string" ? mode : mode.id;
     const target = typeof mode === "string" ? mode : mode.target;
@@ -731,8 +897,10 @@ function App() {
         match={match}
         queueState={queueState}
         autoBattle={autoBattle}
+        locale={locale}
         onSelect={setActiveMode}
         onOpenAuth={() => setAuthModalOpen(true)}
+        onToggleLocale={toggleLocale}
       />
 
       <section className="app-view-stack">
@@ -758,6 +926,7 @@ function App() {
             latestEvent={latestEvent}
             visibleDecision={visibleDecision}
             message={message}
+            locale={locale}
             onOpenAuth={() => setAuthModalOpen(true)}
             onJoin={joinMatch}
             onSync={syncCurrentRoom}
@@ -793,6 +962,8 @@ function App() {
         setLogin={setLogin}
         profile={profile}
         sessionToken={sessionToken}
+        providerCatalog={providerCatalog}
+        locale={locale}
         busy={busy}
         onSubmit={signIn}
         onRestore={restoreProfile}
@@ -810,24 +981,24 @@ function App() {
   );
 }
 
-function ProductTabs({ activeMode, profile, match, queueState, autoBattle, onSelect, onOpenAuth }) {
+function ProductTabs({ activeMode, profile, match, queueState, autoBattle, locale, onSelect, onOpenAuth, onToggleLocale }) {
   const tabs = [
     {
       id: "play",
-      label: "Play",
-      status: profile ? (queueState ? "queue live" : match ? "room armed" : "ready") : "sign in required",
+      label: tx(locale, "play"),
+      status: profile ? (queueState ? tx(locale, "queueLive") : match ? tx(locale, "roomArmed") : tx(locale, "ready")) : tx(locale, "signInRequired"),
       icon: Swords
     },
     {
       id: "leaderboard",
-      label: "Leaderboard",
-      status: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "public ladder",
+      label: tx(locale, "leaderboard"),
+      status: profile ? `${profile.rank.tier} ${profile.rank.rating}` : tx(locale, "publicLadder"),
       icon: Trophy
     },
     {
       id: "api",
-      label: "API Docs",
-      status: autoBattle ? `${autoBattle.resolvedTurns} turns` : "simulation API",
+      label: tx(locale, "apiDocs"),
+      status: autoBattle ? `${autoBattle.resolvedTurns} ${tx(locale, "turn")}` : tx(locale, "simulationApi"),
       icon: Cpu
     }
   ];
@@ -851,8 +1022,12 @@ function ProductTabs({ activeMode, profile, match, queueState, autoBattle, onSel
       })}
       <button type="button" className="product-tab auth-shortcut" onClick={onOpenAuth}>
         {profile ? <KeyRound size={18} /> : <LogIn size={18} />}
-        <span>{profile ? "Account" : "Sign in"}</span>
-        <small>{profile ? "model setup" : "unlock ranked"}</small>
+        <span>{profile ? tx(locale, "account") : tx(locale, "signIn")}</span>
+        <small>{profile ? tx(locale, "modelSetup") : tx(locale, "unlockRanked")}</small>
+      </button>
+      <button type="button" className="product-tab language-toggle" data-testid="language-toggle" onClick={onToggleLocale}>
+        <span>{tx(locale, "language")}</span>
+        <small>{locale === "zh" ? "中文" : "English"}</small>
       </button>
     </nav>
   );
@@ -879,6 +1054,7 @@ function PlayView({
   latestEvent,
   visibleDecision,
   message,
+  locale,
   onOpenAuth,
   onJoin,
   onSync,
@@ -900,12 +1076,12 @@ function PlayView({
           onOpenAuth={onOpenAuth}
           onJoin={onJoin}
           onSync={onSync}
+          locale={locale}
         />
-        <RosterCard match={match} />
       </section>
 
       <section className="battle-panel primary-battle game-panel" data-game-section="watch">
-        <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} />
+        <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} locale={locale} />
         <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
         <BattlePlaybackHud
           playback={battlePlayback}
@@ -918,17 +1094,32 @@ function PlayView({
         />
         <section className="arena-stage" aria-label="AI duel stage">
           <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
-          <Battlefield
-            state={battleState}
-            match={match}
-            activeTeam={activeTeam}
-            activeUnitId={activeUnitId}
-            latestEvent={latestEvent}
-            playback={battlePlayback}
-            lastDecision={visibleDecision}
-          />
+          <div className="battle-core-layout">
+            <Battlefield
+              state={battleState}
+              match={match}
+              activeTeam={activeTeam}
+              activeUnitId={activeUnitId}
+              latestEvent={latestEvent}
+              playback={battlePlayback}
+              lastDecision={visibleDecision}
+              locale={locale}
+            />
+            <AgentThoughtPanel
+              state={battleState}
+              match={match}
+              activeTeam={activeTeam}
+              activeUnitId={activeUnitId}
+              displayUnitId={displayUnitId}
+              activeHand={activeHand}
+              latestEvent={latestEvent}
+              visibleDecision={visibleDecision}
+              playback={battlePlayback}
+              locale={locale}
+            />
+          </div>
         </section>
-        <HandRack className="battle-hand-bench" hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
+        <HandRack className="battle-hand-bench" hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} locale={locale} />
         <TacticalIntelDrawer
           state={battleState}
           autoBattle={autoBattle}
@@ -953,15 +1144,15 @@ function PlayView({
   );
 }
 
-function AuthModal({ open, login, setLogin, profile, sessionToken, busy, onSubmit, onRestore, onClose }) {
+function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore, onClose }) {
   if (!open) return null;
   return (
     <div className="auth-modal-backdrop" role="presentation">
       <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
         <div className="auth-modal-header">
           <div>
-            <span>Account / Model Setup</span>
-            <strong id="auth-modal-title">{profile ? "Update ranked model" : "Sign in to play ranked"}</strong>
+            <span>{tx(locale, "accountModelSetup")}</span>
+            <strong id="auth-modal-title">{profile ? tx(locale, "updateRankedModel") : tx(locale, "signInToPlay")}</strong>
           </div>
           <button type="button" className="icon-button" aria-label="Close account setup" onClick={onClose}>
             <X size={18} />
@@ -972,6 +1163,8 @@ function AuthModal({ open, login, setLogin, profile, sessionToken, busy, onSubmi
           setLogin={setLogin}
           profile={profile}
           sessionToken={sessionToken}
+          providerCatalog={providerCatalog}
+          locale={locale}
           busy={busy}
           onSubmit={onSubmit}
           onRestore={onRestore}
@@ -1170,16 +1363,17 @@ function LaunchBay({
   busy,
   onOpenAuth,
   onJoin,
-  onSync
+  onSync,
+  locale
 }) {
   return (
     <section className="launch-bay" data-testid="launch-bay">
       <div className="launch-header">
         <div>
-          <span>Ranked duel</span>
-          <strong>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : "Login to arm model"}</strong>
+          <span>{tx(locale, "rankedDuel")}</span>
+          <strong>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : tx(locale, "loginToArm")}</strong>
         </div>
-        <b>{match?.filledByAi ? "AI" : match ? "A/B" : "READY"}</b>
+        <b>{match?.filledByAi ? "AI" : match ? "A/B" : tx(locale, "ready")}</b>
       </div>
       <CompactLaunchSummary
         login={login}
@@ -1188,6 +1382,7 @@ function LaunchBay({
         match={match}
         queueState={queueState}
         autoBattle={autoBattle}
+        locale={locale}
       />
       {profile ? (
         <MatchCard
@@ -1206,14 +1401,14 @@ function LaunchBay({
   );
 }
 
-function CompactLaunchSummary({ login, profile, sessionToken, match, queueState, autoBattle }) {
+function CompactLaunchSummary({ login, profile, sessionToken, match, queueState, autoBattle, locale }) {
   const selectedProvider = profile?.providers?.[login.provider];
   const modelReady = Boolean(selectedProvider?.configured || login.apiKey.trim());
   const items = [
-    { label: "Account", value: profile && sessionToken ? profile.handle || profile.displayName : profile ? "restore token" : "guest" },
-    { label: "Model", value: modelReady ? selectedProvider?.model || login.model : "local fallback" },
-    { label: "Room", value: autoBattle ? "settled" : match ? match.status : queueState ? `${queueState.queueSize}/2 queued` : "idle" },
-    { label: "Control", value: "Watch-only after launch" }
+    { label: tx(locale, "account"), value: profile && sessionToken ? profile.handle || profile.displayName : profile ? "restore token" : tx(locale, "guest") },
+    { label: tx(locale, "model"), value: modelReady ? selectedProvider?.model || login.model : tx(locale, "localFallback") },
+    { label: tx(locale, "room"), value: autoBattle ? "settled" : match ? match.status : queueState ? `${queueState.queueSize}/2 queued` : "idle" },
+    { label: tx(locale, "control"), value: tx(locale, "watchOnly") }
   ];
   return (
     <div className="compact-launch-summary" data-testid="compact-launch-summary">
@@ -1342,37 +1537,40 @@ function RankedGameStatePanel({ profile, match, queueState, autoBattle }) {
   );
 }
 
-function LoginCard({ login, setLogin, profile, sessionToken, busy, onSubmit, onRestore }) {
+function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore }) {
   const authMode = login.authMode === "login" ? "login" : "register";
+  const providers = providerOptions(providerCatalog);
+  const selectedProvider = providers.find((provider) => provider.id === login.provider) || providers[0];
+  const selectedModels = modelOptionsFor(providers, selectedProvider?.id || login.provider);
+  const selectProvider = (providerId) => {
+    setLogin({ ...login, provider: providerId, model: defaultModelFor(providers, providerId) });
+  };
   return (
     <form className="login-card" onSubmit={onSubmit}>
-      <div className="panel-title"><LogIn size={18} /> Account / Model Key</div>
+      <div className="panel-title"><LogIn size={18} /> {tx(locale, "accountModelSetup")}</div>
       <div className="auth-mode-tabs" data-testid="auth-mode-tabs" role="tablist" aria-label="Account mode">
-        <button type="button" className={authMode === "register" ? "active" : ""} aria-selected={authMode === "register"} onClick={() => setLogin({ ...login, authMode: "register" })}>Register</button>
-        <button type="button" className={authMode === "login" ? "active" : ""} aria-selected={authMode === "login"} onClick={() => setLogin({ ...login, authMode: "login" })}>Sign In</button>
+        <button type="button" className={authMode === "register" ? "active" : ""} aria-selected={authMode === "register"} onClick={() => setLogin({ ...login, authMode: "register" })}>{tx(locale, "register")}</button>
+        <button type="button" className={authMode === "login" ? "active" : ""} aria-selected={authMode === "login"} onClick={() => setLogin({ ...login, authMode: "login" })}>{tx(locale, "signIn")}</button>
       </div>
-      <label>Handle<input autoComplete="username" value={login.handle} onChange={(e) => setLogin({ ...login, handle: e.target.value })} placeholder="3-24 letters, numbers, _ or -" /></label>
+      <label>{tx(locale, "handle")}<input autoComplete="username" value={login.handle} onChange={(e) => setLogin({ ...login, handle: e.target.value })} placeholder="3-24 letters, numbers, _ or -" /></label>
       {authMode === "register" ? (
-        <label>Display name<input autoComplete="nickname" value={login.displayName} onChange={(e) => setLogin({ ...login, displayName: e.target.value })} /></label>
+        <label>{tx(locale, "displayName")}<input autoComplete="nickname" value={login.displayName} onChange={(e) => setLogin({ ...login, displayName: e.target.value })} /></label>
       ) : null}
-      <label>Password<input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} placeholder="8+ characters" /></label>
-      <label>Provider<select value={login.provider} onChange={(e) => setLogin({ ...login, provider: e.target.value })}>
-        <option value="openrouter">OpenRouter</option>
-        <option value="deepseek">DeepSeek</option>
-        <option value="openai">OpenAI</option>
-        <option value="minimax">MiniMax</option>
-        <option value="zhipu">Zhipu</option>
-        <option value="anthropic">Anthropic</option>
+      <label>{tx(locale, "password")}<input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} placeholder="8+ characters" /></label>
+      <label>{tx(locale, "provider")}<select value={login.provider} onChange={(e) => selectProvider(e.target.value)}>
+        {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
       </select></label>
-      <label>Model<input autoComplete="off" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })} /></label>
-      <label>API key<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
-      <ProviderReadinessGrid login={login} profile={profile} />
-      <label>Standing order<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
+      <label>{tx(locale, "model")}<select data-testid="model-select" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })}>
+        {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id}</option>)}
+      </select></label>
+      <label>{tx(locale, "apiKey")}<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
+      <ProviderReadinessGrid login={login} profile={profile} providerCatalog={providers} locale={locale} />
+      <label>{tx(locale, "standingOrder")}<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
       <div className="profile-vault">
-        <span>{profile ? `${profile.handle || profile.displayName} · ${profile.rank.tier} ${profile.rank.rating} · ${sessionToken ? "secure" : "no token"}` : "No active ranked account"}</span>
-        <button type="button" disabled={busy} onClick={onRestore}>Restore</button>
+        <span>{profile ? `${profile.handle || profile.displayName} · ${profile.rank.tier} ${profile.rank.rating} · ${sessionToken ? "secure" : "no token"}` : tx(locale, "noAccount")}</span>
+        <button type="button" disabled={busy} onClick={onRestore}>{tx(locale, "restore")}</button>
       </div>
-      <button disabled={busy}>{profile ? "Save Model Key" : authMode === "login" ? "Sign In" : "Create Account"}</button>
+      <button disabled={busy}>{profile ? tx(locale, "saveModel") : authMode === "login" ? tx(locale, "signIn") : tx(locale, "createAccount")}</button>
     </form>
   );
 }
@@ -1417,16 +1615,19 @@ function SessionStatusPanel({ profile, sessionToken, login }) {
   );
 }
 
-function ProviderReadinessGrid({ login, profile }) {
+function ProviderReadinessGrid({ login, profile, providerCatalog, locale }) {
   const keyed = Boolean(login.apiKey.trim() || profile?.providers?.[login.provider]?.configured);
+  const providers = providerOptions(providerCatalog);
   return (
     <div className="provider-readiness-grid" data-testid="provider-readiness-grid" aria-label="Model provider readiness">
-      {MODEL_PROVIDERS.map((provider) => {
+      {providers.map((provider) => {
         const selected = login.provider === provider.id;
+        const providerModels = modelOptionsFor(providers, provider.id);
+        const modelLabel = providerModels[0]?.label || providerModels[0]?.id || provider.model;
         return (
           <span className={selected ? "selected" : ""} key={provider.id}>
             <b>{provider.label}</b>
-            <small>{selected && keyed ? "API key armed" : selected ? "local fallback until keyed" : provider.model}</small>
+            <small>{selected && keyed ? tx(locale, "providerReady") : selected ? tx(locale, "providerFallback") : modelLabel}</small>
           </span>
         );
       })}
@@ -2010,13 +2211,13 @@ function AgentBattleMatrix({ state, match, activeTeam, activeUnitId, lastDecisio
   );
 }
 
-function BattleHeader({ state, activeTeam, activeUnitId, message }) {
+function BattleHeader({ state, activeTeam, activeUnitId, message, locale }) {
   const resultLabel = battleResultLabel(state.winner);
   const statusLabel = resultLabel && message ? `${resultLabel} · ${message}` : resultLabel || message;
   return (
     <div className="battle-header">
-      <div><span>Turn</span><strong>{state.turn}/{Sim.CONFIG.maxTurns}</strong></div>
-      <div><span>Active</span><strong>{activeUnitId === "-" ? "Standby" : `${activeUnitId} / Team ${activeTeam}`}</strong></div>
+      <div><span>{tx(locale, "turn")}</span><strong>{state.turn}/{Sim.CONFIG.maxTurns}</strong></div>
+      <div><span>{tx(locale, "activeAgent")}</span><strong>{activeUnitId === "-" ? "Standby" : `${activeUnitId} / Team ${activeTeam}`}</strong></div>
       <div><span>Map</span><strong>{state.mapMeta.name} {state.mapMeta.difficulty}</strong></div>
       <div><span>Status</span><strong>{statusLabel}</strong></div>
     </div>
@@ -2189,16 +2390,53 @@ function BonusPointLayer({ state }) {
   );
 }
 
-function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
+function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnitId, activeHand, latestEvent, visibleDecision, playback, locale }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const action = playback?.action || visibleDecision || eventDecision(latestEvent);
+  const unitId = action?.unitId || (activeUnitId === "-" ? latestEvent?.unitId || latestEvent?.shooterId || displayUnitId : activeUnitId);
+  const team = action?.team || activeTeam || (String(unitId).startsWith("B") ? "B" : "A");
+  const seat = roster.find((item) => item.unitId === unitId) || roster.find((item) => item.team === team) || {};
+  const event = latestEvent && (latestEvent.unitId === unitId || latestEvent.shooterId === unitId || latestEvent.team === team) ? latestEvent : null;
+  const thinking = event?.thinking || {};
+  const handAnalysis = Sim.analyzeHand(activeHand || [], Sim.getEnergy(state.turn));
+  const targetPriority = Array.isArray(thinking.targetPriority) && thinking.targetPriority.length
+    ? thinking.targetPriority.map((target) => target.id || target).join(" > ")
+    : event?.targetId || (team === "A" ? "B1 / B2" : "A1 / A2");
+  const commandRead = thinking.commandRules || thinking.intent || (state.winner ? battleResultLabel(state.winner) : tx(locale, "waitingDecision"));
+  const decisionReason = action?.publicReason || event?.resultLabel || tx(locale, "waitingDecision");
+  const routeBonus = event?.routeBonus?.value ? `+${event.routeBonus.value} / ${(event.routeBonus.pointIds || []).join(", ")}` : "0";
+  return (
+    <aside className={`agent-thought-panel team-${String(team || "a").toLowerCase()}`} data-testid="agent-thought-panel" aria-label={tx(locale, "agentThinking")}>
+      <div className="agent-thought-head">
+        <span><Bot size={16} /> {tx(locale, "agentThinking")}</span>
+        <strong>{unitId || "A1"} / Team {team || "A"}</strong>
+        <small>{seat.displayName || tx(locale, "commander")} · {seat.provider || "local"}{seat.model ? ` / ${seat.model}` : ""}</small>
+      </div>
+      <div className="thought-focus-grid">
+        <span><b>{tx(locale, "decision")}</b>{decisionReason}</span>
+        <span><b>{tx(locale, "commandRead")}</b>{commandRead}</span>
+        <span><b>{tx(locale, "targetRead")}</b>{targetPriority}</span>
+        <span><b>{tx(locale, "routeBonus")}</b>{routeBonus}</span>
+      </div>
+      <div className="thought-hand-read">
+        <span>{tx(locale, "handRead")}</span>
+        <strong>{handAnalysis.archetype || "Mixed Curve"}</strong>
+        <small>{handAnalysis.energyRead || `${activeHand?.length || 0} ${tx(locale, "cards")}`} · {handAnalysis.risk || "stable"}</small>
+      </div>
+    </aside>
+  );
+}
+
+function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision, locale }) {
   const latestPath = state.paths[state.paths.length - 1];
   const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
   const activeLabel = activeUnitId === "-" ? "standby" : `${activeUnitId} / Team ${activeTeam}`;
-  const resultLabel = state.winner ? battleResultLabel(state.winner) : "live route view";
+  const resultLabel = state.winner ? battleResultLabel(state.winner) : tx(locale, "liveRoute");
   return (
     <div className="battlefield-frame" data-testid="battlefield-frame">
       <div className="map-status-strip" data-testid="map-status-strip">
-        <span><b>{state.mapMeta.name}</b> difficulty {state.mapMeta.difficulty}</span>
-        <span>Turn {state.turn}/{Sim.CONFIG.maxTurns}</span>
+        <span><b>{state.mapMeta.name}</b> {tx(locale, "difficulty")} {state.mapMeta.difficulty}</span>
+        <span>{tx(locale, "turn")} {state.turn}/{Sim.CONFIG.maxTurns}</span>
         <span>{activeLabel}</span>
         <span>{resultLabel}</span>
       </div>
@@ -2267,11 +2505,11 @@ function BattleReplayRail({ state }) {
   );
 }
 
-function HandRack({ hand, activeTeam, activeUnitId, className = "" }) {
+function HandRack({ hand, activeTeam, activeUnitId, className = "", locale }) {
   return (
     <div className={`hand-rack ${className}`.trim()}>
-      <div className="panel-title"><KeyRound size={18} /> Retained Hand</div>
-      <p className="hand-rule">{activeUnitId} / Team {activeTeam} cards stay after shots. Active model may choose Swap Hand x3 before firing.</p>
+      <div className="panel-title"><KeyRound size={18} /> {tx(locale, "retainedHand")}</div>
+      <p className="hand-rule">{activeUnitId} / Team {activeTeam} {tx(locale, "handRule")}</p>
       <div className="card-grid">
         {hand.map((card) => (
           <article className={`battle-card ${card.rarity}`} key={card.instanceId}>

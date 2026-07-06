@@ -77,9 +77,9 @@ The catalog includes OpenRouter, OpenAI, DeepSeek, MiniMax, Zhipu, and
 Anthropic. OpenRouter, OpenAI, DeepSeek, MiniMax, and Zhipu use the
 OpenAI-compatible adapter shape. Anthropic uses the Messages adapter shape.
 
-AI-filled seats use short default standing orders so simulated opponents have
-different tendencies: ally protection, weakest-target pressure, side-pocket
-threading, and patient ceiling-lock play.
+AI-filled opponent commanders use one short default standing order shared by
+both agents on that team, so B1 and B2 act like a single simulated player rather
+than three separate filler seats.
 
 ## Real Provider Smoke
 

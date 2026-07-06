@@ -714,12 +714,38 @@ function configuredSeatProvider(seat, env) {
   return { player, provider, providerConfig, apiKey, model };
 }
 
+function createProviderBudget(env) {
+  const source = env || process.env;
+  const maxCalls = Number(source.GRAPHWAR_PROVIDER_CALL_BUDGET);
+  const maxFailures = Number(source.GRAPHWAR_PROVIDER_FAILURE_BUDGET);
+  return {
+    calls: 0,
+    failures: 0,
+    disabled: false,
+    maxCalls: Number.isFinite(maxCalls) && maxCalls >= 0 ? maxCalls : 6,
+    maxFailures: Number.isFinite(maxFailures) && maxFailures >= 0 ? maxFailures : 2
+  };
+}
+
+function budgetAllowsProvider(budget) {
+  if (!budget) return true;
+  return !budget.disabled && budget.calls < budget.maxCalls;
+}
+
+function recordProviderFailure(budget, err) {
+  if (!budget) return;
+  budget.failures += 1;
+  if (err?.message === "provider_timeout" || budget.failures >= budget.maxFailures || budget.calls >= budget.maxCalls) {
+    budget.disabled = true;
+  }
+}
+
 async function autoResolveDecisionForTurn(match, turn, options) {
   const opts = options || {};
   const rulesPayload = Contract.buildRulesPayload(match.state, turn.unitId || turn.team, turn.command);
   const rulesDigest = buildRulesDigest(rulesPayload);
   const configured = configuredSeatProvider(turn.seat, opts.env);
-  if (!configured) {
+  if (!configured || !budgetAllowsProvider(opts.providerBudget)) {
     return {
       command: turn.command,
       providerLabel: localAutoProviderLabel(turn.team),
@@ -730,6 +756,7 @@ async function autoResolveDecisionForTurn(match, turn, options) {
 
   const providerLabel = `${turn.seat.displayName || configured.player?.displayName || configured.provider.label} / ${configured.model}`;
   try {
+    if (opts.providerBudget) opts.providerBudget.calls += 1;
     const result = await executeProviderDecision(
       configured.provider,
       {
@@ -749,6 +776,7 @@ async function autoResolveDecisionForTurn(match, turn, options) {
       rulesDigest
     };
   } catch (err) {
+    recordProviderFailure(opts.providerBudget, err);
     return {
       command: turn.command,
       providerLabel: localAutoProviderLabel(turn.team),
@@ -760,6 +788,7 @@ async function autoResolveDecisionForTurn(match, turn, options) {
 
 async function advanceMatchToResolution(match, options) {
   const opts = options || {};
+  opts.providerBudget = opts.providerBudget || createProviderBudget(opts.env);
   let guard = 0;
   const maxActions = Sim.CONFIG.maxTurns * (Sim.CONFIG.maxRerollsPerTurn + 1) + 4;
   while (!match.state.winner && match.state.turn < Sim.CONFIG.maxTurns && guard < maxActions) {

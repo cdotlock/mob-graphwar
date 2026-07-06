@@ -980,6 +980,58 @@ async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
   assert.ok(!autoDuel.text.includes("sk-router-env"), "auto duel should not leak OpenRouter env key");
 }
 
+async function testAutoDuelCapsSlowProviderCallsAndFallsBackLocally() {
+  let providerCalls = 0;
+  const env = {
+    OPENROUTER_API_KEY: "sk-router-env",
+    GRAPHWAR_REQUEST_TIMEOUT_MS: "1",
+    GRAPHWAR_PROVIDER_CALL_BUDGET: "2",
+    GRAPHWAR_PROVIDER_FAILURE_BUDGET: "1"
+  };
+  const fetchMock = async (_url, options) => {
+    providerCalls += 1;
+    return new Promise((_resolve, reject) => {
+      if (options?.signal) {
+        options.signal.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      }
+    });
+  };
+
+  const session = await request(createServer({ env, fetch: fetchMock }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Slow Provider",
+      providers: { openrouter: { apiKey: "", model: "openrouter/free" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createServer({ env, fetch: fetchMock }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "openrouter", allowAiFill: true })
+  });
+  assert.strictEqual(joined.status, 200);
+
+  const autoDuel = await request(createServer({ env, fetch: fetchMock }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({ command: "safe arc" })
+  });
+  assert.strictEqual(autoDuel.status, 200);
+  assert.strictEqual(autoDuel.json.match.status, "resolved");
+  assert.ok(providerCalls <= 2, "slow providers should be capped by the per-duel provider call budget");
+  assert.ok(
+    autoDuel.json.autoBattle.providers.some((provider) => provider === "Auto Resolve B"),
+    "provider timeout should fall back to the local AI resolver for the slow side"
+  );
+}
+
 async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
   const result = await request(createServer({ env: {} }), "/api/simulations/league", {
     method: "POST",
@@ -1182,6 +1234,7 @@ async function testProviderShotRequiresKey() {
   testLocalFallbackSwapPolicyUsesSolverPressure();
   await testAutoDuelUsesConfiguredProviderWithoutLeakingKeys();
   await testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists();
+  await testAutoDuelCapsSlowProviderCallsAndFallsBackLocally();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();

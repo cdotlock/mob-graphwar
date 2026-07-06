@@ -2082,7 +2082,7 @@ label {
 
 .map-intel-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(9, minmax(70px, 0.5fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   border-bottom: 1px solid rgba(88, 212, 255, 0.22);
   background: rgba(88, 212, 255, 0.14);
@@ -2106,8 +2106,20 @@ label {
   color: var(--acid);
 }
 
+.map-intel-strip span:first-child {
+  grid-column: 1 / -1;
+}
+
 .map-intel-strip .route-pressure {
   color: var(--gold);
+}
+
+.map-intel-strip .solver-pressure {
+  color: var(--red);
+}
+
+.map-intel-strip .swap-window {
+  color: var(--acid);
 }
 
 .map-intel-strip .battlefield-depth {
@@ -2116,8 +2128,13 @@ label {
 
 .map-intel-strip .maze-bands,
 .map-intel-strip .gate-slits,
-.map-intel-strip .thread-slots {
+.map-intel-strip .thread-slots,
+.map-intel-strip .route-guides {
   color: rgba(244, 247, 251, 0.82);
+}
+
+.map-intel-strip .solid-blockers {
+  color: var(--cyan);
 }
 
 .battlefield {

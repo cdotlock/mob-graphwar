@@ -725,6 +725,12 @@ async function testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel() {
   );
 }
 
+function testLocalFallbackSwapPolicyUsesSolverPressure() {
+  const source = fs.readFileSync(path.join(__dirname, "..", "server", "index.js"), "utf8");
+  assert.ok(source.includes("solverPressure"), "local fallback swap policy should use map solver pressure");
+  assert.ok(source.includes("swapWindowHitRate"), "local fallback swap policy should use retained-hand swap-window metadata");
+}
+
 async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   const capturedPrompts = [];
   const fetchMock = async (url, options) => {
@@ -997,6 +1003,7 @@ async function testProviderShotRequiresKey() {
   await testAutoDuelResolvesRankedMatchWithBattleSummary();
   await testMatchRulesEndpointExposesBareModelContract();
   await testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel();
+  testLocalFallbackSwapPolicyUsesSolverPressure();
   await testAutoDuelUsesConfiguredProviderWithoutLeakingKeys();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();

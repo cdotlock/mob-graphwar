@@ -23,7 +23,8 @@
     sampleStep: 0.35,
     unitRadius: 2.4,
     hitDamage: 46,
-    allyDamage: 30
+    allyDamage: 30,
+    ceilingBuffer: 36
   };
 
   const CARD_LIBRARY = {
@@ -661,18 +662,95 @@
     return obstacle.h >= 24 ? 2 : 1;
   }
 
+  function isRouteGuideObstacle(obstacle, role) {
+    const obstacleRole = role || obstacle.role || inferObstacleRole(obstacle);
+    return obstacleRole === "gate-slit" || obstacleRole === "thread-slot" || (obstacleRole === "maze-band" && obstacle.h <= 5);
+  }
+
+  function obstacleIsSolid(obstacle) {
+    return obstacle && obstacle.solid !== false;
+  }
+
   function normalizeObstacle(obstacle, index) {
     const role = obstacle.role || inferObstacleRole(obstacle);
+    const routeGuide = isRouteGuideObstacle(obstacle, role);
     return {
       ...obstacle,
       role,
+      solid: obstacle.solid == null ? !routeGuide : Boolean(obstacle.solid),
+      passThrough: obstacle.passThrough == null ? routeGuide : Boolean(obstacle.passThrough),
       visualLayer: obstacle.visualLayer || inferVisualLayer(obstacle, role, index),
       tilt: obstacle.tilt == null ? round(((index % 5) - 2) * 0.4, 1) : obstacle.tilt
     };
   }
 
-  function generateMap(seed) {
-    const rng = mulberry32(hashString(`${seed}:map`));
+  function createSolverProbeState(seed, obstacles, units, unitId) {
+    return {
+      seed,
+      turn: 0,
+      obstacles,
+      units: clone(units),
+      turnOrder: UNIT_TURN_ORDER.slice(),
+      hands: {
+        [unitId]: createHandState(seed, unitId, 0)
+      },
+      events: [],
+      paths: [],
+      winner: null
+    };
+  }
+
+  function hasEnemyHit(shots) {
+    return shots.some((shot) => shot.result === "hitEnemy");
+  }
+
+  function estimateSolverPressure(seed, obstacles, units) {
+    const command = "safe high arc target weakest enemy avoid ally";
+    let firstHandHits = 0;
+    let swapWindowHits = 0;
+    let boundedWindows = 0;
+    let totalWindows = 0;
+
+    for (const unitId of UNIT_TURN_ORDER) {
+      const firstProbe = createSolverProbeState(seed, obstacles, units, unitId);
+      const firstShots = listLegalShots(firstProbe, unitId, command);
+      const firstHit = hasEnemyHit(firstShots);
+      if (firstHit) firstHandHits += 1;
+      if (firstShots.some((shot) => !["invalid", "out"].includes(shot.result))) boundedWindows += 1;
+
+      let windowHit = firstHit;
+      const swapProbe = createSolverProbeState(seed, obstacles, units, unitId);
+      for (let swap = 0; swap < CONFIG.maxRerollsPerTurn && !windowHit; swap += 1) {
+        rerollHand(swapProbe, unitId);
+        const swapShots = listLegalShots(swapProbe, unitId, command);
+        windowHit = hasEnemyHit(swapShots);
+        if (swapShots.some((shot) => !["invalid", "out"].includes(shot.result))) boundedWindows += 1;
+      }
+      if (windowHit) swapWindowHits += 1;
+      totalWindows += 1;
+    }
+
+    const firstHandHitRate = round(firstHandHits / totalWindows, 3);
+    const swapWindowHitRate = round(swapWindowHits / totalWindows, 3);
+    const boundedWindowRate = round(boundedWindows / (totalWindows * (CONFIG.maxRerollsPerTurn + 1)), 3);
+    const requiredSearchWindows = clamp(Math.ceil(1 / Math.max(0.01, swapWindowHitRate)), 2, CONFIG.maxRerollsPerTurn + 1);
+    const solverPressure = clamp(
+      Math.round(68 + (1 - firstHandHitRate) * 20 + (1 - swapWindowHitRate) * 12 + requiredSearchWindows * 3),
+      65,
+      99
+    );
+
+    return {
+      firstHandHitRate,
+      swapWindowHitRate,
+      boundedWindowRate,
+      solverPressure,
+      requiredSearchWindows
+    };
+  }
+
+  function buildMapCandidate(seed, attempt) {
+    const rng = mulberry32(hashString(`${seed}:map:${attempt}`));
     const template = clone(MAP_TEMPLATES[Math.floor(rng() * MAP_TEMPLATES.length)]);
     const jitter = (amount) => Math.round((rng() * amount * 2 - amount) * 10) / 10;
     const baseObstacles = template.obstacles.map((obstacle, index) => ({
@@ -964,6 +1042,9 @@
     const threadSlots = obstacles.filter((obstacle) => obstacle.role === "thread-slot").length;
     const groundRibs = obstacles.filter((obstacle) => obstacle.role === "ground-rib").length;
     const visualLayers = new Set(obstacles.map((obstacle) => obstacle.visualLayer)).size;
+    const solidObstacleCount = obstacles.filter(obstacleIsSolid).length;
+    const routeGuideCount = obstacles.length - solidObstacleCount;
+    const solver = estimateSolverPressure(seed, obstacles, units);
     const layerCount = clamp(
       Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3 + visualLayers / 2),
       6,
@@ -978,6 +1059,7 @@
     return {
       id: template.id,
       name: template.name,
+      layoutAttempt: attempt,
       difficulty,
       complexity: {
         obstacleCount: obstacles.length,
@@ -990,14 +1072,56 @@
         gateSlits,
         threadSlots,
         groundRibs,
+        solidObstacleCount,
+        routeGuideCount,
         visualLayers,
         layerCount,
         routePressure,
+        firstHandHitRate: solver.firstHandHitRate,
+        swapWindowHitRate: solver.swapWindowHitRate,
+        boundedWindowRate: solver.boundedWindowRate,
+        solverPressure: solver.solverPressure,
+        requiredSearchWindows: solver.requiredSearchWindows,
         density: round(density, 3)
       },
       obstacles,
       units
     };
+  }
+
+  function playableMapCandidate(map) {
+    const complexity = map.complexity || {};
+    return (
+      complexity.solidObstacleCount >= 16 &&
+      complexity.routeGuideCount >= 12 &&
+      complexity.firstHandHitRate <= 0.3 &&
+      complexity.swapWindowHitRate > 0
+    );
+  }
+
+  function mapCandidateScore(map) {
+    const complexity = map.complexity || {};
+    const solvableBonus = complexity.swapWindowHitRate > 0 ? 500 : -500;
+    const firstHandPenalty = complexity.firstHandHitRate * 220;
+    const searchReward = Math.min(4, complexity.requiredSearchWindows || 1) * 30;
+    return (
+      solvableBonus +
+      searchReward +
+      (complexity.solidObstacleCount || 0) * 5 +
+      (complexity.routeGuideCount || 0) * 2 +
+      (complexity.routePressure || 0) -
+      firstHandPenalty
+    );
+  }
+
+  function generateMap(seed) {
+    const candidates = [];
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const candidate = buildMapCandidate(seed, attempt);
+      candidates.push(candidate);
+      if (playableMapCandidate(candidate)) return candidate;
+    }
+    return candidates.sort((a, b) => mapCandidateScore(b) - mapCandidateScore(a))[0];
   }
 
   function normalizeBattleOrders(commands) {
@@ -1202,6 +1326,7 @@
   }
 
   function pointInsideObstacle(point, obstacle) {
+    if (!obstacleIsSolid(obstacle)) return false;
     return (
       point.x >= obstacle.x &&
       point.x <= obstacle.x + obstacle.w &&
@@ -1284,7 +1409,7 @@
         };
       }
 
-      if (y > CONFIG.height + 18) {
+      if (y > CONFIG.height + CONFIG.ceilingBuffer) {
         return {
           kind: "out",
           reason: "ceiling",

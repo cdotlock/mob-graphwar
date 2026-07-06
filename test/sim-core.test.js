@@ -398,6 +398,32 @@ function testHardMapsRemainSolvableByFiniteCardCombos() {
   }
 }
 
+function testHardMapsExposeSolverPressureWithoutBecomingImpossible() {
+  let firstHandPressure = 0;
+  let swapWindowPressure = 0;
+  for (let seed = 1; seed <= 40; seed += 1) {
+    const state = Sim.createInitialState({ seed });
+    const complexity = state.mapMeta.complexity;
+    assert.ok(Number.isFinite(complexity.solidObstacleCount), `seed ${seed} should count solid blockers`);
+    assert.ok(Number.isFinite(complexity.routeGuideCount), `seed ${seed} should count pass-through route guides`);
+    assert.ok(Number.isFinite(complexity.firstHandHitRate), `seed ${seed} should expose first-hand hit rate`);
+    assert.ok(Number.isFinite(complexity.swapWindowHitRate), `seed ${seed} should expose swap-window hit rate`);
+    assert.ok(Number.isFinite(complexity.solverPressure), `seed ${seed} should expose solver pressure`);
+    assert.ok(Number.isFinite(complexity.requiredSearchWindows), `seed ${seed} should estimate required search windows`);
+    assert.ok(complexity.solidObstacleCount >= 16, `seed ${seed} should still keep many real blockers`);
+    assert.ok(complexity.routeGuideCount >= 12, `seed ${seed} should keep visible route-guide complexity`);
+    assert.ok(complexity.firstHandHitRate <= 0.5, `seed ${seed} should not be solved too often by the first hand`);
+    assert.ok(complexity.swapWindowHitRate >= complexity.firstHandHitRate, `seed ${seed} should reward model-led swap search`);
+    assert.ok(complexity.swapWindowHitRate > 0, `seed ${seed} should remain solvable within retained-hand swap windows`);
+    assert.ok(complexity.solverPressure >= 65, `seed ${seed} should present real solver pressure`);
+    assert.ok(complexity.requiredSearchWindows >= 2, `seed ${seed} should usually need more than the first hand`);
+    firstHandPressure += complexity.firstHandHitRate;
+    swapWindowPressure += complexity.swapWindowHitRate;
+  }
+  assert.ok(firstHandPressure / 40 < 0.22, "average first-hand hit rate should stay low across seeded maps");
+  assert.ok(swapWindowPressure / 40 >= 0.08, "average swap-window hit rate should prove the maps are not impossible");
+}
+
 function testTraceShapeIncludesMapAndScore() {
   const state = Sim.runBattle({ seed: 7107, commands: commands() });
   const trace = Sim.exportTrace(state);
@@ -430,6 +456,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testHandsPersistAndCanBeRerolledThreeTimes();
   testSeededHardMapGeneration();
   testHardMapsRemainSolvableByFiniteCardCombos();
+  testHardMapsExposeSolverPressureWithoutBecomingImpossible();
   testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

@@ -1701,6 +1701,8 @@ function Battlefield({ state, latestEvent }) {
       <div className="map-intel-strip" data-testid="map-intel-strip">
         <span><b>{state.mapMeta.name}</b> difficulty {state.mapMeta.difficulty}</span>
         <span>{complexity.obstacleCount || 0} blockers</span>
+        <span className="solid-blockers">{complexity.solidObstacleCount || 0} solid</span>
+        <span className="route-guides">{complexity.routeGuideCount || 0} guides</span>
         <span>{complexity.tallCount || 0} towers</span>
         <span>{complexity.ceilingCount || 0} ceilings</span>
         <span>{complexity.suspendedShelves || 0} shelves</span>
@@ -1708,6 +1710,8 @@ function Battlefield({ state, latestEvent }) {
         <span className="gate-slits">{complexity.gateSlits || 0} slits</span>
         <span className="thread-slots">{complexity.threadSlots || 0} slots</span>
         <span className="route-pressure">{complexity.routePressure || 0} pressure</span>
+        <span className="solver-pressure">{complexity.solverPressure || 0} solver</span>
+        <span className="swap-window">{Math.round((complexity.swapWindowHitRate || 0) * 100)}% swap</span>
         <span className="battlefield-depth">{complexity.layerCount || 0} layers</span>
       </div>
       <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">

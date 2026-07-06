@@ -219,6 +219,12 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes("maze-bands"), "battlefield should show maze band metadata");
   assert.ok(main.includes("gate-slits"), "battlefield should show gate slit metadata");
   assert.ok(main.includes("thread-slots"), "battlefield should show thread slot metadata");
+  assert.ok(main.includes("solid-blockers"), "battlefield should show how many blockers are truly solid");
+  assert.ok(main.includes("route-guides"), "battlefield should show pass-through route guide complexity");
+  assert.ok(main.includes("solver-pressure"), "battlefield should show solver pressure for spectators");
+  assert.ok(main.includes("swap-window"), "battlefield should show retained-hand swap-window solvability");
+  assert.ok(main.includes("complexity.solverPressure"), "battlefield should read solver pressure from real map metadata");
+  assert.ok(main.includes("complexity.swapWindowHitRate"), "battlefield should read swap-window hit rate from real map metadata");
   assert.ok(main.includes("impact-burst"), "battlefield should mark the latest shot impact");
   assert.ok(css.includes(".battlefield-frame"), "CSS should frame the battlefield as a game viewport");
   assert.ok(css.includes(".battle-priority-layout"), "CSS should include battle-priority layout rules");
@@ -229,6 +235,9 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(css.includes(".maze-band"), "CSS should style horizontal maze bands");
   assert.ok(css.includes(".gate-slit"), "CSS should style narrow gate slits");
   assert.ok(css.includes(".thread-slot"), "CSS should style thread slot guides");
+  assert.ok(css.includes(".solver-pressure"), "CSS should style solver pressure as game difficulty chrome");
+  assert.ok(css.includes(".swap-window"), "CSS should style swap-window solvability");
+  assert.ok(css.includes(".route-guides"), "CSS should style pass-through route guide metadata");
   assert.ok(css.includes(".depth-fog"), "CSS should style battlefield depth fog");
   assert.ok(css.includes(".spectator-hud"), "CSS should style the spectator HUD");
   assert.ok(css.includes(".terrain-ridge"), "CSS should style layered terrain ridges");

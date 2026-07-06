@@ -966,13 +966,21 @@ function localDecisionFromRules(rulesPayload) {
   const swapsUsed = Number(swap ? swap.swapsUsed : hand.swapsUsed) || 0;
   const totalShotCandidates = Number(rulesPayload.actionSpace && rulesPayload.actionSpace.shotCandidateCount) || shotActions.length;
   const lowActionSpace = totalShotCandidates > 0 && totalShotCandidates < 96;
-  const highPressure = Number(complexity.routePressure) >= 95 || Number(complexity.obstacleCount) >= 40;
+  const solverPressure = Number(complexity.solverPressure) || 0;
+  const swapWindowHitRate = Number(complexity.swapWindowHitRate) || 0;
+  const highPressure =
+    solverPressure >= 90 ||
+    Number(complexity.routePressure) >= 95 ||
+    Number(complexity.obstacleCount) >= 40;
+  const searchMap = swapWindowHitRate > 0 && swapWindowHitRate <= 0.5;
   const underPlayable = Number(analysis.playableCount) < Math.min(Number(analysis.handSize) || 4, 3);
   const unstableHand = String(analysis.risk || "").includes("volatile") && !(analysis.traits || []).includes("precision");
-  if (swap && swapsUsed < 2 && highPressure && (lowActionSpace || underPlayable || unstableHand)) {
+  if (swap && swapsUsed < 2 && highPressure && (searchMap || lowActionSpace || underPlayable || unstableHand)) {
     return {
       action: "swap_hand",
-      publicReason: lowActionSpace
+      publicReason: searchMap
+        ? `Local baseline searched another retained hand because solver pressure is ${solverPressure} and swap-window hit rate is ${Math.round(swapWindowHitRate * 100)}%.`
+        : lowActionSpace
         ? `Local baseline swapped because only ${totalShotCandidates} legal shots fit this high-pressure map.`
         : "Local baseline swapped a weak retained hand before firing."
     };

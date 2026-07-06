@@ -994,6 +994,26 @@ function applyLeagueScore(rows, teamA, teamB, winner) {
   }
 }
 
+function simulationApiContract() {
+  return {
+    endpoint: "/api/simulations/league",
+    method: "POST",
+    modelContract: "bare_rules_only",
+    watchOnly: true,
+    limits: {
+      maxContestants: 8,
+      maxRounds: 12,
+      maxCommandLength: Sim.CONFIG.maxCommandLength
+    },
+    rankFormula: {
+      win: 28,
+      loss: -22,
+      draw: -4
+    },
+    responseShape: ["rounds", "contestants", "leaderboard", "matches", "api"]
+  };
+}
+
 function localDecisionFromRules(rulesPayload) {
   const actions = Array.isArray(rulesPayload.legalActions) ? rulesPayload.legalActions : [];
   const swap = actions.find((action) => action.action === "swap_hand");
@@ -1140,7 +1160,8 @@ async function runLeagueSimulation(body, env, fetchFn) {
     rounds,
     contestants: contestants.map(publicContestant),
     leaderboard: Array.from(rows.values()).sort((a, b) => b.rating - a.rating || b.wins - a.wins),
-    matches: matchesOut
+    matches: matchesOut,
+    api: simulationApiContract()
   };
 }
 

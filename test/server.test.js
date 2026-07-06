@@ -862,6 +862,16 @@ async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
   assert.strictEqual(result.json.leaderboard.length, 2);
   assert.ok(result.json.leaderboard.every((row) => Number.isFinite(row.rating)), "leaderboard should expose numeric ratings");
   assert.ok(result.json.matches.every((match) => match.events > 0 && match.seed), "simulation should run actual battles");
+  assert.strictEqual(result.json.api.endpoint, "/api/simulations/league");
+  assert.strictEqual(result.json.api.method, "POST");
+  assert.strictEqual(result.json.api.modelContract, "bare_rules_only");
+  assert.strictEqual(result.json.api.watchOnly, true);
+  assert.ok(result.json.api.limits.maxContestants >= 2, "simulation API should disclose contestant limits");
+  assert.ok(result.json.api.limits.maxRounds >= 2, "simulation API should disclose round limits");
+  assert.ok(result.json.api.rankFormula.win > 0, "simulation API should disclose rank win delta");
+  assert.ok(result.json.api.rankFormula.loss < 0, "simulation API should disclose rank loss delta");
+  assert.ok(result.json.api.responseShape.includes("leaderboard"), "simulation API should document leaderboard output");
+  assert.ok(result.json.api.responseShape.includes("matches"), "simulation API should document match output");
   assert.ok(!result.text.includes("arc-secret"), "simulation response should not echo API keys");
   assert.ok(!result.text.includes("bend-secret"), "simulation response should not echo API keys");
 }

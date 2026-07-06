@@ -136,6 +136,36 @@ function testGameSurfacesMatchmakingAndLeagueSimulation() {
   assert.ok(css.includes(".queue-strip"), "CSS should style the ranked queue state");
 }
 
+function testProductizedWatchLoopAndPostMatchRecap() {
+  assert.ok(main.includes("WatchLoopBrief"), "launch bay should include a named product watch-loop brief");
+  assert.ok(main.includes('data-testid="watch-loop-brief"'), "watch-loop brief should be selectable for browser verification");
+  assert.ok(main.includes("Configure model"), "watch-loop brief should explain model setup as the first step");
+  assert.ok(main.includes("Write one standing order"), "watch-loop brief should explain the only human command window");
+  assert.ok(main.includes("Watch auto duel"), "watch-loop brief should explain the idle spectator loop");
+  assert.ok(main.includes("Study replay"), "watch-loop brief should explain post-fight learning");
+  assert.ok(
+    main.indexOf("<WatchLoopBrief") < main.indexOf("<LoginCard"),
+    "new users should see the product loop before account fields"
+  );
+  assert.ok(main.includes("PostMatchRecap"), "tactical rail should include a named post-match recap panel");
+  assert.ok(main.includes('data-testid="post-match-recap"'), "post-match recap should be selectable for browser verification");
+  assert.ok(main.includes("Rank delta"), "post-match recap should expose rank change as a result");
+  assert.ok(main.includes("Bare-rules proof"), "post-match recap should explain that models received only the rules packet");
+  assert.ok(css.includes(".watch-loop-brief"), "CSS should style the watch-loop brief as launch chrome");
+  assert.ok(css.includes(".post-match-recap"), "CSS should style the post-match recap");
+  assert.ok(css.includes(".recap-proof-grid"), "CSS should style recap proof metrics");
+}
+
+function testSimulationApiIsVisibleAsProductSurface() {
+  assert.ok(main.includes("SimulationApiPanel"), "UI should include a named simulation API panel");
+  assert.ok(main.includes('data-testid="simulation-api-panel"'), "simulation API panel should be selectable for browser verification");
+  assert.ok(main.includes("/api/simulations/league"), "simulation API panel should show the league endpoint");
+  assert.ok(main.includes("curl -X POST"), "simulation API panel should expose a runnable API example");
+  assert.ok(main.includes("exported league endpoint"), "simulation API panel should frame automated model evaluation as a product surface");
+  assert.ok(css.includes(".simulation-api-panel"), "CSS should style the simulation API panel");
+  assert.ok(css.includes(".api-contract-grid"), "CSS should style simulation API contract facts");
+}
+
 function testGameSurfacesPersistentProfileAndLeaderboard() {
   assert.ok(main.includes("restoreProfile"), "UI should restore a persisted ranked profile");
   assert.ok(main.includes("LeaderboardPanel"), "UI should expose a ranked leaderboard panel");
@@ -452,6 +482,8 @@ testProductionBundleUsesBoundedEntrypoints();
 testStaticEntrypointLoadsSimBeforeReactBundle();
 testUiKeepsRankedDuelSpectatorOnly();
 testGameSurfacesMatchmakingAndLeagueSimulation();
+testProductizedWatchLoopAndPostMatchRecap();
+testSimulationApiIsVisibleAsProductSurface();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testGameSurfacesRealAccountAuth();
 testGameShowsRankedOnboardingAndProviderReadiness();

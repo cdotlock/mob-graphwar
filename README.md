@@ -9,6 +9,21 @@ seats are filled by AI. The point is not to let a model solve raw Graphwar
 directly; it has to act inside a hard function-card economy where human wording,
 hand variance, swap timing, and map complexity matter.
 
+## Product Experience
+
+The game now plays as an idle spectator arena:
+
+1. Configure an account and model provider, or stay on the local fallback.
+2. Write one short standing order for the model before matchmaking.
+3. Launch ranked 2v2. If humans are missing, AI fills the empty seats.
+4. The match locks into watch-only mode and resolves through the auto-duel engine.
+5. Spectate the battlefield, model actions, retained hands, replay frames, and
+   rank settlement.
+
+The UI is organized as Launch, Watch, Intel, and Ladder surfaces. The Watch
+surface prioritizes the live battlefield first, then broadcast scorebug,
+model telemetry, rules proof, and replay controls.
+
 ## Play Locally
 
 Install and run:
@@ -70,8 +85,9 @@ Local AI fills missing seats and handles offline play. Hosted providers are BYOK
 - `server/providers/catalog.js` lists OpenAI, DeepSeek, MiniMax, Zhipu, and
   Anthropic.
 - `server/index.js` serves the React app plus `/healthz`, `/api/providers`,
-  `/api/session`, `/api/match/join`, `/api/match/:id/auto-duel`, and
-  `/api/agent/shot`.
+  `/api/auth/register`, `/api/auth/login`, `/api/session/me`,
+  `/api/profile/providers`, `/api/match/join`, `/api/match/:id/auto-duel`,
+  `/api/simulations/league`, and `/api/agent/shot`.
 
 Models are expected to choose `{"action":"swap_hand"}` or a listed shot
 `candidateId`. They should never output arbitrary JavaScript or free-form
@@ -80,6 +96,27 @@ legal actions, cards, combo identity, target, cost, and expression, but not
 local simulation scores or hit results.
 
 See [docs/architecture/providers.md](docs/architecture/providers.md).
+
+## Simulation API
+
+`POST /api/simulations/league` runs automated model-vs-model league seeds
+without creating live player rooms. It returns `leaderboard`, `matches`, and an
+`api` block describing the public contract, limits, rank formula, and response
+shape.
+
+Example:
+
+```sh
+curl -X POST http://127.0.0.1:3000/api/simulations/league \
+  -H "content-type: application/json" \
+  -d '{
+    "rounds": 4,
+    "contestants": [
+      { "id": "arc", "label": "Arc Local", "provider": "local", "command": "safe high arc target weakest enemy" },
+      { "id": "bend", "label": "Bend Local", "provider": "local", "command": "bend through center avoid ally" }
+    ]
+  }'
+```
 
 ## Railway
 
@@ -97,10 +134,9 @@ Use `.env.example` as the variable reference.
 
 ## Roadmap
 
-- Real player matchmaking persistence.
-- Richer shot playback animation and replay controls.
-- More map templates and balance tests across provider families.
 - Rank history and replay browser.
+- Balance dashboards across provider families.
+- Public tournament exports for long-running model leagues.
 
 ## License
 

@@ -865,11 +865,13 @@ function App() {
           <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
           <Timeline state={battleState} />
           <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
+          <PostMatchRecap autoBattle={autoBattle} state={battleState} profile={profile} playback={battlePlayback} />
           <RulesPacketPanel state={battleState} activeUnitId={displayUnitId} standingOrder={login.standingOrder} />
           <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
           <ModelWarFeed state={battleState} lastDecision={visibleDecision} />
           <ShotIntel event={latestEvent} state={battleState} />
           <LeagueLab result={leagueResult} busy={leagueBusy} onRun={runLeague} />
+          <SimulationApiPanel />
         </aside>
       </section>
       <MobileSpectatorDock
@@ -1019,6 +1021,7 @@ function LaunchBay({
           <span key={step.label}><b>{step.label}</b>{step.value}</span>
         ))}
       </div>
+      <WatchLoopBrief />
       <RankedFlowPanel profile={profile} sessionToken={sessionToken} match={match} queueState={queueState} login={login} />
       <RankedGameStatePanel profile={profile} match={match} queueState={queueState} autoBattle={autoBattle} />
       <SessionStatusPanel profile={profile} sessionToken={sessionToken} login={login} />
@@ -1032,6 +1035,32 @@ function LaunchBay({
         onSync={onSync}
       />
     </section>
+  );
+}
+
+function WatchLoopBrief() {
+  const steps = [
+    { label: "Configure model", value: "BYOK or local fallback" },
+    { label: "Write one standing order", value: "80 characters before queue" },
+    { label: "Watch auto duel", value: "No mid-fight commands" },
+    { label: "Study replay", value: "Rank, frames, rules proof" }
+  ];
+  return (
+    <div className="watch-loop-brief" data-testid="watch-loop-brief" aria-label="Watch-only game loop">
+      <div>
+        <span>Product loop</span>
+        <strong>One prompt, then spectate the model war.</strong>
+      </div>
+      <div className="watch-loop-steps">
+        {steps.map((step, index) => (
+          <span key={step.label}>
+            <b>{String(index + 1).padStart(2, "0")}</b>
+            <strong>{step.label}</strong>
+            <small>{step.value}</small>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2111,6 +2140,44 @@ function AutoDuelPanel({ autoBattle, state }) {
   );
 }
 
+function PostMatchRecap({ autoBattle, state, profile, playback }) {
+  const score = state.score;
+  const rankDelta = Number.isFinite(Number(autoBattle?.rankDelta)) ? Number(autoBattle.rankDelta) : null;
+  const modelTurns = autoBattle?.modelTurns || [];
+  const proofTurn = modelTurns.find((turn) => turn.rulesDigest) || null;
+  const rulesDigest = proofTurn?.rulesDigest || playback?.action?.rulesDigest || null;
+  const finalEvent = autoBattle?.finalEvent || state.events[state.events.length - 1] || null;
+  const result = autoBattle ? battleResultLabel(autoBattle.winner) : state.winner ? battleResultLabel(state.winner) : "Awaiting ranked result";
+  return (
+    <div className="post-match-recap" data-testid="post-match-recap">
+      <div className="panel-title"><Trophy size={18} /> Post Match Recap</div>
+      <div className="recap-headline">
+        <div>
+          <span>{autoBattle ? "Rank delta" : "Rank delta pending"}</span>
+          <strong>{rankDelta === null ? "Pending" : `${rankDelta > 0 ? "+" : ""}${rankDelta}`}</strong>
+          <small>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : "Guest spectator"}</small>
+        </div>
+        <div>
+          <span>Result</span>
+          <strong>{result}</strong>
+          <small>{score ? `${score.rank} · ${score.value}` : "No ranked score yet"}</small>
+        </div>
+      </div>
+      <div className="recap-proof-grid">
+        <span><b>Bare-rules proof</b>{rulesDigest?.promptPolicy || "waiting for model turn"}</span>
+        <span><b>Legal shots</b>{Number.isFinite(Number(rulesDigest?.legalShotCount)) ? rulesDigest.legalShotCount : "-"}</span>
+        <span><b>Hand</b>{rulesDigest?.handRetained ? `${rulesDigest.handSize} retained` : "pending"}</span>
+        <span><b>Swaps</b>{Number.isFinite(Number(rulesDigest?.swapsRemaining)) ? `${rulesDigest.swapsRemaining} left` : "-"}</span>
+      </div>
+      <p>
+        {finalEvent
+          ? `${finalEvent.provider || "Local AI"} closed with ${finalEvent.resultLabel || finalEvent.result}.`
+          : "Finish a ranked room to see the model's decisive action, rules packet proof, and rank outcome."}
+      </p>
+    </div>
+  );
+}
+
 function RulesPacketPanel({ state, activeUnitId, standingOrder }) {
   const snapshot = rulesSnapshot(state, activeUnitId, standingOrder);
   const shotCount = snapshot.legalActions.filter((action) => action.action === "shot").length;
@@ -2252,6 +2319,25 @@ function LeagueLab({ result, busy, onRun }) {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function SimulationApiPanel() {
+  const curl = `curl -X POST /api/simulations/league \\
+  -H "content-type: application/json" \\
+  -d '{"rounds":4,"contestants":[{"id":"model-a","provider":"local","command":"safe high arc"},{"id":"model-b","provider":"local","command":"bend center"}]}'`;
+  return (
+    <div className="simulation-api-panel" data-testid="simulation-api-panel">
+      <div className="panel-title"><RadioTower size={18} /> Simulation API</div>
+      <p className="empty-copy">The exported league endpoint lets AI models auto-run ranked seeds and compare rating without touching live player rooms.</p>
+      <div className="api-contract-grid">
+        <span><b>Endpoint</b>/api/simulations/league</span>
+        <span><b>Method</b>POST</span>
+        <span><b>Contract</b>bare_rules_only</span>
+        <span><b>Mode</b>watch-only</span>
+      </div>
+      <code>{curl}</code>
     </div>
   );
 }

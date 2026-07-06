@@ -102,6 +102,7 @@ function testUiKeepsRankedDuelSpectatorOnly() {
   assert.ok(!main.includes("Watch Auto Duel"), "ranked battle surface should not expose a manual duel-start button after matchmaking");
   assert.ok(!main.includes("Start Auto Duel"), "ranked launch bay should not require a manual auto-duel start after matchmaking");
   assert.ok(main.includes("standingOrder"), "pre-match setup should keep the one allowed human-to-AI instruction");
+  assert.ok(main.includes("standingOrder: login.standingOrder"), "ranked join should attach the launch-time standing order to the seat");
   assert.ok(main.includes("spectator-hud"), "battle surface should include a dedicated spectator HUD");
   assert.ok(main.includes("AI auto-battle"), "battle surface should state that models auto-battle after kickoff");
   assert.ok(main.includes("Watch-only after launch"), "launch bay should tell users the duel locks into spectator mode");

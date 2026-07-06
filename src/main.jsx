@@ -461,7 +461,11 @@ function App() {
       const response = await fetch("/api/match/join", {
         method: "POST",
         headers: authorizedHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ preferredProvider: login.provider, allowAiFill: opts.allowAiFill !== false })
+        body: JSON.stringify({
+          preferredProvider: login.provider,
+          allowAiFill: opts.allowAiFill !== false,
+          standingOrder: login.standingOrder
+        })
       });
       const payload = await response.json();
       if (response.status === 202) {

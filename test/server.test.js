@@ -385,6 +385,112 @@ async function testHumanMatchmakingQueueCanFormRanked2v2() {
   assert.ok(!matched.text.includes("Alpha-secret"), "match response should not leak queued player keys");
 }
 
+async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
+  const capturedPrompts = [];
+  const fetchMock = async (url, options) => {
+    const requestBody = JSON.parse(options.body);
+    const prompt = JSON.parse(requestBody.messages[1].content);
+    const candidates = prompt.legalActions.filter((action) => action.action === "shot");
+    capturedPrompts.push({ url, options, requestBody, prompt });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(candidates[0]
+                ? {
+                    action: "shot",
+                    candidateId: candidates[0].candidateId,
+                    publicReason: "Provider followed the launch order."
+                  }
+                : {
+                    action: "swap_hand",
+                    publicReason: "Provider needed a legal firing hand."
+                  })
+            }
+          }
+        ]
+      })
+    };
+  };
+  const players = [];
+  const launchOrders = [
+    "alpha locks B1 with safe high arc",
+    "bravo protects ally and pressures B2",
+    "cinder bends low toward A1",
+    "delta threads center toward A2"
+  ];
+  for (const name of ["OrderAlpha", "OrderBravo", "OrderCinder", "OrderDelta"]) {
+    const session = await request(createServer({ env: {} }), "/api/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        displayName: name,
+        providers: { openai: { apiKey: `${name}-order-secret`, model: "gpt-order" } }
+      })
+    });
+    assert.strictEqual(session.status, 200);
+    players.push({ ...session.json.player, sessionToken: session.json.sessionToken });
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    const queued = await request(createServer({ env: {} }), "/api/match/join", {
+      method: "POST",
+      headers: authHeaders(players[index], { "content-type": "application/json" }),
+      body: JSON.stringify({
+        playerId: players[index].id,
+        preferredProvider: "openai",
+        allowAiFill: false,
+        standingOrder: launchOrders[index]
+      })
+    });
+    assert.strictEqual(queued.status, 202);
+    assert.ok(!queued.text.includes(launchOrders[index]), "queue response should not leak launch orders");
+  }
+
+  const matched = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(players[3], { "content-type": "application/json" }),
+    body: JSON.stringify({
+      playerId: players[3].id,
+      preferredProvider: "openai",
+      allowAiFill: false,
+      standingOrder: launchOrders[3]
+    })
+  });
+  assert.strictEqual(matched.status, 200);
+  assert.deepStrictEqual(
+    matched.json.match.roster.map((seat) => [seat.unitId, seat.standingOrderConfigured]),
+    [["A1", true], ["A2", true], ["B1", true], ["B2", true]],
+    "matched roster should expose that every human seat is armed without exposing the text"
+  );
+  for (const order of launchOrders) {
+    assert.ok(!matched.text.includes(order), "match response should not leak launch order text");
+  }
+
+  const autoDuel = await request(createServer({ env: {}, fetch: fetchMock }), `/api/match/${matched.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: authHeaders(players[0], { "content-type": "application/json" }),
+    body: JSON.stringify({ playerId: players[0].id })
+  });
+  assert.strictEqual(autoDuel.status, 200);
+  const firstPromptByUnit = new Map();
+  for (const captured of capturedPrompts) {
+    if (!firstPromptByUnit.has(captured.prompt.activeUnitId)) {
+      firstPromptByUnit.set(captured.prompt.activeUnitId, captured.prompt.command);
+    }
+  }
+  assert.strictEqual(firstPromptByUnit.get("A1"), launchOrders[0]);
+  assert.strictEqual(firstPromptByUnit.get("A2"), launchOrders[1]);
+  assert.strictEqual(firstPromptByUnit.get("B1"), launchOrders[2]);
+  assert.strictEqual(firstPromptByUnit.get("B2"), launchOrders[3]);
+  for (const order of launchOrders) {
+    assert.ok(!autoDuel.text.includes(order), "auto duel response should not leak other players' launch orders");
+  }
+}
+
 async function testQueuedPlayersCanPollMatchedRoom() {
   const players = [];
   for (const name of ["Echo", "Flux", "Glint", "Helix"]) {
@@ -885,6 +991,7 @@ async function testProviderShotRequiresKey() {
   await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
   await testSessionTokenProtectsRankedAndProviderRoutes();
   await testHumanMatchmakingQueueCanFormRanked2v2();
+  await testHumanMatchmakingStoresLaunchOrdersPerSeat();
   await testQueuedPlayersCanPollMatchedRoom();
   await testRankedMatchRejectsMidDuelManualActions();
   await testAutoDuelResolvesRankedMatchWithBattleSummary();

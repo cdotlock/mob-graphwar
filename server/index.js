@@ -379,9 +379,30 @@ function publicLeaderboard(limit) {
     .slice(0, limit || 25);
 }
 
-function createRoster(player, preferredProvider) {
+function normalizeStandingOrder(value) {
+  return String(value || "").trim().slice(0, Sim.CONFIG.maxCommandLength);
+}
+
+function attachStandingOrder(seat, standingOrder) {
+  const order = normalizeStandingOrder(standingOrder);
+  Object.defineProperty(seat, "standingOrder", {
+    value: order,
+    enumerable: false,
+    writable: true,
+    configurable: true
+  });
+  seat.standingOrderConfigured = Boolean(order);
+  seat.standingOrderLength = order.length;
+  return seat;
+}
+
+function seatStandingOrder(seat) {
+  return normalizeStandingOrder(seat && seat.standingOrder);
+}
+
+function createRoster(player, preferredProvider, standingOrder) {
   return [
-    createHumanSeat(player, preferredProvider, "A1", "A"),
+    createHumanSeat(player, preferredProvider, "A1", "A", standingOrder),
     createAiSeat("A2", "A", "Auto Ally"),
     createAiSeat("B1", "B", "AI Rival 1"),
     createAiSeat("B2", "B", "AI Rival 2")
@@ -394,10 +415,10 @@ function preferredPlayerProvider(player, preferredProvider) {
   return configured[0] || "local";
 }
 
-function createHumanSeat(player, preferredProvider, unitId, team) {
+function createHumanSeat(player, preferredProvider, unitId, team, standingOrder) {
   const provider = preferredPlayerProvider(player, preferredProvider);
   const providerConfig = player.providers && player.providers[provider] ? player.providers[provider] : {};
-  return {
+  return attachStandingOrder({
     unitId,
     team,
     control: "human",
@@ -405,11 +426,11 @@ function createHumanSeat(player, preferredProvider, unitId, team) {
     displayName: player.displayName,
     provider,
     model: providerConfig.model || ""
-  };
+  }, standingOrder);
 }
 
 function createAiSeat(unitId, team, displayName) {
-  return { unitId, team, control: "ai", displayName, provider: "local", model: "local-baseline" };
+  return attachStandingOrder({ unitId, team, control: "ai", displayName, provider: "local", model: "local-baseline" }, "");
 }
 
 function createRankedMatchFromRoster(roster, options) {
@@ -433,8 +454,8 @@ function createRankedMatchFromRoster(roster, options) {
   return match;
 }
 
-function createRankedMatch(player, preferredProvider) {
-  return createRankedMatchFromRoster(createRoster(player, preferredProvider), { filledByAi: true });
+function createRankedMatch(player, preferredProvider, standingOrder) {
+  return createRankedMatchFromRoster(createRoster(player, preferredProvider, standingOrder), { filledByAi: true });
 }
 
 function createHumanRankedMatch(entries) {
@@ -442,7 +463,7 @@ function createHumanRankedMatch(entries) {
     const player = players.get(entry.playerId);
     const unitId = index < 2 ? `A${index + 1}` : `B${index - 1}`;
     const team = index < 2 ? "A" : "B";
-    return createHumanSeat(player, entry.preferredProvider, unitId, team);
+    return createHumanSeat(player, entry.preferredProvider, unitId, team, entry.standingOrder);
   });
   return createRankedMatchFromRoster(seats, { filledByAi: false });
 }
@@ -468,7 +489,7 @@ function publicMatchmakingStatus(player) {
   if (match) {
     return {
       status: "matched",
-      match,
+      match: publicMatch(match),
       queueSize: matchmakingQueue.length,
       needed: Math.max(0, 4 - matchmakingQueue.length)
     };
@@ -489,11 +510,12 @@ function publicMatchmakingStatus(player) {
   };
 }
 
-function queueRankedPlayer(player, preferredProvider) {
+function queueRankedPlayer(player, preferredProvider, standingOrder) {
   removeQueuedPlayer(player.id);
   matchmakingQueue.push({
     playerId: player.id,
     preferredProvider: preferredProvider || preferredPlayerProvider(player),
+    standingOrder: normalizeStandingOrder(standingOrder),
     joinedAt: Date.now()
   });
   if (matchmakingQueue.length >= 4) {
@@ -502,16 +524,17 @@ function queueRankedPlayer(player, preferredProvider) {
   return null;
 }
 
-function createAiFallbackMatch(player, preferredProvider) {
+function createAiFallbackMatch(player, preferredProvider, standingOrder) {
   removeQueuedPlayer(player.id);
   if (matchmakingQueue.length >= 3) {
     const entries = matchmakingQueue.splice(0, 3).concat({
       playerId: player.id,
-      preferredProvider: preferredProvider || preferredPlayerProvider(player)
+      preferredProvider: preferredProvider || preferredPlayerProvider(player),
+      standingOrder: normalizeStandingOrder(standingOrder)
     });
     return createHumanRankedMatch(entries);
   }
-  return createRankedMatch(player, preferredProvider);
+  return createRankedMatch(player, preferredProvider, standingOrder);
 }
 
 function getPlayerSeat(match, player) {
@@ -562,9 +585,11 @@ function autoResolveCommandsForTurn(match, options) {
   const unitId = getActiveUnitId(match.state);
   const team = getActiveTeam(match.state);
   const seat = getRosterSeatForTurn(match, unitId);
-  const command = seat && opts.playerId && seat.playerId === opts.playerId
-    ? String(opts.command || "").slice(0, Sim.CONFIG.maxCommandLength)
+  const launchOrder = seatStandingOrder(seat);
+  const requestOrder = seat && opts.playerId && seat.playerId === opts.playerId
+    ? normalizeStandingOrder(opts.command)
     : "";
+  const command = launchOrder || requestOrder;
   return { team, unitId, seat, command };
 }
 
@@ -582,7 +607,9 @@ function publicRosterSeat(seat) {
     playerId: seat.playerId || null,
     displayName: seat.displayName,
     provider: seat.provider,
-    model: seat.model || ""
+    model: seat.model || "",
+    standingOrderConfigured: Boolean(seat.standingOrderConfigured),
+    standingOrderLength: Number(seat.standingOrderLength) || 0
   };
 }
 
@@ -718,10 +745,18 @@ function publicEventSummary(event) {
     provider: event.provider || "Local AI",
     shooterId: event.shooterId,
     targetId: event.targetId,
+    candidateId: event.candidateId || null,
+    energy: event.energy,
+    cost: event.cost,
     result: event.result,
     resultLabel: event.resultLabel,
-    combo: event.combo ? event.combo.name : "Mixed Curve",
-    damage: event.damage || 0
+    combo: event.combo ? clonePublic(event.combo) : { name: "Mixed Curve" },
+    expression: event.expression || "",
+    damage: event.damage || 0,
+    score: event.score,
+    closestTargetDistance: event.closestTargetDistance,
+    maxY: event.maxY,
+    collisionPoint: event.collisionPoint || null
   };
 }
 
@@ -744,12 +779,25 @@ function publicPlaybackState(state) {
       y: unit.y,
       hp: unit.hp
     })),
-    events: clonePublic(state.events || []),
+    events: (state.events || []).map(publicEventSummary),
     paths: clonePublic(state.paths || []),
     hands: clonePublic(state.hands || null),
     winner: state.winner || null,
     reason: state.reason || null,
     score: clonePublic(state.score || null)
+  };
+}
+
+function publicMatch(match) {
+  if (!match) return null;
+  return {
+    id: match.id,
+    mode: match.mode,
+    status: match.status,
+    seed: match.seed,
+    roster: (match.roster || []).map(publicRosterSeat),
+    filledByAi: Boolean(match.filledByAi),
+    state: publicPlaybackState(match.state)
   };
 }
 
@@ -830,7 +878,7 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
     savePersistentStore(env);
   }
   return {
-    match,
+    match: publicMatch(match),
     player: publicPlayer(player),
     rankDelta: settlement.rankDelta,
     score: finalState.score,
@@ -1172,7 +1220,7 @@ function createServer(options) {
           sendJson(res, 403, { error: "player_not_in_match" });
           return;
         }
-        sendJson(res, 200, { match });
+        sendJson(res, 200, { match: publicMatch(match) });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/session") {
@@ -1195,24 +1243,25 @@ function createServer(options) {
         if (!player) return;
         const indexedMatch = getIndexedMatch(player.id);
         if (indexedMatch && indexedMatch.status !== "resolved") {
-          sendJson(res, 200, { match: indexedMatch, queueSize: matchmakingQueue.length });
+          sendJson(res, 200, { match: publicMatch(indexedMatch), queueSize: matchmakingQueue.length });
           return;
         }
         if (indexedMatch && indexedMatch.status === "resolved") {
           playerMatchIndex.delete(player.id);
         }
         const allowAiFill = body.allowAiFill !== false;
+        const standingOrder = normalizeStandingOrder(body.standingOrder);
         if (!allowAiFill) {
-          const queuedMatch = queueRankedPlayer(player, body.preferredProvider);
+          const queuedMatch = queueRankedPlayer(player, body.preferredProvider, standingOrder);
           if (!queuedMatch) {
             sendJson(res, 202, publicMatchmakingStatus(player));
             return;
           }
-          sendJson(res, 200, { match: queuedMatch, queueSize: matchmakingQueue.length });
+          sendJson(res, 200, { match: publicMatch(queuedMatch), queueSize: matchmakingQueue.length });
           return;
         }
-        const match = createAiFallbackMatch(player, body.preferredProvider);
-        sendJson(res, 200, { match });
+        const match = createAiFallbackMatch(player, body.preferredProvider, standingOrder);
+        sendJson(res, 200, { match: publicMatch(match) });
         return;
       }
       const actionMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/action$/);

@@ -888,8 +888,8 @@ function PlayView({
   onPlaybackSpeed
 }) {
   return (
-    <section className="game-grid play-view" data-testid="play-view">
-      <aside className="lobby-panel game-panel" data-game-section="launch">
+    <section className="game-grid play-view map-first" data-testid="play-view">
+      <aside className="lobby-panel compact game-panel" data-game-section="launch">
         <LaunchBay
           login={login}
           profile={profile}
@@ -928,15 +928,7 @@ function PlayView({
             playback={battlePlayback}
             lastDecision={visibleDecision}
           />
-          <DuelBroadcastScorebug
-            state={battleState}
-            match={match}
-            activeTeam={activeTeam}
-            latestEvent={latestEvent}
-            playback={battlePlayback}
-            lastDecision={visibleDecision}
-          />
-          <CombatCinematicLayer
+          <BattleDetailsDrawer
             state={battleState}
             match={match}
             activeTeam={activeTeam}
@@ -944,36 +936,9 @@ function PlayView({
             latestEvent={latestEvent}
             playback={battlePlayback}
             lastDecision={visibleDecision}
-          />
-          <ArenaDirectorHud
-            state={battleState}
-            match={match}
             profile={profile}
-            activeTeam={activeTeam}
-            activeUnitId={activeUnitId}
-            latestEvent={latestEvent}
             autoBattle={autoBattle}
-            playback={battlePlayback}
           />
-          <LiveModelTelemetryPanel
-            state={battleState}
-            match={match}
-            playback={battlePlayback}
-            lastDecision={visibleDecision}
-            activeUnitId={activeUnitId}
-          />
-          <BattleBroadcastPanel
-            state={battleState}
-            match={match}
-            activeTeam={activeTeam}
-            activeUnitId={activeUnitId}
-            latestEvent={latestEvent}
-            playback={battlePlayback}
-            lastDecision={visibleDecision}
-          />
-          <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
-          <BattleReplayRail state={battleState} />
-          <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
         </section>
       </section>
 
@@ -1209,30 +1174,23 @@ function LaunchBay({
   onJoin,
   onSync
 }) {
-  const readySteps = [
-    { label: "Account", value: profile ? profile.handle || profile.displayName : "Guest" },
-    { label: "Model", value: profile?.providers?.[login.provider]?.configured || login.apiKey.trim() ? login.model : "Local fallback" },
-    { label: "Room", value: match ? match.status : queueState ? "queued" : "not matched" },
-    { label: "Control", value: "Watch-only after launch" }
-  ];
   return (
     <section className="launch-bay" data-testid="launch-bay">
       <div className="launch-header">
         <div>
-          <span>Ranked launch bay</span>
+          <span>Ranked duel</span>
           <strong>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : "Login to arm model"}</strong>
         </div>
-        <b>{match?.filledByAi ? "AI FILL" : match ? "2V2" : "READY"}</b>
+        <b>{match?.filledByAi ? "AI" : match ? "A/B" : "READY"}</b>
       </div>
-      <div className="launch-steps">
-        {readySteps.map((step) => (
-          <span key={step.label}><b>{step.label}</b>{step.value}</span>
-        ))}
-      </div>
-      <WatchLoopBrief />
-      <RankedFlowPanel profile={profile} sessionToken={sessionToken} match={match} queueState={queueState} login={login} />
-      <RankedGameStatePanel profile={profile} match={match} queueState={queueState} autoBattle={autoBattle} />
-      <SessionStatusPanel profile={profile} sessionToken={sessionToken} login={login} />
+      <CompactLaunchSummary
+        login={login}
+        profile={profile}
+        sessionToken={sessionToken}
+        match={match}
+        queueState={queueState}
+        autoBattle={autoBattle}
+      />
       {profile ? (
         <MatchCard
           profile={profile}
@@ -1247,6 +1205,27 @@ function LaunchBay({
         <LockedPlayCard onOpenAuth={onOpenAuth} />
       )}
     </section>
+  );
+}
+
+function CompactLaunchSummary({ login, profile, sessionToken, match, queueState, autoBattle }) {
+  const selectedProvider = profile?.providers?.[login.provider];
+  const modelReady = Boolean(selectedProvider?.configured || login.apiKey.trim());
+  const items = [
+    { label: "Account", value: profile && sessionToken ? profile.handle || profile.displayName : profile ? "restore token" : "guest" },
+    { label: "Model", value: modelReady ? selectedProvider?.model || login.model : "local fallback" },
+    { label: "Room", value: autoBattle ? "settled" : match ? match.status : queueState ? `${queueState.queueSize}/2 queued` : "idle" },
+    { label: "Control", value: "Watch-only after launch" }
+  ];
+  return (
+    <div className="compact-launch-summary" data-testid="compact-launch-summary">
+      {items.map((item) => (
+        <span key={item.label}>
+          <b>{item.label}</b>
+          <strong>{item.value}</strong>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -2044,6 +2023,65 @@ function BattleHeader({ state, activeTeam, activeUnitId, message }) {
   );
 }
 
+function BattleDetailsDrawer({ state, match, profile, activeTeam, activeUnitId, latestEvent, playback, lastDecision, autoBattle }) {
+  return (
+    <details className="secondary-battle-panels" data-testid="battle-details-drawer">
+      <summary>
+        <span>Battle details</span>
+        <strong>model telemetry, replay, agent seats</strong>
+      </summary>
+      <div className="secondary-battle-grid">
+        <DuelBroadcastScorebug
+          state={state}
+          match={match}
+          activeTeam={activeTeam}
+          latestEvent={latestEvent}
+          playback={playback}
+          lastDecision={lastDecision}
+        />
+        <CombatCinematicLayer
+          state={state}
+          match={match}
+          activeTeam={activeTeam}
+          activeUnitId={activeUnitId}
+          latestEvent={latestEvent}
+          playback={playback}
+          lastDecision={lastDecision}
+        />
+        <ArenaDirectorHud
+          state={state}
+          match={match}
+          profile={profile}
+          activeTeam={activeTeam}
+          activeUnitId={activeUnitId}
+          latestEvent={latestEvent}
+          autoBattle={autoBattle}
+          playback={playback}
+        />
+        <LiveModelTelemetryPanel
+          state={state}
+          match={match}
+          playback={playback}
+          lastDecision={lastDecision}
+          activeUnitId={activeUnitId}
+        />
+        <BattleBroadcastPanel
+          state={state}
+          match={match}
+          activeTeam={activeTeam}
+          activeUnitId={activeUnitId}
+          latestEvent={latestEvent}
+          playback={playback}
+          lastDecision={lastDecision}
+        />
+        <AgentBattleMatrix state={state} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={lastDecision} />
+        <BattleReplayRail state={state} />
+        <DuelCommanders state={state} match={match} activeTeam={activeTeam} lastDecision={lastDecision} />
+      </div>
+    </details>
+  );
+}
+
 function SpectatorHud({ state, activeTeam, match }) {
   return (
     <div className="spectator-hud" data-testid="spectator-hud">
@@ -2110,57 +2148,13 @@ function BattlePlaybackHud({ playback, paused, speed, canControl, onToggle, onSt
   );
 }
 
-function BattlefieldBroadcastOverlay({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
-  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
-  const activeAction = playback?.action || lastDecision || null;
-  const actorId = activeAction?.unitId || latestEvent?.unitId || latestEvent?.shooterId || (activeUnitId === "-" ? null : activeUnitId);
-  const actorSeat = roster.find((seat) => seat.unitId === actorId) || null;
-  const actorTeam = activeAction?.team || actorSeat?.team || latestEvent?.team || activeTeam || "-";
-  const eventCombo = activeAction?.event?.combo || latestEvent?.combo || null;
-  const resultLabel =
-    activeAction?.resultLabel ||
-    latestEvent?.resultLabel ||
-    activeAction?.result ||
-    (state.winner ? battleResultLabel(state.winner) : "models reading route maze");
-  const actionVerb = activeAction?.action === "swap_hand" ? "Swap hand" : activeAction?.action ? String(activeAction.action) : latestEvent ? "Shot" : "Standby";
-  const damage = Number(activeAction?.event?.damage || latestEvent?.damage || 0);
-  const teamLine = (team) => {
-    const health = teamHealth(state, team);
-    const seats = roster.filter((seat) => seat.team === team);
-    const sideClass = team === "A" ? "team-a-fieldline" : "team-b-fieldline";
-    return (
-      <article className={`team-fieldline ${sideClass} ${actorTeam === team ? "active" : ""}`} key={team}>
-        <span>Team {team}</span>
-        <strong>{seats.map((seat) => `${seat.unitId} ${seat.displayName}`).join(" / ") || `Team ${team}`}</strong>
-        <small>{health.hp}/{health.max} HP · {health.alive} AI online</small>
-      </article>
-    );
-  };
-  return (
-    <div className="battlefield-broadcast-overlay" data-testid="battlefield-broadcast-overlay" aria-label="Live AI duel overlay">
-      {teamLine("A")}
-      <div className="model-fire-control">
-        <span>Live model fire-control</span>
-        <strong>{actorId || "Standby"} · {actionVerb}</strong>
-        <small>{actorSeat?.provider || activeAction?.provider || "local model"} · {eventCombo?.name || "function combo pending"}</small>
-        <b>{resultLabel}{damage ? ` · ${damage} dmg` : ""}</b>
-      </div>
-      {teamLine("B")}
-    </div>
-  );
-}
-
 function BattlefieldBackdrop({ state }) {
-  const complexity = state.mapMeta?.complexity || {};
   return (
     <g className="battlefield-backdrop" aria-hidden="true">
       <rect x="0" y="0" width="1000" height="600" fill="url(#skyField)" />
-      {Array.from({ length: 11 }, (_, i) => <line key={`x-${i}`} className="grid-line" x1={i * 100} y1="0" x2={i * 100} y2="600" />)}
-      {Array.from({ length: 7 }, (_, i) => <line key={`y-${i}`} className="grid-line" x1="0" y1={i * 100} x2="1000" y2={i * 100} />)}
-      <text className="field-watermark" x="34" y="64">DENSITY {complexity.density || "0.000"}</text>
-      <text className="field-watermark right" x="966" y="64" textAnchor="end">CHOKES {complexity.chokePoints || 0}</text>
-      <path className="terrain-ridge ridge-far" d={terrainLinePath(8)} />
-      <path className="terrain-ridge ridge-mid" d={terrainLinePath(4)} />
+      <rect className="map-playable-ground" x="24" y="26" width="952" height="548" rx="18" />
+      {Array.from({ length: 9 }, (_, i) => <line key={`x-${i}`} className="grid-line" x1={80 + i * 105} y1="44" x2={80 + i * 105} y2="560" />)}
+      {Array.from({ length: 5 }, (_, i) => <line key={`y-${i}`} className="grid-line" x1="44" y1={88 + i * 96} x2="956" y2={88 + i * 96} />)}
     </g>
   );
 }
@@ -2232,55 +2226,50 @@ function FlatMapObstacleLayer({ state }) {
   );
 }
 
+function MapLegend() {
+  const items = [
+    { label: "passable ground", className: "ground" },
+    { label: "solid blockers", className: "blocker" },
+    { label: "route lanes", className: "lane" },
+    { label: "current shot", className: "shot" }
+  ];
+  return (
+    <div className="map-legend" data-testid="map-legend" aria-label="Map legend">
+      {items.map((item) => (
+        <span className={item.className} key={item.label}>
+          <i />
+          <b>{item.label}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
-  const complexity = state.mapMeta?.complexity || {};
-  const routeArchetypes = Array.isArray(complexity.routeArchetypes) ? complexity.routeArchetypes : [];
-  const highArcDominance = Math.round((complexity.highArcDominance || 0) * 100);
-  const routeEntropy = Number.isFinite(Number(complexity.routeEntropy)) ? Number(complexity.routeEntropy).toFixed(2) : "0.00";
   const latestPath = state.paths[state.paths.length - 1];
   const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
+  const activeLabel = activeUnitId === "-" ? "standby" : `${activeUnitId} / Team ${activeTeam}`;
+  const resultLabel = state.winner ? battleResultLabel(state.winner) : "live route view";
   return (
     <div className="battlefield-frame" data-testid="battlefield-frame">
-      <div className="map-intel-strip" data-testid="map-intel-strip">
+      <div className="map-status-strip" data-testid="map-status-strip">
         <span><b>{state.mapMeta.name}</b> difficulty {state.mapMeta.difficulty}</span>
-        <span className="route-archetypes">{routeArchetypes.length} routes</span>
-        <span className="high-arc-dominance">{highArcDominance}% high</span>
-        <span className="ceiling-lock">{complexity.ceilingLock ? "ceiling lock" : "open sky"}</span>
-        <span className="route-entropy">{routeEntropy} entropy</span>
-        <span>{complexity.obstacleCount || 0} blockers</span>
-        <span className="solid-blockers">{complexity.solidObstacleCount || 0} solid</span>
-        <span className="route-guides">{complexity.routeGuideCount || 0} guides</span>
-        <span>{complexity.tallCount || 0} towers</span>
-        <span>{complexity.ceilingCount || 0} ceilings</span>
-        <span>{complexity.suspendedShelves || 0} shelves</span>
-        <span className="maze-bands">{complexity.mazeBands || 0} bands</span>
-        <span className="gate-slits">{complexity.gateSlits || 0} slits</span>
-        <span className="thread-slots">{complexity.threadSlots || 0} slots</span>
-        <span className="route-pressure">{complexity.routePressure || 0} pressure</span>
-        <span className="solver-pressure">{complexity.solverPressure || 0} solver</span>
-        <span className="swap-window">{Math.round((complexity.swapWindowHitRate || 0) * 100)}% swap</span>
-        <span className="battlefield-depth">{complexity.layerCount || 0} layers</span>
+        <span>Turn {state.turn}/{Sim.CONFIG.maxTurns}</span>
+        <span>{activeLabel}</span>
+        <span>{resultLabel}</span>
       </div>
-      <BattlefieldBroadcastOverlay
-        state={state}
-        match={match}
-        activeTeam={activeTeam}
-        activeUnitId={activeUnitId}
-        latestEvent={latestEvent}
-        playback={playback}
-        lastDecision={lastDecision}
-      />
-      <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
+      <MapLegend />
+      <svg className="battlefield simple-map" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
         <defs>
           <linearGradient id="arenaGround" x1="0" x2="1">
-            <stop offset="0%" stopColor="#173b35" />
-            <stop offset="62%" stopColor="#2f5139" />
-            <stop offset="100%" stopColor="#121b21" />
+            <stop offset="0%" stopColor="#16382f" />
+            <stop offset="62%" stopColor="#244737" />
+            <stop offset="100%" stopColor="#10221f" />
           </linearGradient>
           <linearGradient id="skyField" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#071018" />
-            <stop offset="48%" stopColor="#081528" />
-            <stop offset="100%" stopColor="#100a14" />
+            <stop offset="0%" stopColor="#071017" />
+            <stop offset="55%" stopColor="#09141f" />
+            <stop offset="100%" stopColor="#0b1118" />
           </linearGradient>
           <linearGradient id="obstacleFace" x1="0" x2="1">
             <stop offset="0%" stopColor="#59646d" />
@@ -2297,7 +2286,6 @@ function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, play
         </defs>
         <BattlefieldBackdrop state={state} />
         <path className="terrain" d={terrainPath()} />
-        <path className="terrain-ridge ridge-near" d={terrainLinePath(1.4)} />
         <RouteGuideLayer state={state} />
         <FlatMapObstacleLayer state={state} />
         {state.paths.map((path, index) => (

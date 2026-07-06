@@ -8,6 +8,13 @@ const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const main = fs.readFileSync(path.join(root, "src", "main.jsx"), "utf8");
 const css = fs.readFileSync(path.join(root, "src", "arena.css"), "utf8");
 
+function componentSource(name) {
+  const start = main.indexOf(`function ${name}`);
+  if (start === -1) return "";
+  const next = main.indexOf(`\nfunction `, start + 1);
+  return main.slice(start, next === -1 ? main.length : next);
+}
+
 function testCommanderBoardIsAFirstClassSurface() {
   assert.ok(main.includes('data-testid="commander-board"'), "UI should expose a dedicated AI commander board");
   assert.ok(main.includes('"team-a-commander"'), "UI should show Team A commander status");
@@ -250,6 +257,7 @@ function testUiPollsQueuedMatchmakingRooms() {
 }
 
 function testBattlefieldReadsAsGameSurface() {
+  const battlefield = componentSource("Battlefield");
   assert.ok(main.includes("createExhibitionBattle"), "unmatched users should see a real AI-vs-AI exhibition battle");
   assert.ok(main.includes("VersusBanner"), "battlefield should include a named 2v2 versus banner component");
   assert.ok(main.includes('data-testid="versus-banner"'), "versus banner should be selectable for browser verification");
@@ -259,46 +267,21 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes("RouteGuideLayer"), "battlefield should render named route guides above the backdrop");
   assert.ok(main.includes("FlatMapObstacleLayer"), "battlefield should render obstacles as flat 2D map blockers");
   assert.ok(main.includes('data-testid="battlefield-frame"'), "battlefield should expose a framed game-stage surface");
-  assert.ok(main.includes('data-testid="battlefield-broadcast-overlay"'), "battlefield should carry a live broadcast overlay inside the map frame");
-  assert.ok(main.includes("BattlefieldBroadcastOverlay"), "battlefield overlay should be implemented as a named component");
-  assert.ok(main.includes("team-a-fieldline"), "battlefield overlay should show Team A as an active model lane");
-  assert.ok(main.includes("team-b-fieldline"), "battlefield overlay should show Team B as an active model lane");
-  assert.ok(main.includes("model-fire-control"), "battlefield overlay should show the current model fire-control callout");
-  assert.ok(main.includes('data-testid="map-intel-strip"'), "battlefield should expose map complexity and pressure metadata");
+  assert.ok(main.includes("MapLegend"), "battlefield should use a compact map legend instead of a broadcast overlay");
+  assert.ok(main.includes('data-testid="map-legend"'), "map legend should be selectable for browser verification");
   assert.ok(main.includes('data-testid="route-maze-layer"'), "route maze layer should be selectable for browser verification");
-  assert.ok(main.includes("route-pressure"), "battlefield should show route pressure metadata");
-  assert.ok(main.includes("battlefield-depth"), "battlefield should show layered route depth metadata");
-  assert.ok(main.includes("maze-bands"), "battlefield should show maze band metadata");
-  assert.ok(main.includes("gate-slits"), "battlefield should show gate slit metadata");
-  assert.ok(main.includes("thread-slots"), "battlefield should show thread slot metadata");
-  assert.ok(main.includes("solid-blockers"), "battlefield should show how many blockers are truly solid");
-  assert.ok(main.includes("route-guides"), "battlefield should show pass-through route guide complexity");
-  assert.ok(main.includes("solver-pressure"), "battlefield should show solver pressure for spectators");
-  assert.ok(main.includes("swap-window"), "battlefield should show retained-hand swap-window solvability");
-  assert.ok(main.includes("route-archetypes"), "battlefield should show projectile route archetype count");
-  assert.ok(main.includes("high-arc-dominance"), "battlefield should show high-arc dominance");
-  assert.ok(main.includes("ceiling-lock"), "battlefield should show ceiling-lock status");
-  assert.ok(main.includes("complexity.solverPressure"), "battlefield should read solver pressure from real map metadata");
-  assert.ok(main.includes("complexity.swapWindowHitRate"), "battlefield should read swap-window hit rate from real map metadata");
-  assert.ok(main.includes("complexity.highArcDominance"), "battlefield should read high-arc dominance from real map metadata");
+  assert.ok(!battlefield.includes("solverPressure"), "battlefield first screen should not expose solver pressure");
+  assert.ok(!battlefield.includes("swapWindowHitRate"), "battlefield first screen should not expose swap-window metrics");
   assert.ok(main.includes("impact-burst"), "battlefield should mark the latest shot impact");
   assert.ok(css.includes(".battlefield-frame"), "CSS should frame the battlefield as a game viewport");
   assert.ok(css.includes(".battle-priority-layout"), "CSS should include battle-priority layout rules");
-  assert.ok(css.includes(".map-intel-strip"), "CSS should style map difficulty intel");
-  assert.ok(css.includes(".route-pressure"), "CSS should style route pressure metadata");
-  assert.ok(css.includes(".route-archetypes"), "CSS should style route archetype metadata");
-  assert.ok(css.includes(".high-arc-dominance"), "CSS should style high-arc dominance metadata");
-  assert.ok(css.includes(".ceiling-lock"), "CSS should style ceiling-lock metadata");
-  assert.ok(css.includes(".battlefield-depth"), "CSS should style battlefield depth metadata");
+  assert.ok(css.includes(".map-legend"), "CSS should style the simplified map legend");
   assert.ok(css.includes(".route-guide-layer"), "CSS should style the route guide overlay layer");
   assert.ok(css.includes(".map-obstacle"), "CSS should style flat 2D map blockers");
   assert.ok(css.includes(".route-guide.gate-slit"), "CSS should style narrow gate guides");
   assert.ok(css.includes(".route-guide.thread-slot"), "CSS should style thread-slot guides");
-  assert.ok(css.includes(".solver-pressure"), "CSS should style solver pressure as game difficulty chrome");
-  assert.ok(css.includes(".swap-window"), "CSS should style swap-window solvability");
-  assert.ok(css.includes(".route-guides"), "CSS should style pass-through route guide metadata");
   assert.ok(css.includes(".spectator-hud"), "CSS should style the spectator HUD");
-  assert.ok(css.includes(".terrain-ridge"), "CSS should style layered terrain ridges");
+  assert.ok(css.includes(".map-playable-ground"), "CSS should style playable ground as a calm base");
   assert.ok(css.includes(".map-obstacle.ceiling-lock"), "CSS should style ceiling locks as flat terrain");
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
 }
@@ -448,17 +431,8 @@ function testSpectatorReplayHasWatchOnlyControls() {
   assert.ok(!main.includes('fetch(`/api/match/${match.id}/action`'), "replay controls must not submit server-side gameplay actions");
   assert.ok(css.includes(".playback-controls"), "CSS should style replay controls as game HUD controls");
   assert.ok(css.includes(".speed-strip"), "CSS should style replay speed choices");
-  assert.ok(css.includes(".battlefield-broadcast-overlay"), "CSS should style the map-level broadcast overlay");
-  assert.ok(css.includes(".team-fieldline"), "CSS should style AI team field lines on the battlefield");
-  assert.ok(css.includes(".model-fire-control"), "CSS should style the current model fire-control callout");
-  assert.ok(
-    css.includes(".map-intel-strip span:nth-child(n+8)"),
-    "mobile battlefield should hide low-priority map intel so the actual terrain appears in the first viewport"
-  );
-  assert.ok(
-    css.includes(".battlefield-broadcast-overlay {\n    grid-template-columns: repeat(3, minmax(0, 1fr));"),
-    "mobile battlefield overlay should compress to a one-row three-lane game HUD"
-  );
+  assert.ok(css.includes(".secondary-battle-panels"), "secondary battle telemetry should move into a disclosure panel");
+  assert.ok(css.includes(".map-legend"), "mobile battlefield should use a compact legend instead of low-priority intel strips");
 }
 
 function testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels() {
@@ -532,6 +506,32 @@ function testUiExplainsOneCommanderControlsTwoAgents() {
   assert.ok(main.includes("Team Commander"), "UI should explain that one commander controls both agents on a team");
 }
 
+function testFirstScreenIsCompressedForMapFirstPlay() {
+  assert.ok(main.includes("CompactLaunchSummary"), "launch rail should use a compact account/model/queue summary");
+  assert.ok(!main.includes("<WatchLoopBrief />"), "product-loop explanation should not render in the first-screen launch rail");
+  assert.ok(!main.includes("<RankedFlowPanel"), "ranked flow diagram should be moved out of the first screen");
+  assert.ok(!main.includes("<SessionStatusPanel"), "session vault detail should be moved out of the first screen");
+  assert.ok(!main.includes("<RankedGameStatePanel"), "state timeline should not compete with the battlefield above the fold");
+  assert.ok(css.includes(".game-grid.map-first"), "play screen should use a map-first compressed grid");
+  assert.ok(css.includes(".lobby-panel.compact"), "left rail should become a compact command rail");
+}
+
+function testBattlefieldMapIsSimplifiedAndReadable() {
+  const battlefield = componentSource("Battlefield");
+  assert.ok(main.includes("MapLegend"), "battlefield should include a short visual legend");
+  assert.ok(main.includes("passable ground"), "map legend should name the playable area");
+  assert.ok(main.includes("solid blockers"), "map legend should name wall/terrain blockers");
+  assert.ok(main.includes("route lanes"), "map legend should name guide lanes");
+  assert.ok(main.includes("current shot"), "map legend should name projectile paths");
+  for (const noisyToken of ["routeEntropy", "routePressure", "solverPressure", "swapWindowHitRate", "routeGuideCount", "layerCount"]) {
+    assert.ok(!battlefield.includes(noisyToken), `battlefield first screen should not expose ${noisyToken}`);
+  }
+  assert.ok(css.includes(".battlefield.simple-map"), "battlefield SVG should use the simplified map style");
+  assert.ok(css.includes(".map-playable-ground"), "CSS should style passable terrain as a calm base layer");
+  assert.ok(css.includes(".map-legend"), "CSS should style the short map legend");
+  assert.ok(!css.includes(".field-watermark"), "map should not keep decorative density/choke watermarks");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testFourSeatAgentBattleMatrixExists();
@@ -568,5 +568,7 @@ testWatchFirstProductShellUsesTabsAndModalAuth();
 testBattlefieldUsesFlat2DMapLayers();
 testLeaderboardsExplainCommanderModelPromptAndPairCompetition();
 testUiExplainsOneCommanderControlsTwoAgents();
+testFirstScreenIsCompressedForMapFirstPlay();
+testBattlefieldMapIsSimplifiedAndReadable();
 
 console.log("ui-source tests passed");

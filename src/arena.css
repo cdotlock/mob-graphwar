@@ -537,6 +537,11 @@ label,
   align-items: start;
 }
 
+.game-grid.map-first {
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
+  gap: 10px;
+}
+
 .game-panel {
   min-width: 0;
   padding: 12px;
@@ -552,6 +557,10 @@ label,
   grid-area: lobby;
 }
 
+.lobby-panel.compact {
+  gap: 8px;
+}
+
 .battle-panel {
   grid-area: battle;
 }
@@ -562,7 +571,7 @@ label,
 
 .launch-bay {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .launch-header {
@@ -632,6 +641,41 @@ label,
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.compact-launch-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.compact-launch-summary span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(3, 7, 14, 0.68);
+}
+
+.compact-launch-summary b,
+.compact-launch-summary strong {
+  overflow: hidden;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.compact-launch-summary b {
+  color: var(--muted);
+}
+
+.compact-launch-summary strong {
+  color: var(--text);
 }
 
 .watch-loop-brief {
@@ -1255,6 +1299,47 @@ label {
     linear-gradient(90deg, rgba(88, 212, 255, 0.09), transparent 32%, rgba(255, 94, 104, 0.09)),
     rgba(2, 5, 12, 0.82);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.secondary-battle-panels {
+  overflow: hidden;
+  border: 1px solid rgba(88, 212, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(3, 7, 14, 0.72);
+}
+
+.secondary-battle-panels summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 9px 11px;
+  cursor: pointer;
+  color: var(--cyan);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.secondary-battle-panels summary::marker {
+  color: var(--acid);
+}
+
+.secondary-battle-panels summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary-battle-grid {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 10px;
 }
 
 .versus-banner {
@@ -2752,31 +2837,26 @@ label {
 .battlefield-frame {
   position: relative;
   overflow: hidden;
-  border: 2px solid rgba(88, 212, 255, 0.24);
+  border: 1px solid rgba(142, 209, 220, 0.28);
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(88, 212, 255, 0.12), transparent 42%),
-    linear-gradient(225deg, rgba(255, 94, 104, 0.11), transparent 44%),
-    #071018;
-  box-shadow:
-    inset 0 0 60px rgba(88, 212, 255, 0.12),
-    0 22px 60px rgba(0, 0, 0, 0.32);
+  background: #071018;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
 }
 
-.map-intel-strip {
+.map-status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 0.8fr));
   gap: 1px;
-  border-bottom: 1px solid rgba(88, 212, 255, 0.22);
-  background: rgba(88, 212, 255, 0.14);
+  border-bottom: 1px solid rgba(142, 209, 220, 0.18);
+  background: rgba(142, 209, 220, 0.12);
 }
 
-.map-intel-strip span {
+.map-status-strip span {
   min-width: 0;
   overflow: hidden;
-  padding: 9px 10px;
-  color: var(--cyan);
-  background: rgba(3, 7, 14, 0.82);
+  padding: 8px 10px;
+  color: rgba(244, 247, 251, 0.82);
+  background: rgba(3, 7, 14, 0.86);
   font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   font-weight: 900;
@@ -2785,154 +2865,60 @@ label {
   white-space: nowrap;
 }
 
-.map-intel-strip b {
+.map-status-strip b {
   color: var(--acid);
 }
 
-.map-intel-strip span:first-child {
-  grid-column: 1 / -1;
-}
-
-.map-intel-strip .route-pressure {
-  color: var(--gold);
-}
-
-.map-intel-strip .route-archetypes {
-  color: var(--acid);
-}
-
-.map-intel-strip .high-arc-dominance {
-  color: var(--red);
-}
-
-.map-intel-strip .ceiling-lock {
-  color: var(--cyan);
-}
-
-.map-intel-strip .route-entropy {
-  color: var(--gold);
-}
-
-.map-intel-strip .solver-pressure {
-  color: var(--red);
-}
-
-.map-intel-strip .swap-window {
-  color: var(--acid);
-}
-
-.map-intel-strip .battlefield-depth {
-  color: var(--green);
-}
-
-.map-intel-strip .maze-bands,
-.map-intel-strip .gate-slits,
-.map-intel-strip .thread-slots,
-.map-intel-strip .route-guides {
-  color: rgba(244, 247, 251, 0.82);
-}
-
-.map-intel-strip .solid-blockers {
-  color: var(--cyan);
-}
-
-.battlefield-broadcast-overlay {
-  position: absolute;
-  top: 58px;
-  right: 14px;
-  left: 14px;
-  z-index: 3;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.8fr) minmax(0, 1fr);
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  pointer-events: none;
+  align-items: center;
+  border-bottom: 1px solid rgba(142, 209, 220, 0.16);
+  padding: 8px 10px;
+  background: rgba(5, 12, 18, 0.9);
 }
 
-.team-fieldline,
-.model-fire-control {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 42%),
-    rgba(3, 7, 14, 0.74);
-  box-shadow:
-    inset 0 0 22px rgba(255, 255, 255, 0.04),
-    0 12px 34px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
-}
-
-.team-fieldline {
-  display: grid;
-  gap: 4px;
-  padding: 9px 10px;
-  border-top: 4px solid var(--line);
-}
-
-.team-a-fieldline {
-  border-top-color: var(--cyan);
-}
-
-.team-b-fieldline {
-  border-top-color: var(--red);
-}
-
-.team-fieldline.active {
-  border-color: var(--acid);
-  box-shadow:
-    inset 0 0 26px rgba(217, 255, 71, 0.12),
-    0 12px 34px rgba(0, 0, 0, 0.32);
-}
-
-.team-fieldline span,
-.team-fieldline small,
-.model-fire-control span,
-.model-fire-control small {
-  overflow: hidden;
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 3px 8px;
   color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
   font-family: "JetBrains Mono", monospace;
   font-size: 9px;
   font-weight: 900;
-  text-overflow: ellipsis;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
-.team-fieldline strong,
-.model-fire-control strong {
-  overflow: hidden;
-  color: var(--text);
-  font-family: "Russo One", sans-serif;
-  font-size: 15px;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
+.map-legend i {
+  width: 18px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(31, 67, 55, 0.95);
 }
 
-.model-fire-control {
-  display: grid;
-  gap: 4px;
-  align-content: center;
-  padding: 9px 10px;
-  border-color: rgba(217, 255, 71, 0.38);
-  text-align: center;
+.map-legend .blocker i {
+  height: 10px;
+  border: 1px solid rgba(214, 222, 220, 0.28);
+  border-radius: 3px;
+  background: #27363a;
 }
 
-.model-fire-control strong {
-  color: var(--acid);
+.map-legend .lane i {
+  height: 0;
+  border-top: 2px dashed rgba(217, 255, 71, 0.72);
+  background: transparent;
 }
 
-.model-fire-control b {
-  overflow: hidden;
-  color: var(--gold);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  font-weight: 900;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
+.map-legend .shot i {
+  height: 0;
+  border-top: 3px solid var(--cyan);
+  background: transparent;
 }
 
 .battlefield {
@@ -2942,21 +2928,23 @@ label {
   background: #071018;
 }
 
-.grid-line {
-  stroke: rgba(142, 209, 220, 0.14);
-  stroke-width: 1;
+.battlefield.simple-map {
+  background: #071018;
 }
 
-.field-watermark {
-  fill: rgba(217, 255, 71, 0.18);
-  font-family: "Russo One", sans-serif;
-  font-size: 22px;
-  font-weight: 900;
-  letter-spacing: 0;
+.grid-line {
+  stroke: rgba(142, 209, 220, 0.075);
+  stroke-width: 1;
 }
 
 .terrain {
   fill: url("#arenaGround");
+}
+
+.map-playable-ground {
+  fill: rgba(18, 39, 35, 0.72);
+  stroke: rgba(142, 209, 220, 0.12);
+  stroke-width: 1.2;
 }
 
 .terrain-ridge {
@@ -2987,57 +2975,57 @@ label {
 
 .route-guide {
   fill: none;
-  opacity: 0.58;
-  stroke: rgba(217, 255, 71, 0.56);
-  stroke-dasharray: 10 9;
+  opacity: 0.42;
+  stroke: rgba(217, 255, 71, 0.45);
+  stroke-dasharray: 9 12;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2.2;
+  stroke-width: 1.8;
 }
 
 .route-guide.route-contour {
-  fill: rgba(217, 255, 71, 0.035);
-  stroke: rgba(217, 255, 71, 0.34);
-  stroke-dasharray: 12 10;
+  fill: rgba(217, 255, 71, 0.018);
+  stroke: rgba(217, 255, 71, 0.24);
+  stroke-dasharray: 12 14;
 }
 
 .route-guide.gate-slit {
-  stroke: rgba(88, 212, 255, 0.72);
-  stroke-dasharray: 5 8;
-  stroke-width: 3;
+  stroke: rgba(88, 212, 255, 0.5);
+  stroke-dasharray: 4 9;
+  stroke-width: 2;
 }
 
 .route-guide.thread-slot {
-  stroke: rgba(77, 240, 160, 0.7);
-  stroke-dasharray: 3 9;
-  stroke-width: 2.5;
+  stroke: rgba(77, 240, 160, 0.48);
+  stroke-dasharray: 3 10;
+  stroke-width: 2;
 }
 
 .map-obstacle {
-  fill: rgba(61, 78, 83, 0.92);
-  stroke: rgba(173, 205, 196, 0.34);
-  stroke-width: 1.4;
-  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.24));
+  fill: rgba(43, 56, 60, 0.96);
+  stroke: rgba(214, 222, 220, 0.32);
+  stroke-width: 1.2;
+  filter: none;
 }
 
 .map-obstacle.maze-room {
-  fill: rgba(52, 80, 85, 0.78);
-  stroke: rgba(88, 212, 255, 0.36);
+  fill: rgba(46, 67, 67, 0.84);
+  stroke: rgba(88, 212, 255, 0.28);
 }
 
 .map-obstacle.maze-corridor-wall {
-  fill: rgba(38, 54, 59, 0.95);
-  stroke: rgba(244, 247, 251, 0.22);
+  fill: rgba(32, 44, 48, 0.98);
+  stroke: rgba(244, 247, 251, 0.2);
 }
 
 .map-obstacle.ceiling-lock {
-  fill: rgba(94, 67, 78, 0.92);
-  stroke: rgba(255, 94, 104, 0.48);
+  fill: rgba(74, 51, 58, 0.95);
+  stroke: rgba(255, 94, 104, 0.36);
 }
 
 .map-obstacle.maze-band {
-  fill: rgba(70, 78, 69, 0.88);
-  stroke: rgba(217, 255, 71, 0.3);
+  fill: rgba(54, 63, 55, 0.92);
+  stroke: rgba(217, 255, 71, 0.22);
 }
 
 .map-obstacle.layer-5 {
@@ -3046,15 +3034,16 @@ label {
 
 .shot-path {
   fill: none;
-  stroke-width: 3.5;
+  stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 8px currentColor);
+  opacity: 0.72;
 }
 
 .shot-path.latest {
-  stroke-width: 5;
-  stroke-dasharray: 10 7;
+  stroke-width: 4.5;
+  opacity: 0.96;
+  stroke-dasharray: 12 8;
   animation: pathPulse 1.8s ease-in-out infinite;
 }
 
@@ -3123,11 +3112,12 @@ label {
 
 .unit text {
   fill: var(--text);
-  font-size: 13px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 22px;
   font-weight: 900;
   paint-order: stroke;
   stroke: #071018;
-  stroke-width: 5px;
+  stroke-width: 7px;
   stroke-linejoin: round;
 }
 
@@ -3849,6 +3839,38 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .game-grid.map-first {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .product-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .product-tab {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 3px;
+    min-height: 54px;
+    padding: 6px 4px;
+    text-align: center;
+  }
+
+  .product-tab svg {
+    grid-row: auto;
+  }
+
+  .product-tab span {
+    max-width: 100%;
+    font-size: 10px;
+  }
+
+  .product-tab small {
+    display: none;
+  }
+
   .game-mode-nav {
     display: none;
   }
@@ -3900,27 +3922,8 @@ code {
       "tactical";
   }
 
-  .map-intel-strip {
+  .map-status-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .battlefield-broadcast-overlay {
-    position: static;
-    grid-template-columns: 1fr;
-    gap: 4px;
-    padding: 6px;
-    background: rgba(3, 7, 14, 0.72);
-  }
-
-  .team-fieldline,
-  .model-fire-control {
-    border-radius: 7px;
-    padding: 7px;
-  }
-
-  .team-fieldline strong,
-  .model-fire-control strong {
-    font-size: 13px;
   }
 
   .battle-header {
@@ -4200,7 +4203,7 @@ code {
   }
 
   .match-actions,
-  .map-intel-strip,
+  .map-status-strip,
   .profile-vault,
   .leaderboard-row,
   .commander-names,
@@ -4216,47 +4219,27 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .map-intel-strip {
+  .map-status-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .map-intel-strip span {
+  .map-status-strip span {
     padding: 6px 7px;
     font-size: 8px;
   }
 
-  .map-intel-strip span:first-child {
+  .map-status-strip span:first-child {
     grid-column: 1 / -1;
   }
 
-  .map-intel-strip span:nth-child(n+8) {
-    display: none;
+  .map-legend {
+    gap: 5px;
+    padding: 6px;
   }
 
-  .battlefield-broadcast-overlay {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-    padding: 5px;
-  }
-
-  .team-fieldline,
-  .model-fire-control {
-    gap: 2px;
-    padding: 5px;
-  }
-
-  .team-fieldline span,
-  .team-fieldline small,
-  .model-fire-control span,
-  .model-fire-control small,
-  .model-fire-control b {
-    display: none;
-  }
-
-  .team-fieldline strong,
-  .model-fire-control strong {
-    font-size: 10px;
-    line-height: 1.1;
+  .map-legend span {
+    padding: 3px 6px;
+    font-size: 8px;
   }
 
   .battle-header {

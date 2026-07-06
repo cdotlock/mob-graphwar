@@ -245,6 +245,24 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
 }
 
+function testCommercialSpectatorPanelsExposeTopologyAndBareRules() {
+  assert.ok(main.includes("MapTopologyScanner"), "battle stage should include a named commercial map topology scanner");
+  assert.ok(main.includes('data-testid="map-topology-scanner"'), "map topology scanner should be selectable for browser verification");
+  assert.ok(main.includes("topologyTags"), "topology scanner should read multi-chamber topology metadata");
+  assert.ok(main.includes("straightLaneBreaks"), "topology scanner should expose direct-lane break pressure");
+  assert.ok(main.includes("solidBandCoverage"), "topology scanner should expose distributed solid blocker coverage");
+  assert.ok(main.includes("ModelRulesTicker"), "battle stage should include a named model rules ticker");
+  assert.ok(main.includes('data-testid="model-rules-ticker"'), "model rules ticker should be selectable for browser verification");
+  assert.ok(main.includes("No hidden prompt"), "rules ticker should visibly state the bare-rules model contract");
+  assert.ok(main.includes("rulesDigest"), "rules ticker should read replayed rules digests from model action frames");
+  assert.ok(main.includes("legalShotCount"), "rules ticker should expose legal shot count from the model rules packet");
+  assert.ok(main.includes("handRetained"), "rules ticker should expose retained-hand state from the model rules packet");
+  assert.ok(css.includes(".map-topology-scanner"), "CSS should style the topology scanner as game chrome");
+  assert.ok(css.includes(".topology-lane-grid"), "CSS should style topology coverage metrics");
+  assert.ok(css.includes(".model-rules-ticker"), "CSS should style the model rules ticker");
+  assert.ok(css.includes(".rules-contract-pill"), "CSS should style bare-rules contract pills");
+}
+
 function testLiveModelTelemetryMakesAiDuelVisible() {
   assert.ok(main.includes("LiveModelTelemetryPanel"), "battle stage should include a named live model telemetry panel");
   assert.ok(main.includes('data-testid="live-model-telemetry"'), "live model telemetry should be selectable for browser verification");
@@ -373,6 +391,7 @@ testUiExposesBareRulesPacketForModels();
 testMobileHasGameDockForWatchOnlyLoop();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
+testCommercialSpectatorPanelsExposeTopologyAndBareRules();
 testLiveModelTelemetryMakesAiDuelVisible();
 testBattleBroadcastPanelMakesAiVsAiReadable();
 testCombatCinematicLayerMakesAiVsAiFeelLikeGame();

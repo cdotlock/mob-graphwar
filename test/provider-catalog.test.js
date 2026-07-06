@@ -50,14 +50,12 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
   assert.deepStrictEqual(request.body.response_format, { type: "json_object" });
   assert.deepStrictEqual(request.body.thinking, { type: "disabled" });
   assert.ok(request.body.max_tokens > 0 && request.body.max_tokens <= 512, "JSON mode should cap output tokens");
-  assert.ok(request.body.messages[0].content.includes("JSON"), "system prompt should explicitly request JSON");
-  assert.ok(request.body.messages[0].content.includes("candidateId"), "system prompt should name candidateId");
-  assert.ok(!request.body.messages[0].content.includes("safest"), "system prompt should not provide tactical advice");
-  assert.ok(!request.body.messages[0].content.includes("high-clearance"), "system prompt should not provide tactical advice");
-  assert.ok(!request.body.messages[0].content.includes("clearest"), "system prompt should not provide tactical advice");
-  assert.ok(request.body.messages[0].content.includes("swap_hand"), "system prompt should name the public hand swap action");
-  assert.ok(!request.body.messages[0].content.includes("reroll"), "system prompt should not expose old reroll wording");
-  const userPayload = JSON.parse(request.body.messages[1].content);
+  assert.strictEqual(request.body.messages.length, 1, "provider should receive only the bare rules packet as prompt content");
+  assert.strictEqual(request.body.messages[0].role, "user");
+  const userPayload = JSON.parse(request.body.messages[0].content);
+  assert.ok(userPayload.rules.output.includes("JSON"), "bare rules should specify the required JSON output");
+  assert.ok(userPayload.rules.actionLimit.includes("legal action"), "bare rules should describe the legal action contract");
+  assert.ok(userPayload.rules.actionLimit.includes("swap_hand"), "bare rules should name the public hand swap action");
   assert.ok(userPayload.rules, "provider should receive bare rules");
   assert.ok(Array.isArray(userPayload.legalActions), "provider should receive legal actions");
   assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"), "provider should be allowed to swap the retained hand");
@@ -82,12 +80,13 @@ function testAnthropicUsesSameBareRulesPayload() {
     "sk-redacted"
   );
   assert.strictEqual(request.body.model, "claude-test");
-  assert.ok(request.body.system.includes("JSON"), "Anthropic prompt should request JSON");
-  assert.ok(request.body.system.includes("swap_hand"), "Anthropic prompt should name the public hand swap action");
-  assert.ok(!request.body.system.includes("clearest"), "Anthropic system prompt should not provide tactical advice");
+  assert.strictEqual(request.body.system, undefined, "Anthropic request should not add hidden prompt text outside the bare rules packet");
+  assert.strictEqual(request.body.messages.length, 1, "Anthropic should receive only the bare rules packet as prompt content");
   const userPayload = JSON.parse(request.body.messages[0].content);
   assert.strictEqual(userPayload.command, "thread the center");
   assert.ok(userPayload.rules, "Anthropic should receive the shared bare rules payload");
+  assert.ok(userPayload.rules.output.includes("JSON"), "bare Anthropic rules should specify the required JSON output");
+  assert.ok(userPayload.rules.actionLimit.includes("swap_hand"), "bare Anthropic rules should name the public hand swap action");
   assert.ok(userPayload.hand && userPayload.hand.retained, "Anthropic payload should include retained hand state");
   assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"));
   assert.ok(userPayload.legalActions.some((action) => action.action === "shot"));

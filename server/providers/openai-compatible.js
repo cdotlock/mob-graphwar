@@ -5,7 +5,8 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
-        actionLimit: "choose exactly one legal action from legalActions",
+        actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot",
+        handRetention: "cards persist until the active model chooses swap_hand",
         output: "return JSON only"
       },
       command: payload.command,
@@ -20,12 +21,6 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
     max_tokens: 260,
     response_format: { type: "json_object" },
     messages: [
-      {
-        role: "system",
-        content:
-          'Return only valid JSON. For a shot, return {"action":"shot","candidateId":"...","publicReason":"..."}. ' +
-          'For a hand swap, return {"action":"swap_hand","publicReason":"..."}. Use only legalActions from the user payload.'
-      },
       {
         role: "user",
         content: JSON.stringify(rulesPayload)

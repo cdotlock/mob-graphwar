@@ -424,6 +424,26 @@ function testHardMapsExposeSolverPressureWithoutBecomingImpossible() {
   assert.ok(swapWindowPressure / 40 >= 0.08, "average swap-window hit rate should prove the maps are not impossible");
 }
 
+function testCommercialMapsExposeTopologyNotJustBlockCount() {
+  for (let seed = 1; seed <= 16; seed += 1) {
+    const state = Sim.createInitialState({ seed });
+    const complexity = state.mapMeta.complexity;
+    assert.ok(complexity.obstacleCount >= 56, `seed ${seed} should feel like a dense Graphwar arena, not a few blocks`);
+    assert.ok(complexity.solidObstacleCount >= 28, `seed ${seed} should include many real blockers`);
+    assert.ok(complexity.routeGuideCount >= 18, `seed ${seed} should include many visible route guides`);
+    assert.ok(complexity.chamberCount >= 6, `seed ${seed} should expose multiple route chambers`);
+    assert.ok(complexity.straightLaneBreaks >= 8, `seed ${seed} should break simple direct lanes repeatedly`);
+    assert.ok(complexity.verticalBandCoverage >= 5, `seed ${seed} should cover most vertical map bands`);
+    assert.ok(complexity.horizontalBandCoverage >= 5, `seed ${seed} should cover most horizontal map bands`);
+    assert.ok(complexity.solidBandCoverage >= 12, `seed ${seed} should distribute solid blockers across the arena`);
+    assert.ok(complexity.routePressure >= 95, `seed ${seed} should preserve high route pressure`);
+    assert.ok(
+      Array.isArray(complexity.topologyTags) && complexity.topologyTags.includes("multi-chamber"),
+      `seed ${seed} should label its multi-chamber topology`
+    );
+  }
+}
+
 function testTraceShapeIncludesMapAndScore() {
   const state = Sim.runBattle({ seed: 7107, commands: commands() });
   const trace = Sim.exportTrace(state);
@@ -457,6 +477,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testSeededHardMapGeneration();
   testHardMapsRemainSolvableByFiniteCardCombos();
   testHardMapsExposeSolverPressureWithoutBecomingImpossible();
+  testCommercialMapsExposeTopologyNotJustBlockCount();
   testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

@@ -613,6 +613,28 @@ function publicRosterSeat(seat) {
   };
 }
 
+function buildRulesDigest(rulesPayload) {
+  const payload = rulesPayload || {};
+  const hand = payload.hand || {};
+  const legalActions = Array.isArray(payload.legalActions) ? payload.legalActions : [];
+  return {
+    promptPolicy: "bare_rules_only",
+    activeUnitId: payload.activeUnitId || "",
+    team: payload.team || "",
+    objective: payload.objective || "",
+    handRetained: hand.retained === true,
+    handSize: Array.isArray(hand.cards) ? hand.cards.length : 0,
+    handArchetype: hand.analysis && hand.analysis.archetype ? hand.analysis.archetype : "",
+    swapsUsed: Number(hand.swapsUsed) || 0,
+    swapsRemaining: Number(hand.swapsRemaining) || 0,
+    legalActionCount: legalActions.length,
+    legalShotCount: legalActions.filter((action) => action.action === "shot").length,
+    canSwap: legalActions.some((action) => action.action === "swap_hand"),
+    allyIds: Array.isArray(payload.allyIds) ? payload.allyIds.slice() : [],
+    opponentIds: Array.isArray(payload.opponentIds) ? payload.opponentIds.slice() : []
+  };
+}
+
 function buildPublicRulesPacket(match, player, command) {
   const activeUnitId = getActiveUnitId(match.state);
   const activeTeam = getActiveTeam(match.state);
@@ -648,12 +670,14 @@ function configuredSeatProvider(seat, env) {
 async function autoResolveDecisionForTurn(match, turn, options) {
   const opts = options || {};
   const rulesPayload = Contract.buildRulesPayload(match.state, turn.unitId || turn.team, turn.command);
+  const rulesDigest = buildRulesDigest(rulesPayload);
   const configured = configuredSeatProvider(turn.seat, opts.env);
   if (!configured) {
     return {
       command: turn.command,
       providerLabel: localAutoProviderLabel(turn.team),
-      decision: localDecisionFromRules(rulesPayload)
+      decision: localDecisionFromRules(rulesPayload),
+      rulesDigest
     };
   }
 
@@ -674,13 +698,15 @@ async function autoResolveDecisionForTurn(match, turn, options) {
     return {
       command: turn.command,
       providerLabel,
-      decision: result.decision
+      decision: result.decision,
+      rulesDigest
     };
   } catch (err) {
     return {
       command: turn.command,
       providerLabel: localAutoProviderLabel(turn.team),
-      decision: localDecisionFromRules(rulesPayload)
+      decision: localDecisionFromRules(rulesPayload),
+      rulesDigest
     };
   }
 }
@@ -706,7 +732,8 @@ async function advanceMatchToResolution(match, options) {
         provider: resolved.providerLabel,
         publicReason: resolved.decision.publicReason,
         swapsUsed: rerollResult.swapsUsed,
-        swapsRemaining: rerollResult.swapsRemaining
+        swapsRemaining: rerollResult.swapsRemaining,
+        rulesDigest: resolved.rulesDigest
       });
       continue;
     }
@@ -729,7 +756,8 @@ async function advanceMatchToResolution(match, options) {
       publicReason: resolved.decision.publicReason,
       candidateId: resolved.decision.candidateId || null,
       resultLabel: event ? event.resultLabel : match.state.reason || null,
-      event: publicEventSummary(event)
+      event: publicEventSummary(event),
+      rulesDigest: resolved.rulesDigest
     });
   }
   match.status = "resolved";
@@ -817,6 +845,7 @@ function buildPlaybackFrame(match, action) {
       candidateId: publicAction.candidateId || null,
       swapsUsed: Number.isFinite(Number(publicAction.swapsUsed)) ? Number(publicAction.swapsUsed) : null,
       swapsRemaining: Number.isFinite(Number(publicAction.swapsRemaining)) ? Number(publicAction.swapsRemaining) : null,
+      rulesDigest: publicAction.rulesDigest ? clonePublic(publicAction.rulesDigest) : null,
       event: publicAction.event || null
     },
     state: publicPlaybackState(match.state)
@@ -844,6 +873,17 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode, frames) {
     score: match.state.score,
     providers,
     finalEvent: publicEventSummary(match.state.events[match.state.events.length - 1]),
+    modelTurns: (Array.isArray(frames) ? frames : [])
+      .filter((frame) => frame.action && frame.action.action !== "start")
+      .map((frame) => ({
+        index: frame.index,
+        action: frame.action.action,
+        team: frame.action.team,
+        unitId: frame.action.unitId,
+        provider: frame.action.provider,
+        resultLabel: frame.action.resultLabel,
+        rulesDigest: frame.action.rulesDigest || null
+      })),
     frames: Array.isArray(frames) ? frames : []
   };
 }
@@ -975,7 +1015,7 @@ function localDecisionFromRules(rulesPayload) {
   const searchMap = swapWindowHitRate > 0 && swapWindowHitRate <= 0.5;
   const underPlayable = Number(analysis.playableCount) < Math.min(Number(analysis.handSize) || 4, 3);
   const unstableHand = String(analysis.risk || "").includes("volatile") && !(analysis.traits || []).includes("precision");
-  if (swap && swapsUsed < 2 && highPressure && (searchMap || lowActionSpace || underPlayable || unstableHand)) {
+  if (swap && swapsUsed < Sim.CONFIG.maxRerollsPerTurn && highPressure && (searchMap || lowActionSpace || underPlayable || unstableHand)) {
     return {
       action: "swap_hand",
       publicReason: searchMap

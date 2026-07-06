@@ -763,12 +763,19 @@ function App() {
               autoBattle={autoBattle}
               playback={battlePlayback}
             />
+            <MapTopologyScanner state={battleState} />
             <LiveModelTelemetryPanel
               state={battleState}
               match={match}
               playback={battlePlayback}
               lastDecision={visibleDecision}
               activeUnitId={activeUnitId}
+            />
+            <ModelRulesTicker
+              state={battleState}
+              playback={battlePlayback}
+              activeUnitId={displayUnitId}
+              standingOrder={login.standingOrder}
             />
             <BattleBroadcastPanel
               state={battleState}
@@ -1372,6 +1379,97 @@ function ArenaDirectorHud({ state, match, profile, activeTeam, activeUnitId, lat
         </motion.div>
       </AnimatePresence>
     </motion.section>
+  );
+}
+
+function MapTopologyScanner({ state }) {
+  const complexity = state.mapMeta?.complexity || {};
+  const topologyTags = Array.isArray(complexity.topologyTags) ? complexity.topologyTags : [];
+  const coverage = [
+    { label: "chambers", value: complexity.chamberCount || 0 },
+    { label: "lane breaks", value: complexity.straightLaneBreaks || 0 },
+    { label: "solid cells", value: complexity.solidBandCoverage || 0 },
+    { label: "x bands", value: complexity.verticalBandCoverage || 0 },
+    { label: "y bands", value: complexity.horizontalBandCoverage || 0 },
+    { label: "solver", value: complexity.solverPressure || 0 }
+  ];
+  const firstHand = Math.round((complexity.firstHandHitRate || 0) * 100);
+  const swapWindow = Math.round((complexity.swapWindowHitRate || 0) * 100);
+  return (
+    <section className="map-topology-scanner" data-testid="map-topology-scanner" aria-label="Map topology scanner">
+      <div className="topology-prime">
+        <span>Graphwar-grade route maze</span>
+        <strong>{state.mapMeta.name} / difficulty {state.mapMeta.difficulty}</strong>
+        <small>{complexity.obstacleCount || 0} total blockers · {complexity.solidObstacleCount || 0} solid · {complexity.routeGuideCount || 0} guides</small>
+      </div>
+      <div className="topology-lane-grid">
+        {coverage.map((item) => (
+          <span key={item.label}><b>{item.value}</b>{item.label}</span>
+        ))}
+      </div>
+      <div className="topology-pressure-strip">
+        <span><b>{complexity.routePressure || 0}</b> route pressure</span>
+        <span><b>{firstHand}%</b> first hand</span>
+        <span><b>{swapWindow}%</b> swap window</span>
+      </div>
+      <div className="topology-tags" aria-label="topologyTags">
+        {topologyTags.length ? topologyTags.map((tag) => <span key={tag}>{tag}</span>) : <span>topology pending</span>}
+      </div>
+    </section>
+  );
+}
+
+function ModelRulesTicker({ state, playback, activeUnitId, standingOrder }) {
+  const snapshot = rulesSnapshot(state, activeUnitId, standingOrder);
+  const rulesDigest = playback?.action?.rulesDigest || {
+    promptPolicy: "bare_rules_only",
+    activeUnitId: snapshot.activeUnitId,
+    team: snapshot.team,
+    objective: snapshot.objective,
+    handRetained: snapshot.hand.retained,
+    handSize: snapshot.hand.cards.length,
+    handArchetype: snapshot.hand.analysis.archetype,
+    swapsUsed: snapshot.hand.swapsUsed,
+    swapsRemaining: snapshot.hand.swapsRemaining,
+    legalActionCount: snapshot.legalActions.length,
+    legalShotCount: snapshot.legalActions.filter((action) => action.action === "shot").length,
+    canSwap: snapshot.legalActions.some((action) => action.action === "swap_hand"),
+    allyIds: snapshot.allyIds,
+    opponentIds: snapshot.opponentIds
+  };
+  return (
+    <section className="model-rules-ticker" data-testid="model-rules-ticker" aria-label="Bare rules contract visible to models">
+      <div className="rules-contract-pill primary">
+        <span>No hidden prompt</span>
+        <strong>{rulesDigest.promptPolicy}</strong>
+        <small>{rulesDigest.objective || "eliminate opposing team while avoiding allies"}</small>
+      </div>
+      <div className="rules-contract-pill">
+        <span>Active model</span>
+        <strong>{rulesDigest.activeUnitId || snapshot.activeUnitId}</strong>
+        <small>Team {rulesDigest.team || snapshot.team}</small>
+      </div>
+      <div className="rules-contract-pill">
+        <span>Retained hand</span>
+        <strong>{rulesDigest.handRetained ? "handRetained" : "not retained"}</strong>
+        <small>{rulesDigest.handSize || 0} cards · {rulesDigest.handArchetype || "mixed"}</small>
+      </div>
+      <div className="rules-contract-pill">
+        <span>Swap economy</span>
+        <strong>{rulesDigest.swapsRemaining ?? 0} left</strong>
+        <small>{rulesDigest.canSwap ? "swap_hand legal" : "shot only"}</small>
+      </div>
+      <div className="rules-contract-pill">
+        <span>Legal actions</span>
+        <strong>{rulesDigest.legalShotCount ?? 0} legalShotCount</strong>
+        <small>{rulesDigest.legalActionCount ?? 0} total actions</small>
+      </div>
+      <div className="rules-contract-pill wide">
+        <span>Visible units</span>
+        <strong>{(rulesDigest.allyIds || []).join(" / ")} vs {(rulesDigest.opponentIds || []).join(" / ")}</strong>
+        <small>rulesDigest from replay frame or live rules packet</small>
+      </div>
+    </section>
   );
 }
 

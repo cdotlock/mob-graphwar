@@ -27,6 +27,13 @@ function authHeaders(session, extra) {
   };
 }
 
+function providerRulesPayload(requestBody) {
+  const messages = Array.isArray(requestBody.messages) ? requestBody.messages : [];
+  const userMessage = messages.slice().reverse().find((message) => message.role === "user");
+  assert.ok(userMessage && typeof userMessage.content === "string", "provider request should include a user rules payload");
+  return JSON.parse(userMessage.content);
+}
+
 async function testHealthAndProviders() {
   const health = await request(createServer({ env: {} }), "/healthz");
   assert.strictEqual(health.status, 200);
@@ -389,7 +396,7 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
   const capturedPrompts = [];
   const fetchMock = async (url, options) => {
     const requestBody = JSON.parse(options.body);
-    const prompt = JSON.parse(requestBody.messages[1].content);
+    const prompt = providerRulesPayload(requestBody);
     const candidates = prompt.legalActions.filter((action) => action.action === "shot");
     capturedPrompts.push({ url, options, requestBody, prompt });
     return {
@@ -646,6 +653,28 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
     autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "shot"),
     "playback frames should expose shot actions for the spectator timeline"
   );
+  const modelActionFrames = autoDuel.json.autoBattle.frames.filter((frame) => frame.action.action !== "start");
+  assert.ok(modelActionFrames.length >= 1, "auto duel should include model action frames");
+  assert.ok(
+    modelActionFrames.every((frame) => frame.action.rulesDigest && frame.action.rulesDigest.promptPolicy === "bare_rules_only"),
+    "each replayed model action should expose that the model received only bare rules"
+  );
+  assert.ok(
+    modelActionFrames.every((frame) => frame.action.rulesDigest.handRetained === true),
+    "each replayed model action should expose retained-hand state"
+  );
+  assert.ok(
+    modelActionFrames.every((frame) => Number.isFinite(frame.action.rulesDigest.legalShotCount)),
+    "each replayed model action should expose legal shot count"
+  );
+  assert.ok(
+    modelActionFrames.every((frame) => Array.isArray(frame.action.rulesDigest.allyIds) && Array.isArray(frame.action.rulesDigest.opponentIds)),
+    "each replayed model action should expose allies and opponents from the rules packet"
+  );
+  assert.ok(
+    autoDuel.json.autoBattle.modelTurns.some((turn) => turn.rulesDigest && turn.rulesDigest.promptPolicy === "bare_rules_only"),
+    "auto battle summary should include a compact model-turn rules digest"
+  );
   assert.ok(!JSON.stringify(autoDuel.json.autoBattle.frames).includes("secret"), "playback frames should not leak stored API keys");
 }
 
@@ -735,7 +764,7 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   const capturedPrompts = [];
   const fetchMock = async (url, options) => {
     const requestBody = JSON.parse(options.body);
-    const prompt = JSON.parse(requestBody.messages[1].content);
+    const prompt = providerRulesPayload(requestBody);
     const candidates = prompt.legalActions.filter((action) => action.action === "shot");
     capturedPrompts.push({ url, options, requestBody, prompt });
     const firstCall = capturedPrompts.length === 1;
@@ -843,7 +872,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   const fetchMock = async (url, options) => {
     captured = { url, options };
     const payload = JSON.parse(options.body);
-    const legalActions = JSON.parse(payload.messages[1].content).legalActions;
+    const legalActions = providerRulesPayload(payload).legalActions;
     const candidates = legalActions.filter((action) => action.action === "shot");
     return {
       ok: true,
@@ -881,7 +910,8 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.ok(result.json.candidate.combo.name, "response should include selected combo");
   assert.ok(captured.url.endsWith("/chat/completions"), "OpenAI-compatible adapter should call chat completions");
   assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
-  const prompt = JSON.parse(JSON.parse(captured.options.body).messages[1].content);
+  const prompt = providerRulesPayload(JSON.parse(captured.options.body));
+  assert.strictEqual(JSON.parse(captured.options.body).messages.length, 1, "provider request should not include hidden system prompt scaffolding");
   assert.strictEqual(prompt.state.map.windows, undefined, "provider prompt should not include route windows");
   assert.ok(prompt.legalActions.every((action) => action.mapFit === undefined), "provider candidates should not leak simulated map fit");
   assert.ok(prompt.legalActions.some((action) => action.action === "swap_hand"), "provider prompt should expose swap_hand as a legal action");
@@ -900,7 +930,7 @@ async function testProviderShotUsesCurrentTurnOrder() {
   Sim.applyTurn(state, lockedOrders);
   const fetchMock = async (url, options) => {
     const payload = JSON.parse(options.body);
-    capturedPrompt = JSON.parse(payload.messages[1].content);
+    capturedPrompt = providerRulesPayload(payload);
     const candidates = capturedPrompt.legalActions.filter((action) => action.action === "shot");
     return {
       ok: true,

@@ -4,7 +4,8 @@ function buildAnthropicRequest(provider, payload, apiKey) {
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
-        actionLimit: "choose exactly one legal action from legalActions",
+        actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot",
+        handRetention: "cards persist until the active model chooses swap_hand",
         output: "return JSON only"
       },
       command: payload.command,
@@ -24,9 +25,6 @@ function buildAnthropicRequest(provider, payload, apiKey) {
       model: payload.model || provider.defaultModel,
       max_tokens: 240,
       temperature: 0.2,
-      system:
-        'Return only valid JSON. For a shot, return {"action":"shot","candidateId":"...","publicReason":"..."}. ' +
-        'For a hand swap, return {"action":"swap_hand","publicReason":"..."}. Use only legalActions from the user payload.',
       messages: [
         {
           role: "user",

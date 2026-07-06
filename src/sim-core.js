@@ -644,6 +644,8 @@
 
   function inferObstacleRole(obstacle) {
     const id = String(obstacle.id || "");
+    if (/contour-guide|signal-lane|route-rune|cavity-tooth|cross-rib|bulkhead/.test(id)) return "route-contour";
+    if (/side-bastion/.test(id)) return "chamber-wall";
     if (/thread-slot/.test(id)) return "thread-slot";
     if (/gate-slit|splitter|right-slit|slit/.test(id)) return "gate-slit";
     if (/ground-rib|low-bumper|low-bunker/.test(id)) return "ground-rib";
@@ -664,7 +666,12 @@
 
   function isRouteGuideObstacle(obstacle, role) {
     const obstacleRole = role || obstacle.role || inferObstacleRole(obstacle);
-    return obstacleRole === "gate-slit" || obstacleRole === "thread-slot" || (obstacleRole === "maze-band" && obstacle.h <= 5);
+    return (
+      obstacleRole === "gate-slit" ||
+      obstacleRole === "thread-slot" ||
+      obstacleRole === "route-contour" ||
+      (obstacleRole === "maze-band" && obstacle.h <= 5)
+    );
   }
 
   function obstacleIsSolid(obstacle) {
@@ -746,6 +753,53 @@
       boundedWindowRate,
       solverPressure,
       requiredSearchWindows
+    };
+  }
+
+  function bandIndex(value, max, bands) {
+    return clamp(Math.floor((value / max) * bands), 0, bands - 1);
+  }
+
+  function analyzeMapTopology(obstacles) {
+    const solid = obstacles.filter(obstacleIsSolid);
+    const verticalBands = new Set();
+    const horizontalBands = new Set();
+    const solidCells = new Set();
+    const laneHeights = [9, 17, 25, 33, 41, 49];
+    let straightLaneBreaks = 0;
+
+    for (const obstacle of solid) {
+      const centerX = obstacle.x + obstacle.w / 2;
+      const centerY = obstacle.y + obstacle.h / 2;
+      const xBand = bandIndex(centerX, CONFIG.width, 6);
+      const yBand = bandIndex(centerY, CONFIG.height, 6);
+      verticalBands.add(xBand);
+      horizontalBands.add(yBand);
+      solidCells.add(`${xBand}:${yBand}`);
+    }
+
+    for (const laneY of laneHeights) {
+      const breaks = solid.filter((obstacle) => {
+        const crossesY = laneY >= obstacle.y && laneY <= obstacle.y + obstacle.h;
+        const central = obstacle.x + obstacle.w >= 18 && obstacle.x <= 84;
+        return crossesY && central;
+      }).length;
+      straightLaneBreaks += Math.min(3, breaks);
+    }
+
+    const chamberCount = clamp(Math.round(solidCells.size / 2.2), 6, 16);
+    const topologyTags = ["multi-chamber"];
+    if (straightLaneBreaks >= 8) topologyTags.push("no-straight-lane");
+    if (horizontalBands.size >= 5 && verticalBands.size >= 5) topologyTags.push("full-board-pressure");
+    if (obstacles.filter((obstacle) => obstacle.role === "route-contour").length >= 6) topologyTags.push("contour-guided");
+
+    return {
+      chamberCount,
+      straightLaneBreaks,
+      verticalBandCoverage: verticalBands.size,
+      horizontalBandCoverage: horizontalBands.size,
+      solidBandCoverage: solidCells.size,
+      topologyTags
     };
   }
 
@@ -1017,6 +1071,230 @@
         y: 0,
         w: round(2.5 + rng() * 2.8, 1),
         h: round(6 + rng() * 7, 1)
+      },
+      {
+        id: "seed-cross-rib-a",
+        x: clamp(round(38 + rng() * 5, 1), 10, CONFIG.width - 12),
+        y: round(8 + rng() * 8, 1),
+        w: round(2.2 + rng() * 1.5, 1),
+        h: round(12 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cross-rib-b",
+        x: clamp(round(49 + rng() * 6, 1), 10, CONFIG.width - 12),
+        y: round(18 + rng() * 8, 1),
+        w: round(2.2 + rng() * 1.6, 1),
+        h: round(12 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cross-rib-c",
+        x: clamp(round(59 + rng() * 7, 1), 10, CONFIG.width - 12),
+        y: round(29 + rng() * 7, 1),
+        w: round(2.2 + rng() * 1.6, 1),
+        h: round(10 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cross-rib-d",
+        x: clamp(round(70 + rng() * 6, 1), 10, CONFIG.width - 12),
+        y: round(12 + rng() * 10, 1),
+        w: round(2.2 + rng() * 1.6, 1),
+        h: round(11 + rng() * 10, 1)
+      },
+      {
+        id: "seed-cavity-tooth-a",
+        x: clamp(round(24 + rng() * 9, 1), 10, CONFIG.width - 15),
+        y: round(10 + rng() * 10, 1),
+        w: round(2.6 + rng() * 2.2, 1),
+        h: round(8 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cavity-tooth-b",
+        x: clamp(round(32 + rng() * 9, 1), 10, CONFIG.width - 15),
+        y: round(27 + rng() * 8, 1),
+        w: round(2.6 + rng() * 2.2, 1),
+        h: round(8 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cavity-tooth-c",
+        x: clamp(round(45 + rng() * 7, 1), 10, CONFIG.width - 15),
+        y: round(38 + rng() * 6, 1),
+        w: round(2.6 + rng() * 2.2, 1),
+        h: round(7 + rng() * 8, 1)
+      },
+      {
+        id: "seed-cavity-tooth-d",
+        x: clamp(round(57 + rng() * 8, 1), 10, CONFIG.width - 15),
+        y: round(9 + rng() * 10, 1),
+        w: round(2.6 + rng() * 2.2, 1),
+        h: round(8 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cavity-tooth-e",
+        x: clamp(round(67 + rng() * 8, 1), 10, CONFIG.width - 15),
+        y: round(27 + rng() * 8, 1),
+        w: round(2.6 + rng() * 2.2, 1),
+        h: round(8 + rng() * 9, 1)
+      },
+      {
+        id: "seed-cavity-tooth-f",
+        x: clamp(round(76 + rng() * 7, 1), 10, CONFIG.width - 15),
+        y: round(39 + rng() * 6, 1),
+        w: round(2.6 + rng() * 2.2, 1),
+        h: round(7 + rng() * 8, 1)
+      },
+      {
+        id: "seed-bulkhead-a",
+        x: clamp(round(19 + rng() * 7, 1), 8, CONFIG.width - 14),
+        y: round(19 + rng() * 9, 1),
+        w: round(2.8 + rng() * 2, 1),
+        h: round(10 + rng() * 10, 1)
+      },
+      {
+        id: "seed-bulkhead-b",
+        x: clamp(round(82 + rng() * 5, 1), 8, CONFIG.width - 14),
+        y: round(18 + rng() * 10, 1),
+        w: round(2.8 + rng() * 2, 1),
+        h: round(10 + rng() * 10, 1)
+      },
+      {
+        id: "seed-side-bastion-a",
+        x: round(3 + rng() * 2, 1),
+        y: round(5 + rng() * 8, 1),
+        w: round(2.5 + rng() * 1.8, 1),
+        h: round(18 + rng() * 12, 1)
+      },
+      {
+        id: "seed-side-bastion-b",
+        x: round(5 + rng() * 1.5, 1),
+        y: round(34 + rng() * 8, 1),
+        w: round(2.2 + rng() * 1.6, 1),
+        h: round(10 + rng() * 10, 1)
+      },
+      {
+        id: "seed-side-bastion-c",
+        x: round(95 + rng() * 1.5, 1),
+        y: round(6 + rng() * 8, 1),
+        w: round(2.5 + rng() * 1.8, 1),
+        h: round(18 + rng() * 12, 1)
+      },
+      {
+        id: "seed-side-bastion-d",
+        x: round(93 + rng() * 1.5, 1),
+        y: round(34 + rng() * 8, 1),
+        w: round(2.2 + rng() * 1.6, 1),
+        h: round(10 + rng() * 10, 1)
+      },
+      {
+        id: "seed-side-bastion-e",
+        x: round(1 + rng() * 2, 1),
+        y: round(20 + rng() * 8, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(13 + rng() * 10, 1)
+      },
+      {
+        id: "seed-side-bastion-f",
+        x: round(7 + rng() * 1.5, 1),
+        y: round(48 + rng() * 3, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(7 + rng() * 7, 1)
+      },
+      {
+        id: "seed-side-bastion-g",
+        x: round(95 + rng() * 2, 1),
+        y: round(20 + rng() * 8, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(13 + rng() * 10, 1)
+      },
+      {
+        id: "seed-side-bastion-h",
+        x: round(91 + rng() * 1.5, 1),
+        y: round(48 + rng() * 3, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(7 + rng() * 7, 1)
+      },
+      {
+        id: "seed-side-bastion-i",
+        x: round(2 + rng() * 1.5, 1),
+        y: round(45 + rng() * 4, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(8 + rng() * 8, 1)
+      },
+      {
+        id: "seed-side-bastion-j",
+        x: round(7 + rng() * 1.5, 1),
+        y: round(2 + rng() * 6, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(10 + rng() * 9, 1)
+      },
+      {
+        id: "seed-side-bastion-k",
+        x: round(96 + rng() * 1.5, 1),
+        y: round(45 + rng() * 4, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(8 + rng() * 8, 1)
+      },
+      {
+        id: "seed-side-bastion-l",
+        x: round(90 + rng() * 1.5, 1),
+        y: round(2 + rng() * 6, 1),
+        w: round(2 + rng() * 1.4, 1),
+        h: round(10 + rng() * 9, 1)
+      },
+      {
+        id: "seed-contour-guide-a",
+        x: clamp(round(18 + rng() * 18, 1), 8, CONFIG.width - 28),
+        y: round(13 + rng() * 6, 1),
+        w: round(17 + rng() * 10, 1),
+        h: round(1.4 + rng() * 1.2, 1)
+      },
+      {
+        id: "seed-contour-guide-b",
+        x: clamp(round(34 + rng() * 16, 1), 8, CONFIG.width - 28),
+        y: round(22 + rng() * 7, 1),
+        w: round(17 + rng() * 10, 1),
+        h: round(1.4 + rng() * 1.2, 1)
+      },
+      {
+        id: "seed-contour-guide-c",
+        x: clamp(round(52 + rng() * 15, 1), 8, CONFIG.width - 28),
+        y: round(31 + rng() * 7, 1),
+        w: round(17 + rng() * 10, 1),
+        h: round(1.4 + rng() * 1.2, 1)
+      },
+      {
+        id: "seed-contour-guide-d",
+        x: clamp(round(66 + rng() * 10, 1), 8, CONFIG.width - 28),
+        y: round(41 + rng() * 6, 1),
+        w: round(16 + rng() * 10, 1),
+        h: round(1.4 + rng() * 1.2, 1)
+      },
+      {
+        id: "seed-contour-guide-e",
+        x: clamp(round(23 + rng() * 18, 1), 8, CONFIG.width - 28),
+        y: round(47 + rng() * 5, 1),
+        w: round(16 + rng() * 10, 1),
+        h: round(1.4 + rng() * 1.2, 1)
+      },
+      {
+        id: "seed-contour-guide-f",
+        x: clamp(round(43 + rng() * 18, 1), 8, CONFIG.width - 28),
+        y: round(7 + rng() * 6, 1),
+        w: round(16 + rng() * 10, 1),
+        h: round(1.4 + rng() * 1.2, 1)
+      },
+      {
+        id: "seed-signal-lane-a",
+        x: clamp(round(28 + rng() * 12, 1), 8, CONFIG.width - 14),
+        y: round(6 + rng() * 11, 1),
+        w: round(1.2 + rng() * 1.1, 1),
+        h: round(16 + rng() * 16, 1)
+      },
+      {
+        id: "seed-signal-lane-b",
+        x: clamp(round(64 + rng() * 14, 1), 8, CONFIG.width - 14),
+        y: round(18 + rng() * 9, 1),
+        w: round(1.2 + rng() * 1.1, 1),
+        h: round(16 + rng() * 16, 1)
       }
     ];
     const obstacles = baseObstacles.concat(proceduralObstacles).map(normalizeObstacle);
@@ -1044,6 +1322,7 @@
     const visualLayers = new Set(obstacles.map((obstacle) => obstacle.visualLayer)).size;
     const solidObstacleCount = obstacles.filter(obstacleIsSolid).length;
     const routeGuideCount = obstacles.length - solidObstacleCount;
+    const topology = analyzeMapTopology(obstacles);
     const solver = estimateSolverPressure(seed, obstacles, units);
     const layerCount = clamp(
       Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3 + visualLayers / 2),
@@ -1051,8 +1330,19 @@
       18
     );
     const routePressure = clamp(
-      Math.round(48 + tallCount * 3 + ceilingCount * 4 + suspendedShelves * 2 + chokePoints + density * 42 + gateSlits * 2 + threadSlots),
-      80,
+      Math.round(
+        48 +
+          tallCount * 3 +
+          ceilingCount * 4 +
+          suspendedShelves * 2 +
+          chokePoints +
+          density * 42 +
+          gateSlits * 2 +
+          threadSlots +
+          topology.straightLaneBreaks * 1.8 +
+          topology.chamberCount * 2
+      ),
+      95,
       99
     );
     const difficulty = clamp(Math.round(template.difficulty + tallCount * 4 + density * 120 + obstacles.length * 2 + rng() * 5), 90, 99);
@@ -1074,6 +1364,12 @@
         groundRibs,
         solidObstacleCount,
         routeGuideCount,
+        chamberCount: topology.chamberCount,
+        straightLaneBreaks: topology.straightLaneBreaks,
+        verticalBandCoverage: topology.verticalBandCoverage,
+        horizontalBandCoverage: topology.horizontalBandCoverage,
+        solidBandCoverage: topology.solidBandCoverage,
+        topologyTags: topology.topologyTags,
         visualLayers,
         layerCount,
         routePressure,
@@ -1092,8 +1388,11 @@
   function playableMapCandidate(map) {
     const complexity = map.complexity || {};
     return (
+      complexity.obstacleCount >= 56 &&
       complexity.solidObstacleCount >= 16 &&
-      complexity.routeGuideCount >= 12 &&
+      complexity.routeGuideCount >= 18 &&
+      complexity.chamberCount >= 6 &&
+      complexity.straightLaneBreaks >= 8 &&
       complexity.firstHandHitRate <= 0.3 &&
       complexity.swapWindowHitRate > 0
     );

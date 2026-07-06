@@ -108,6 +108,8 @@ async function testLoginMatchmakingAndRankLoop() {
     "one player should command both allied agents"
   );
   assert.ok(match.json.match.state.mapMeta.difficulty >= 90, "ranked match should use complex maps");
+  assert.strictEqual(match.json.match.state.mapMeta.complexity.generator, "poisson-blob-search", "ranked match should expose the map generator");
+  assert.strictEqual(match.json.match.state.bonusPoints.length, 5, "ranked match should expose route bonus points to spectators");
 
   const result = await request(createServer({ env: {} }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
@@ -667,6 +669,10 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.strictEqual(autoDuel.json.match.status, "resolved");
   assert.ok(autoDuel.json.match.state.winner, "auto duel should finish the battle");
   assert.ok(autoDuel.json.match.state.events.length > 1, "auto duel should play multiple model turns when needed");
+  assert.ok(
+    autoDuel.json.match.state.events.every((event) => event.routeBonus && Array.isArray(event.routeBonus.pointIds)),
+    "auto duel public events should expose route bonus scoring"
+  );
   assert.ok(autoDuel.json.score && Number.isFinite(autoDuel.json.score.value), "auto duel should return rank score");
   assert.ok(Number.isFinite(autoDuel.json.rankDelta), "auto duel should return rank delta");
   assert.ok(autoDuel.json.player.rank.games >= 1, "auto duel should settle the player's ranked profile");

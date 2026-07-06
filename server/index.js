@@ -826,6 +826,7 @@ function publicEventSummary(event) {
     result: event.result,
     resultLabel: event.resultLabel,
     combo: event.combo ? clonePublic(event.combo) : { name: "Mixed Curve" },
+    routeBonus: clonePublic(event.routeBonus || { value: 0, pointIds: [] }),
     expression: event.expression || "",
     damage: event.damage || 0,
     score: event.score,
@@ -846,6 +847,7 @@ function publicPlaybackState(state) {
     turn: state.turn,
     mapMeta: clonePublic(state.mapMeta || null),
     obstacles: clonePublic(state.obstacles || []),
+    bonusPoints: clonePublic(state.bonusPoints || []),
     units: (state.units || []).map((unit) => ({
       id: unit.id,
       team: unit.team,

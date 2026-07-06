@@ -35,16 +35,36 @@ function providerRulesPayload(requestBody) {
 }
 
 async function testHealthAndProviders() {
+  const fetchMock = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: [
+        {
+          id: "cohere/north-mini-code:free",
+          name: "Cohere: North Mini Code (free)",
+          pricing: { prompt: "0", completion: "0" },
+          architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+          context_length: 256000
+        }
+      ]
+    })
+  });
   const health = await request(createServer({ env: {} }), "/healthz");
   assert.strictEqual(health.status, 200);
   assert.strictEqual(health.json.ok, true);
 
-  const providers = await request(createServer({ env: { OPENAI_API_KEY: "sk-test", OPENROUTER_API_KEY: "sk-router" } }), "/api/providers");
+  const providers = await request(createServer({ env: { OPENAI_API_KEY: "sk-test", OPENROUTER_API_KEY: "sk-router" }, fetch: fetchMock }), "/api/providers");
   assert.strictEqual(providers.status, 200);
   assert.ok(providers.json.providers.some((provider) => provider.id === "openai" && provider.available));
   assert.ok(
-    providers.json.providers.some((provider) => provider.id === "openrouter" && provider.available && provider.model === "openrouter/free"),
-    "OpenRouter free should be exposed as a configured provider"
+    providers.json.providers.some((provider) =>
+      provider.id === "openrouter" &&
+      provider.available &&
+      Array.isArray(provider.models) &&
+      provider.models.some((model) => model.id === "cohere/north-mini-code:free")
+    ),
+    "OpenRouter free model list should be exposed as selectable provider options"
   );
   assert.strictEqual(providers.json.defaultProvider, "openrouter");
   assert.ok(!JSON.stringify(providers.json).includes("sk-test"), "response should redact keys");
@@ -109,7 +129,7 @@ async function testLoginMatchmakingAndRankLoop() {
   );
   assert.ok(match.json.match.state.mapMeta.difficulty >= 90, "ranked match should use complex maps");
   assert.strictEqual(match.json.match.state.mapMeta.complexity.generator, "poisson-blob-search", "ranked match should expose the map generator");
-  assert.strictEqual(match.json.match.state.bonusPoints.length, 5, "ranked match should expose route bonus points to spectators");
+  assert.strictEqual(match.json.match.state.bonusPoints.length, 3, "ranked match should expose a small set of route bonus points to spectators");
 
   const result = await request(createServer({ env: {} }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
@@ -145,7 +165,7 @@ async function testAiFallbackSeatsDefaultToOpenRouterFreePrompts() {
   assert.deepStrictEqual(aiSeats.map((seat) => seat.unitId), ["B1", "B2"]);
   assert.strictEqual(new Set(aiSeats.map((seat) => seat.commanderId)).size, 1, "AI-filled B1/B2 should share one commander id");
   assert.ok(aiSeats.every((seat) => seat.provider === "openrouter"), "AI-filled seats should default to OpenRouter");
-  assert.ok(aiSeats.every((seat) => seat.model === "openrouter/free"), "AI-filled seats should default to the free model router");
+  assert.ok(aiSeats.every((seat) => seat.model === "openrouter/free"), "AI-filled seats should default to an OpenRouter free model");
   assert.ok(aiSeats.every((seat) => seat.standingOrderConfigured), "AI-filled seats should carry default prompts");
   assert.ok(aiSeats.every((seat) => seat.standingOrderLength > 20), "default AI prompts should be meaningful without being exposed");
 }

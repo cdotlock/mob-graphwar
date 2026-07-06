@@ -1,5 +1,5 @@
 const assert = require("assert");
-const { listProviders, getProvider } = require("../server/providers/catalog.js");
+const { listProviders, listProviderCatalog, getProvider } = require("../server/providers/catalog.js");
 const { normalizeProviderDecision } = require("../server/providers/normalize.js");
 const { buildOpenAICompatibleRequest } = require("../server/providers/openai-compatible.js");
 const { buildAnthropicRequest } = require("../server/providers/anthropic.js");
@@ -20,6 +20,47 @@ function testProviderCatalogRedactsKeys() {
   assert.ok(getProvider("deepseek"), "DeepSeek should be known");
   assert.ok(getProvider("openrouter"), "OpenRouter should be known");
   assert.strictEqual(getProvider("unknown"), null);
+}
+
+async function testProviderCatalogIncludesSelectableModels() {
+  const catalog = await listProviderCatalog(
+    { OPENROUTER_API_KEY: "sk-router", OPENAI_API_KEY: "sk-test" },
+    {
+      fetch: async (url) => {
+        assert.strictEqual(url, "https://openrouter.ai/api/v1/models");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [
+              {
+                id: "cohere/north-mini-code:free",
+                name: "Cohere: North Mini Code (free)",
+                pricing: { prompt: "0", completion: "0" },
+                architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+                context_length: 256000
+              },
+              {
+                id: "paid/model",
+                name: "Paid Model",
+                pricing: { prompt: "1", completion: "1" },
+                architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+                context_length: 8192
+              }
+            ]
+          })
+        };
+      }
+    }
+  );
+  const openrouter = catalog.find((provider) => provider.id === "openrouter");
+  const openai = catalog.find((provider) => provider.id === "openai");
+  assert.ok(openrouter.available, "OpenRouter should keep availability while adding models");
+  assert.ok(Array.isArray(openrouter.models), "OpenRouter should expose selectable models");
+  assert.ok(openrouter.models.some((model) => model.id === "cohere/north-mini-code:free"), "free OpenRouter model list should be exposed");
+  assert.ok(!openrouter.models.some((model) => model.id === "paid/model"), "paid OpenRouter models should not be shown as free defaults");
+  assert.ok(openai.models.some((model) => model.id === "gpt-4.1-mini"), "static providers should expose their configured model as an option");
+  assert.ok(!JSON.stringify(catalog).includes("sk-router"), "catalog should still redact keys");
 }
 
 function testNormalizeDecision() {
@@ -178,6 +219,7 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
 
 (async () => {
   testProviderCatalogRedactsKeys();
+  await testProviderCatalogIncludesSelectableModels();
   testNormalizeDecision();
   testDeepSeekUsesCurrentJsonModeDefaults();
   testOpenRouterUsesFreeJsonModeDefaults();

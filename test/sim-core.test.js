@@ -362,7 +362,18 @@ function testSeededHardMapGeneration() {
   assert.ok(first.mapMeta.complexity.clusterCount >= 4, "complexity summary should count terrain clusters");
   assert.ok(first.mapMeta.complexity.openLaneCount >= 3, "complexity summary should keep multiple open firing lanes");
   assert.strictEqual(first.mapMeta.complexity.routeGuideCount, 0, "maps should not reintroduce pass-through route-guide clutter");
-  assert.ok(Array.isArray(first.bonusPoints) && first.bonusPoints.length === 5, "map should expose route bonus points");
+  assert.ok(Array.isArray(first.bonusPoints) && first.bonusPoints.length === 3, "map should expose a small set of route bonus points");
+  assert.ok(first.bonusPoints.every((point) => point.radius <= 2.2), "route bonus points should use tight scoring radii");
+  for (const point of first.bonusPoints) {
+    assert.ok(point.y > Sim.groundY(point.x) + point.radius + 2, "route bonus points should stay above solid ground");
+    for (const obstacle of first.obstacles) {
+      const distance = Math.hypot(point.x - obstacle.cx, point.y - obstacle.cy);
+      assert.ok(
+        distance > obstacle.r + point.radius + 1.8,
+        `route bonus point ${point.id} should not overlap blocker ${obstacle.id}`
+      );
+    }
+  }
   assert.ok(first.mapMeta.complexity.bonusPointCount === first.bonusPoints.length, "map summary should count route bonus points");
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
@@ -375,7 +386,17 @@ function testHardMapsRemainSolvableByFiniteCardCombos() {
     assert.ok(state.mapMeta.complexity.openLaneCount >= 3, `seed ${seed} should keep readable open lanes`);
     assert.ok(state.mapMeta.complexity.routePressure >= 80, `seed ${seed} should keep route pressure high`);
     assert.ok(state.obstacles.every((obstacle) => obstacle.shape === "circle"), `seed ${seed} should not generate rectangular blockers`);
-    assert.ok(state.bonusPoints.length === 5, `seed ${seed} should keep five scoring route points`);
+    assert.ok(state.bonusPoints.length === 3, `seed ${seed} should keep three readable scoring route points`);
+    for (const point of state.bonusPoints) {
+      assert.ok(point.radius <= 2.2, `seed ${seed} route point ${point.id} should have a tight scoring radius`);
+      assert.ok(point.y > Sim.groundY(point.x) + point.radius + 2, `seed ${seed} route point ${point.id} should stay above ground`);
+      for (const obstacle of state.obstacles) {
+        assert.ok(
+          Math.hypot(point.x - obstacle.cx, point.y - obstacle.cy) > obstacle.r + point.radius + 1.8,
+          `seed ${seed} route point ${point.id} should not be inside blocker ${obstacle.id}`
+        );
+      }
+    }
     for (const unitId of state.turnOrder) {
       const shots = Sim.listLegalShots(state, unitId, "");
       assert.ok(shots.length > 0, `seed ${seed} unit ${unitId} should have legal shots`);
@@ -446,7 +467,7 @@ function testBlobMapsDoNotCollapseToHighArcOnly() {
     assert.ok(Number.isFinite(complexity.routeEntropy), `seed ${seed} should quantify route diversity`);
     assert.ok(complexity.routeEntropy >= 1.1, `seed ${seed} should have route diversity instead of one dominant lane`);
     assert.ok(complexity.requiredBendCount >= 2, `seed ${seed} should require bend/thread decisions`);
-    assert.ok(complexity.bonusPointCount === 5, `seed ${seed} should keep route scoring points`);
+    assert.ok(complexity.bonusPointCount === 3, `seed ${seed} should keep a compact route scoring set`);
     assert.strictEqual(state.mapMeta.windows, undefined, "projectile maze maps should not revive route windows");
   }
 }

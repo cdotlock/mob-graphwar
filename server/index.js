@@ -4,7 +4,7 @@ const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { listProviders, getProvider } = require("./providers/catalog.js");
+const { listProviders, listProviderCatalog, getProvider } = require("./providers/catalog.js");
 const { executeProviderDecision } = require("./providers/execute.js");
 const Contract = require("../src/agents/contract.js");
 const Sim = require("../src/sim-core.js");
@@ -1251,7 +1251,8 @@ function createServer(options) {
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/providers") {
-        sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || DEFAULT_AI_PROVIDER, providers: listProviders(env) });
+        const providers = await listProviderCatalog(env, { fetch: fetchFn });
+        sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || DEFAULT_AI_PROVIDER, providers });
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/session/me") {

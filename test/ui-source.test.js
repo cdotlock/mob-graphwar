@@ -230,6 +230,24 @@ function testLiveModelTelemetryMakesAiDuelVisible() {
   assert.ok(css.includes(".telemetry-action-chip"), "CSS should style model action chips");
 }
 
+function testBattleBroadcastPanelMakesAiVsAiReadable() {
+  assert.ok(main.includes("BattleBroadcastPanel"), "battle stage should include a named broadcast panel for spectators");
+  assert.ok(main.includes('data-testid="battle-broadcast-panel"'), "battle broadcast panel should be selectable for browser verification");
+  assert.ok(main.includes("Model duel broadcast"), "broadcast should label the AI-vs-AI fight as the main event");
+  assert.ok(main.includes("broadcast-shot-card"), "broadcast should show the current or latest shot as a card");
+  assert.ok(main.includes("broadcast-lanes"), "broadcast should show both AI teams as opposing lanes");
+  assert.ok(main.includes("broadcast-team-lane"), "broadcast should style each AI team lane");
+  assert.ok(main.includes("broadcast-result"), "broadcast should expose the latest result as a game callout");
+  assert.ok(main.includes("latestPath"), "broadcast should derive trajectory status from real battle paths");
+  assert.ok(main.includes("latestEvent?.combo"), "broadcast should expose the model's function-card combo");
+  assert.ok(main.includes("playback?.action"), "broadcast should follow replay frames during auto-duel playback");
+  assert.ok(main.includes("match?.roster"), "broadcast should use the matched four-seat roster");
+  assert.ok(css.includes(".battle-broadcast-panel"), "CSS should style the broadcast as first-class battle chrome");
+  assert.ok(css.includes(".broadcast-shot-card"), "CSS should style the shot card");
+  assert.ok(css.includes(".broadcast-lanes"), "CSS should style opposing AI lanes");
+  assert.ok(css.includes(".broadcast-result"), "CSS should style the result callout");
+}
+
 function testUiExplainsRetainedHandsAndSwapAction() {
   assert.ok(main.includes("Retained Hand"), "hand panel should use retained-hand game language");
   assert.ok(main.includes("Swap Hand x3"), "hand panel should explain the active model can swap hand up to three times");
@@ -308,6 +326,7 @@ testMobileHasGameDockForWatchOnlyLoop();
 testUiPollsQueuedMatchmakingRooms();
 testBattlefieldReadsAsGameSurface();
 testLiveModelTelemetryMakesAiDuelVisible();
+testBattleBroadcastPanelMakesAiVsAiReadable();
 testUiExplainsRetainedHandsAndSwapAction();
 testUiAutoStartsRankedAutoDuel();
 testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState();

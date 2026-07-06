@@ -738,6 +738,15 @@ function App() {
               lastDecision={visibleDecision}
               activeUnitId={activeUnitId}
             />
+            <BattleBroadcastPanel
+              state={battleState}
+              match={match}
+              activeTeam={activeTeam}
+              activeUnitId={activeUnitId}
+              latestEvent={latestEvent}
+              playback={battlePlayback}
+              lastDecision={visibleDecision}
+            />
             <Battlefield state={battleState} latestEvent={latestEvent} />
             <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
             <BattleReplayRail state={battleState} />
@@ -1239,6 +1248,54 @@ function LiveModelTelemetryPanel({ state, match, playback, lastDecision, activeU
             </article>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function BattleBroadcastPanel({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const latestPath = state.paths[state.paths.length - 1] || null;
+  const action = playback?.action || null;
+  const shooterId = action?.unitId || latestEvent?.unitId || latestEvent?.shooterId || (activeUnitId === "-" ? null : activeUnitId);
+  const shooterSeat = roster.find((seat) => seat.unitId === shooterId);
+  const targetId = latestEvent?.targetId || action?.targetId || lastDecision?.publicReason || "target pending";
+  const targetSeat = roster.find((seat) => seat.unitId === targetId);
+  const comboName = latestEvent?.combo?.name || action?.combo?.name || lastDecision?.result || "function combo pending";
+  const result = latestEvent?.resultLabel || action?.resultLabel || lastDecision?.result || (state.winner ? battleResultLabel(state.winner) : "waiting for shot");
+  const trajectory = latestPath ? `${latestPath.points.length} plotted points` : action ? "replay frame armed" : "no trajectory yet";
+  const lane = (team) => {
+    const seats = roster.filter((seat) => seat.team === team);
+    const health = teamHealth(state, team);
+    return { seats, health, active: activeTeam === team || latestEvent?.team === team || action?.team === team };
+  };
+  const lanes = { A: lane("A"), B: lane("B") };
+  return (
+    <section className="battle-broadcast-panel" data-testid="battle-broadcast-panel" aria-label="Model duel broadcast">
+      <div className="broadcast-header">
+        <span>Model duel broadcast</span>
+        <strong>{shooterId ? `${shooterId} ${shooterSeat?.displayName || "model"}` : "Models sizing the map"}</strong>
+        <small>{match ? "ranked auto-battle feed" : "exhibition feed"}</small>
+      </div>
+      <div className="broadcast-shot-card">
+        <span>Shooter <b>{shooterId || "standby"}</b></span>
+        <span>Target <b>{targetSeat ? `${targetId} ${targetSeat.displayName}` : targetId}</b></span>
+        <span>Combo <b>{comboName}</b></span>
+        <span>Trajectory <b>{trajectory}</b></span>
+      </div>
+      <div className="broadcast-lanes">
+        {["A", "B"].map((team) => (
+          <article className={`broadcast-team-lane team-${team.toLowerCase()} ${lanes[team].active ? "active" : ""}`} key={team}>
+            <span>Team {team}</span>
+            <strong>{lanes[team].health.hp}/{lanes[team].health.max} HP</strong>
+            <small>{lanes[team].seats.map((seat) => `${seat.unitId} ${seat.provider}`).join(" / ") || "waiting"}</small>
+          </article>
+        ))}
+      </div>
+      <div className={`broadcast-result team-${String(latestEvent?.team || action?.team || activeTeam || "a").toLowerCase()}`}>
+        <span>Result</span>
+        <strong>{result}</strong>
+        <small>{state.score ? `${state.score.rank} score ${state.score.value}` : "battle unresolved"}</small>
       </div>
     </section>
   );

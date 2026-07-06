@@ -16,6 +16,7 @@ import SkipBack from "lucide-react/dist/esm/icons/skip-back.js";
 import SkipForward from "lucide-react/dist/esm/icons/skip-forward.js";
 import Swords from "lucide-react/dist/esm/icons/swords.js";
 import Trophy from "lucide-react/dist/esm/icons/trophy.js";
+import X from "lucide-react/dist/esm/icons/x.js";
 import "./arena.css";
 
 const Sim = window.GraphwarSim;
@@ -89,47 +90,6 @@ function terrainLinePath(offset) {
     pts.push(`${sx(x)},${sy(Sim.groundY(x) + offset)}`);
   }
   return `M${pts.join(" L")}`;
-}
-
-function obstacleFacetPoints(obstacle, layer) {
-  const x = sx(obstacle.x);
-  const top = sy(obstacle.y + obstacle.h);
-  const bottom = sy(obstacle.y);
-  const width = obstacle.w * 10;
-  const height = obstacle.h * 10;
-  const bevel = Math.max(5, Math.min(18, width * 0.28, height * 0.22));
-  if (layer === "cap") {
-    return [
-      `${x + bevel},${top}`,
-      `${x + width},${top + bevel * 0.45}`,
-      `${x + width - bevel * 0.55},${top + bevel + 7}`,
-      `${x + bevel * 0.25},${top + 7}`
-    ].join(" ");
-  }
-  if (layer === "shadow") {
-    return [
-      `${x + width},${top + bevel * 0.45}`,
-      `${x + width + 8},${top + bevel + 9}`,
-      `${x + width - bevel * 0.3},${bottom + 7}`,
-      `${x + width - bevel * 0.65},${bottom}`
-    ].join(" ");
-  }
-  return [
-    `${x + bevel},${top}`,
-    `${x + width},${top + bevel * 0.45}`,
-    `${x + width - bevel * 0.35},${bottom}`,
-    `${x},${bottom}`,
-    `${x},${top + bevel * 0.55}`
-  ].join(" ");
-}
-
-function obstacleLabel(obstacle) {
-  return obstacle.id
-    .replace(/^seed-/, "")
-    .split("-")
-    .slice(0, 2)
-    .join(" ")
-    .toUpperCase();
 }
 
 function teamUnits(state, team) {
@@ -300,7 +260,8 @@ function App() {
   const [leagueResult, setLeagueResult] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [autoBattle, setAutoBattle] = useState(null);
-  const [activeMode, setActiveMode] = useState("watch");
+  const [activeMode, setActiveMode] = useState("play");
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const playbackToken = useRef(0);
   const playbackFramesRef = useRef([]);
   const playbackPausedRef = useRef(false);
@@ -315,6 +276,10 @@ function App() {
   const displayUnitId = activeUnitId === "-" ? latestEvent?.unitId || latestEvent?.shooterId || (displayTeam === "B" ? "B1" : "A1") : activeUnitId;
   const activeHand = useMemo(() => Sim.getCurrentHand(battleState, displayUnitId), [battleState, displayUnitId]);
   const visibleDecision = lastDecision || eventDecision(latestEvent);
+
+  useEffect(() => {
+    loadLeaderboard().catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!profile || !queueState || match) return undefined;
@@ -374,6 +339,7 @@ function App() {
     try {
       if (profile && sessionToken) {
         await saveProviderSettings();
+        setAuthModalOpen(false);
         return;
       }
       const endpoint = login.authMode === "login" ? "/api/auth/login" : "/api/auth/register";
@@ -393,6 +359,7 @@ function App() {
       if (!response.ok) throw new Error(payload.error || "login_failed");
       rememberSession(payload);
       await loadLeaderboard();
+      setAuthModalOpen(false);
       setMessage(login.authMode === "login" ? "Secure session restored. Join ranked matchmaking." : "Secure session created. Join ranked matchmaking.");
     } catch (err) {
       setMessage(err.message || "Login failed.");
@@ -757,127 +724,79 @@ function App() {
         </div>
       </section>
 
-      <GameModeNav
+      <ProductTabs
         activeMode={activeMode}
         profile={profile}
         match={match}
         queueState={queueState}
         autoBattle={autoBattle}
-        onSelect={selectGameMode}
+        onSelect={setActiveMode}
+        onOpenAuth={() => setAuthModalOpen(true)}
       />
 
-      <section className="game-grid">
-        <aside className="lobby-panel game-panel" data-game-section="launch">
-          <LaunchBay
+      <section className="app-view-stack">
+        {activeMode === "play" ? (
+          <PlayView
             login={login}
-            setLogin={setLogin}
             profile={profile}
             sessionToken={sessionToken}
             match={match}
             queueState={queueState}
             autoBattle={autoBattle}
             busy={busy}
-            onSubmit={signIn}
-            onRestore={restoreProfile}
+            battleState={battleState}
+            battlePlayback={battlePlayback}
+            playbackPaused={playbackPaused}
+            playbackSpeed={playbackSpeed}
+            playbackDeck={playbackDeck}
+            activeTeam={activeTeam}
+            activeUnitId={activeUnitId}
+            displayTeam={displayTeam}
+            displayUnitId={displayUnitId}
+            activeHand={activeHand}
+            latestEvent={latestEvent}
+            visibleDecision={visibleDecision}
+            message={message}
+            onOpenAuth={() => setAuthModalOpen(true)}
             onJoin={joinMatch}
             onSync={syncCurrentRoom}
+            onTogglePlayback={togglePlayback}
+            onStepPlayback={stepPlayback}
+            onPlaybackSpeed={changePlaybackSpeed}
           />
-          <RosterCard match={match} />
-          <LeaderboardPanel players={leaderboard} profile={profile} onRefresh={loadLeaderboard} />
-        </aside>
-
-        <section className="battle-panel game-panel" data-game-section="watch">
-          <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} />
-          <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
-          <BattlePlaybackHud
-            playback={battlePlayback}
-            paused={playbackPaused}
-            speed={playbackSpeed}
-            canControl={playbackDeck.length > 0}
-            onToggle={togglePlayback}
-            onStep={stepPlayback}
-            onSpeed={changePlaybackSpeed}
+        ) : null}
+        {activeMode === "leaderboard" ? (
+          <LeaderboardView
+            players={leaderboard}
+            profile={profile}
+            leagueResult={leagueResult}
+            onRefresh={loadLeaderboard}
+            onOpenAuth={() => setAuthModalOpen(true)}
           />
-          <section className="arena-stage" aria-label="AI duel stage">
-            <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
-            <Battlefield
-              state={battleState}
-              match={match}
-              activeTeam={activeTeam}
-              activeUnitId={activeUnitId}
-              latestEvent={latestEvent}
-              playback={battlePlayback}
-              lastDecision={visibleDecision}
-            />
-            <DuelBroadcastScorebug
-              state={battleState}
-              match={match}
-              activeTeam={activeTeam}
-              latestEvent={latestEvent}
-              playback={battlePlayback}
-              lastDecision={visibleDecision}
-            />
-            <CombatCinematicLayer
-              state={battleState}
-              match={match}
-              activeTeam={activeTeam}
-              activeUnitId={activeUnitId}
-              latestEvent={latestEvent}
-              playback={battlePlayback}
-              lastDecision={visibleDecision}
-            />
-            <ArenaDirectorHud
-              state={battleState}
-              match={match}
-              profile={profile}
-              activeTeam={activeTeam}
-              activeUnitId={activeUnitId}
-              latestEvent={latestEvent}
-              autoBattle={autoBattle}
-              playback={battlePlayback}
-            />
-            <MapTopologyScanner state={battleState} />
-            <LiveModelTelemetryPanel
-              state={battleState}
-              match={match}
-              playback={battlePlayback}
-              lastDecision={visibleDecision}
-              activeUnitId={activeUnitId}
-            />
-            <ModelRulesTicker
-              state={battleState}
-              playback={battlePlayback}
-              activeUnitId={displayUnitId}
-              standingOrder={login.standingOrder}
-            />
-            <BattleBroadcastPanel
-              state={battleState}
-              match={match}
-              activeTeam={activeTeam}
-              activeUnitId={activeUnitId}
-              latestEvent={latestEvent}
-              playback={battlePlayback}
-              lastDecision={visibleDecision}
-            />
-            <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
-            <BattleReplayRail state={battleState} />
-            <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
-          </section>
-        </section>
-
-        <aside className="tactical-panel game-panel" data-game-section="intel">
-          <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
-          <Timeline state={battleState} />
-          <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
-          <PostMatchRecap autoBattle={autoBattle} state={battleState} profile={profile} playback={battlePlayback} />
-          <RulesPacketPanel state={battleState} activeUnitId={displayUnitId} standingOrder={login.standingOrder} />
-          <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
-          <ModelWarFeed state={battleState} lastDecision={visibleDecision} />
-          <ShotIntel event={latestEvent} state={battleState} />
-          <LeagueLab result={leagueResult} busy={leagueBusy} onRun={runLeague} />
-          <SimulationApiPanel />
-        </aside>
+        ) : null}
+        {activeMode === "lab" ? (
+          <LabView
+            result={leagueResult}
+            busy={leagueBusy}
+            state={battleState}
+            activeUnitId={displayUnitId}
+            standingOrder={login.standingOrder}
+            onRun={runLeague}
+          />
+        ) : null}
       </section>
+
+      <AuthModal
+        open={authModalOpen}
+        login={login}
+        setLogin={setLogin}
+        profile={profile}
+        sessionToken={sessionToken}
+        busy={busy}
+        onSubmit={signIn}
+        onRestore={restoreProfile}
+        onClose={() => setAuthModalOpen(false)}
+      />
       <MobileSpectatorDock
         profile={profile}
         queueState={queueState}
@@ -887,6 +806,293 @@ function App() {
         autoBattle={autoBattle}
       />
     </main>
+  );
+}
+
+function ProductTabs({ activeMode, profile, match, queueState, autoBattle, onSelect, onOpenAuth }) {
+  const tabs = [
+    {
+      id: "play",
+      label: "Play",
+      status: profile ? (queueState ? "queue live" : match ? "room armed" : "ready") : "sign in required",
+      icon: Swords
+    },
+    {
+      id: "leaderboard",
+      label: "Leaderboard",
+      status: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "public ladder",
+      icon: Trophy
+    },
+    {
+      id: "lab",
+      label: "Lab",
+      status: autoBattle ? `${autoBattle.resolvedTurns} turns` : "model league",
+      icon: Cpu
+    }
+  ];
+  return (
+    <nav className="product-tabs" data-testid="product-tabs" aria-label="Mob Graphwar product tabs">
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <button
+            type="button"
+            className={`product-tab ${activeMode === tab.id ? "active" : ""}`}
+            aria-current={activeMode === tab.id ? "page" : undefined}
+            onClick={() => onSelect(tab.id)}
+            key={tab.id}
+          >
+            <Icon size={18} />
+            <span>{tab.label}</span>
+            <small>{tab.status}</small>
+          </button>
+        );
+      })}
+      {!profile ? (
+        <button type="button" className="product-tab auth-shortcut" onClick={onOpenAuth}>
+          <LogIn size={18} />
+          <span>Sign in</span>
+          <small>unlock ranked</small>
+        </button>
+      ) : null}
+    </nav>
+  );
+}
+
+function PlayView({
+  login,
+  profile,
+  sessionToken,
+  match,
+  queueState,
+  autoBattle,
+  busy,
+  battleState,
+  battlePlayback,
+  playbackPaused,
+  playbackSpeed,
+  playbackDeck,
+  activeTeam,
+  activeUnitId,
+  displayTeam,
+  displayUnitId,
+  activeHand,
+  latestEvent,
+  visibleDecision,
+  message,
+  onOpenAuth,
+  onJoin,
+  onSync,
+  onTogglePlayback,
+  onStepPlayback,
+  onPlaybackSpeed
+}) {
+  return (
+    <section className="game-grid play-view" data-testid="play-view">
+      <aside className="lobby-panel game-panel" data-game-section="launch">
+        <LaunchBay
+          login={login}
+          profile={profile}
+          sessionToken={sessionToken}
+          match={match}
+          queueState={queueState}
+          autoBattle={autoBattle}
+          busy={busy}
+          onOpenAuth={onOpenAuth}
+          onJoin={onJoin}
+          onSync={onSync}
+        />
+        <RosterCard match={match} />
+      </aside>
+
+      <section className="battle-panel game-panel" data-game-section="watch">
+        <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} />
+        <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
+        <BattlePlaybackHud
+          playback={battlePlayback}
+          paused={playbackPaused}
+          speed={playbackSpeed}
+          canControl={playbackDeck.length > 0}
+          onToggle={onTogglePlayback}
+          onStep={onStepPlayback}
+          onSpeed={onPlaybackSpeed}
+        />
+        <section className="arena-stage" aria-label="AI duel stage">
+          <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
+          <Battlefield
+            state={battleState}
+            match={match}
+            activeTeam={activeTeam}
+            activeUnitId={activeUnitId}
+            latestEvent={latestEvent}
+            playback={battlePlayback}
+            lastDecision={visibleDecision}
+          />
+          <DuelBroadcastScorebug
+            state={battleState}
+            match={match}
+            activeTeam={activeTeam}
+            latestEvent={latestEvent}
+            playback={battlePlayback}
+            lastDecision={visibleDecision}
+          />
+          <CombatCinematicLayer
+            state={battleState}
+            match={match}
+            activeTeam={activeTeam}
+            activeUnitId={activeUnitId}
+            latestEvent={latestEvent}
+            playback={battlePlayback}
+            lastDecision={visibleDecision}
+          />
+          <ArenaDirectorHud
+            state={battleState}
+            match={match}
+            profile={profile}
+            activeTeam={activeTeam}
+            activeUnitId={activeUnitId}
+            latestEvent={latestEvent}
+            autoBattle={autoBattle}
+            playback={battlePlayback}
+          />
+          <LiveModelTelemetryPanel
+            state={battleState}
+            match={match}
+            playback={battlePlayback}
+            lastDecision={visibleDecision}
+            activeUnitId={activeUnitId}
+          />
+          <BattleBroadcastPanel
+            state={battleState}
+            match={match}
+            activeTeam={activeTeam}
+            activeUnitId={activeUnitId}
+            latestEvent={latestEvent}
+            playback={battlePlayback}
+            lastDecision={visibleDecision}
+          />
+          <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
+          <BattleReplayRail state={battleState} />
+          <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
+        </section>
+      </section>
+
+      <aside className="tactical-panel game-panel" data-game-section="intel">
+        <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
+        <Timeline state={battleState} />
+        <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
+        <PostMatchRecap autoBattle={autoBattle} state={battleState} profile={profile} playback={battlePlayback} />
+        <ModelDecisionStack state={battleState} lastDecision={visibleDecision} />
+        <ModelWarFeed state={battleState} lastDecision={visibleDecision} />
+        <ShotIntel event={latestEvent} state={battleState} />
+      </aside>
+    </section>
+  );
+}
+
+function AuthModal({ open, login, setLogin, profile, sessionToken, busy, onSubmit, onRestore, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="auth-modal-backdrop" role="presentation">
+      <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+        <div className="auth-modal-header">
+          <div>
+            <span>Account / Model Setup</span>
+            <strong id="auth-modal-title">{profile ? "Update ranked model" : "Sign in to play ranked"}</strong>
+          </div>
+          <button type="button" className="icon-button" aria-label="Close account setup" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <LoginCard
+          login={login}
+          setLogin={setLogin}
+          profile={profile}
+          sessionToken={sessionToken}
+          busy={busy}
+          onSubmit={onSubmit}
+          onRestore={onRestore}
+        />
+      </section>
+    </div>
+  );
+}
+
+function LeaderboardView({ players, profile, leagueResult, onRefresh, onOpenAuth }) {
+  return (
+    <section className="leaderboard-view" data-testid="leaderboard-view">
+      <div className="leaderboard-hero">
+        <div>
+          <span>Ranked competition</span>
+          <strong>Commander Rank</strong>
+          <p>Player Elo tracks the full package: account, selected model, standing order, and ranked match outcomes.</p>
+        </div>
+        {!profile ? <button type="button" onClick={onOpenAuth}>Sign in to play ranked</button> : null}
+      </div>
+      <div className="leaderboard-layout">
+        <LeaderboardPanel players={players} profile={profile} onRefresh={onRefresh} />
+        <LeagueBoardGrid leagueResult={leagueResult} />
+      </div>
+    </section>
+  );
+}
+
+function LeagueBoardGrid({ leagueResult }) {
+  const rows = leagueResult?.leaderboard || [];
+  const previewRows = rows.slice(0, 4);
+  const cards = [
+    {
+      title: "Model League",
+      label: "model identity",
+      copy: "Controlled simulations compare provider/model choices across shared seeds and prompt packs.",
+      rows: previewRows.map((row) => ({ name: row.label, metric: row.rating }))
+    },
+    {
+      title: "Prompt League",
+      label: "prompt hash",
+      copy: "Prompt League fixes model and seed pools, then ranks standing orders by prompt hash.",
+      rows: []
+    },
+    {
+      title: "Pair League",
+      label: "model + prompt",
+      copy: "Pair League ranks the combined strategy, because the best model and best prompt may not be the best pair.",
+      rows: []
+    }
+  ];
+  return (
+    <div className="league-board-grid" data-testid="league-board-grid">
+      {cards.map((card) => (
+        <article className="league-board-card" key={card.title}>
+          <span>{card.label}</span>
+          <strong>{card.title}</strong>
+          <p>{card.copy}</p>
+          <div className="league-board-rows">
+            {card.rows.length ? card.rows.map((row) => (
+              <small key={row.name}><b>{row.metric}</b>{row.name}</small>
+            )) : <small><b>pending</b>run Lab simulations to populate</small>}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function LabView({ result, busy, state, activeUnitId, standingOrder, onRun }) {
+  return (
+    <section className="lab-view" data-testid="lab-view">
+      <div className="lab-hero">
+        <span>Model evaluation lab</span>
+        <strong>Find the best model, prompt, and model + prompt pair.</strong>
+        <p>Use controlled simulations for repeatable model league results before pushing strategies into ranked.</p>
+      </div>
+      <div className="lab-grid">
+        <LeagueLab result={result} busy={busy} onRun={onRun} />
+        <SimulationApiPanel />
+        <RulesPacketPanel state={state} activeUnitId={activeUnitId} standingOrder={standingOrder} />
+        <MapTopologyScanner state={state} />
+      </div>
+    </section>
   );
 }
 
@@ -993,15 +1199,13 @@ function DuelCommanders({ state, match, activeTeam, lastDecision }) {
 
 function LaunchBay({
   login,
-  setLogin,
   profile,
   sessionToken,
   match,
   queueState,
   autoBattle,
   busy,
-  onSubmit,
-  onRestore,
+  onOpenAuth,
   onJoin,
   onSync
 }) {
@@ -1029,16 +1233,33 @@ function LaunchBay({
       <RankedFlowPanel profile={profile} sessionToken={sessionToken} match={match} queueState={queueState} login={login} />
       <RankedGameStatePanel profile={profile} match={match} queueState={queueState} autoBattle={autoBattle} />
       <SessionStatusPanel profile={profile} sessionToken={sessionToken} login={login} />
-      <LoginCard login={login} setLogin={setLogin} profile={profile} sessionToken={sessionToken} busy={busy} onSubmit={onSubmit} onRestore={onRestore} />
-      <MatchCard
-        profile={profile}
-        match={match}
-        queueState={queueState}
-        busy={busy}
-        onJoin={onJoin}
-        onSync={onSync}
-      />
+      {profile ? (
+        <MatchCard
+          profile={profile}
+          match={match}
+          queueState={queueState}
+          busy={busy}
+          onJoin={onJoin}
+          onSync={onSync}
+          onOpenAuth={onOpenAuth}
+        />
+      ) : (
+        <LockedPlayCard onOpenAuth={onOpenAuth} />
+      )}
     </section>
+  );
+}
+
+function LockedPlayCard({ onOpenAuth }) {
+  return (
+    <div className="locked-play-card" data-testid="locked-play-card">
+      <div>
+        <span>Ranked locked</span>
+        <strong>Sign in to play ranked</strong>
+        <p>Guests can inspect the public ladder, but ranked 2v2 needs an account, model choice, and one standing order.</p>
+      </div>
+      <button type="button" onClick={onOpenAuth}>Sign in to play ranked</button>
+    </div>
   );
 }
 
@@ -1259,8 +1480,8 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
         <button disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
       <div className="match-actions">
-        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Wait for Humans</button>
-        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Quick AI Fill</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>Start Ranked: Humans</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>Start Ranked: AI Fill</button>
       </div>
     </div>
   );
@@ -1931,73 +2152,69 @@ function BattlefieldBackdrop({ state }) {
   );
 }
 
-function RouteMazeLayer({ state }) {
+function isRouteGuideObstacle(obstacle) {
+  return ["route-contour", "gate-slit", "thread-slot"].includes(obstacle.role);
+}
+
+function RouteGuideLayer({ state }) {
   const obstacles = state.obstacles || [];
-  const mazeBands = obstacles.filter((obstacle) => obstacle.role === "maze-band");
-  const gateSlits = obstacles.filter((obstacle) => obstacle.role === "gate-slit");
-  const threadSlots = obstacles.filter((obstacle) => obstacle.role === "thread-slot");
-  const visibleBands = mazeBands.slice(0, 14);
+  const guides = obstacles.filter(isRouteGuideObstacle).slice(0, 28);
   return (
-    <g className="route-maze-layer" data-testid="route-maze-layer" aria-hidden="true">
-      {visibleBands.filter((obstacle) => obstacle.y >= 30).map((obstacle) => (
-        <rect
-          key={`fog-${obstacle.id}`}
-          className={`depth-fog layer-${obstacle.visualLayer || 1}`}
-          x={sx(Math.max(0, obstacle.x - 2))}
-          y={Math.max(0, sy(obstacle.y + obstacle.h) - 24)}
-          width={(obstacle.w + 4) * 10}
-          height={Math.max(26, obstacle.h * 10 + 32)}
-          rx="8"
-        />
-      ))}
-      {visibleBands.map((obstacle) => (
-        <rect
-          key={`band-${obstacle.id}`}
-          className={`maze-band layer-${obstacle.visualLayer || 1}`}
-          x={sx(obstacle.x)}
-          y={sy(obstacle.y + obstacle.h)}
-          width={obstacle.w * 10}
-          height={Math.max(5, obstacle.h * 10)}
-          rx="2"
-        />
-      ))}
-      {gateSlits.slice(0, 12).map((obstacle) => {
-        const x = sx(obstacle.x + obstacle.w / 2);
+    <g className="route-guide-layer" data-testid="route-maze-layer" aria-hidden="true">
+      {guides.map((obstacle) => {
+        if (obstacle.role === "gate-slit") {
+          const x = sx(obstacle.x + obstacle.w / 2);
+          return (
+            <line
+              key={obstacle.id}
+              className={`route-guide gate-slit layer-${obstacle.visualLayer || 1}`}
+              x1={x}
+              y1={sy(obstacle.y + obstacle.h)}
+              x2={x}
+              y2={sy(obstacle.y)}
+            />
+          );
+        }
+        if (obstacle.role === "thread-slot") {
+          return (
+            <path
+              key={obstacle.id}
+              className={`route-guide thread-slot layer-${obstacle.visualLayer || 1}`}
+              d={`M${sx(obstacle.x)},${sy(obstacle.y + obstacle.h / 2)} L${sx(obstacle.x + obstacle.w)},${sy(obstacle.y + obstacle.h / 2)}`}
+            />
+          );
+        }
         return (
-          <line
-            key={`gate-${obstacle.id}`}
-            className={`gate-slit layer-${obstacle.visualLayer || 1}`}
-            x1={x}
-            y1={sy(obstacle.y + obstacle.h)}
-            x2={x}
-            y2={sy(obstacle.y)}
+          <rect
+            key={obstacle.id}
+            className={`route-guide route-contour layer-${obstacle.visualLayer || 1}`}
+            x={sx(obstacle.x)}
+            y={sy(obstacle.y + obstacle.h)}
+            width={obstacle.w * 10}
+            height={Math.max(4, obstacle.h * 10)}
+            rx="7"
           />
         );
       })}
-      {threadSlots.slice(0, 10).map((obstacle) => (
-        <path
-          key={`thread-${obstacle.id}`}
-          className={`thread-slot layer-${obstacle.visualLayer || 1}`}
-          d={`M${sx(obstacle.x)},${sy(obstacle.y + obstacle.h / 2)} L${sx(obstacle.x + obstacle.w)},${sy(obstacle.y + obstacle.h / 2)}`}
-        />
-      ))}
     </g>
   );
 }
 
-function renderObstacleFacets(obstacle, index) {
-  const showLabel = index % 4 === 0 || obstacle.h >= 30 || obstacle.y >= 38;
-  const role = obstacle.role || "blocker";
+function FlatMapObstacleLayer({ state }) {
+  const solids = (state.obstacles || []).filter((obstacle) => !isRouteGuideObstacle(obstacle));
   return (
-    <g key={obstacle.id} className={`obstacle-cluster role-${role} layer-${obstacle.visualLayer || 1}`}>
-      <polygon className="obstacle-shadow" points={obstacleFacetPoints(obstacle, "shadow")} />
-      <polygon className="obstacle-facet" points={obstacleFacetPoints(obstacle, "body")} />
-      <polygon className="obstacle-cap" points={obstacleFacetPoints(obstacle, "cap")} />
-      {showLabel ? (
-        <text className="obstacle-label" x={sx(obstacle.x + obstacle.w / 2)} y={sy(obstacle.y + obstacle.h) + 18} textAnchor="middle">
-          {obstacleLabel(obstacle)}
-        </text>
-      ) : null}
+    <g className="flat-map-obstacle-layer" aria-hidden="true">
+      {solids.map((obstacle) => (
+        <rect
+          key={obstacle.id}
+          className={`map-obstacle ${obstacle.role || "blocker"} layer-${obstacle.visualLayer || 1}`}
+          x={sx(obstacle.x)}
+          y={sy(obstacle.y + obstacle.h)}
+          width={obstacle.w * 10}
+          height={Math.max(5, obstacle.h * 10)}
+          rx={obstacle.role === "maze-room" ? 10 : 5}
+        />
+      ))}
     </g>
   );
 }
@@ -2068,10 +2285,8 @@ function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, play
         <BattlefieldBackdrop state={state} />
         <path className="terrain" d={terrainPath()} />
         <path className="terrain-ridge ridge-near" d={terrainLinePath(1.4)} />
-        <RouteMazeLayer state={state} />
-        <g className="obstacle-layer">
-          {state.obstacles.map(renderObstacleFacets)}
-        </g>
+        <RouteGuideLayer state={state} />
+        <FlatMapObstacleLayer state={state} />
         {state.paths.map((path, index) => (
           <polyline key={`${path.turn}-${index}`} className={`shot-path team-${path.team.toLowerCase()} ${index === state.paths.length - 1 ? "latest" : ""}`} points={pointList(path.points)} />
         ))}

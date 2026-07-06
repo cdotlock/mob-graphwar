@@ -62,7 +62,7 @@ function testGameModeShellMakesProductFeelLikeGame() {
   assert.ok(main.includes("data-game-section=\"watch\""), "battlefield should be addressable as the watch section");
   assert.ok(main.includes("data-game-section=\"intel\""), "hand/rules should be addressable as the intel section");
   assert.ok(main.includes("data-game-section=\"ladder\""), "leaderboard should be addressable as the ladder section");
-  assert.ok(main.includes('useState("watch")'), "the battle watch view should be the default active mode");
+  assert.ok(main.includes('useState("play")'), "the ranked play view should be the default active mode");
   assert.ok(css.includes(".game-mode-nav"), "CSS should style the top game mode navigation");
   assert.ok(css.includes(".mode-tab"), "CSS should style game mode tabs");
   assert.ok(css.includes(".mobile-mode-nav"), "CSS should style mobile mode navigation");
@@ -143,10 +143,8 @@ function testProductizedWatchLoopAndPostMatchRecap() {
   assert.ok(main.includes("Write one standing order"), "watch-loop brief should explain the only human command window");
   assert.ok(main.includes("Watch auto duel"), "watch-loop brief should explain the idle spectator loop");
   assert.ok(main.includes("Study replay"), "watch-loop brief should explain post-fight learning");
-  assert.ok(
-    main.indexOf("<WatchLoopBrief") < main.indexOf("<LoginCard"),
-    "new users should see the product loop before account fields"
-  );
+  assert.ok(main.includes("AuthModal"), "account fields should move into a modal instead of competing with the product loop");
+  assert.ok(!main.includes("<LoginCard login={login}"), "launch bay should not render account fields inline");
   assert.ok(main.includes("PostMatchRecap"), "tactical rail should include a named post-match recap panel");
   assert.ok(main.includes('data-testid="post-match-recap"'), "post-match recap should be selectable for browser verification");
   assert.ok(main.includes("Rank delta"), "post-match recap should expose rank change as a result");
@@ -258,8 +256,8 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes("BattleReplayRail"), "battlefield should include a named battle replay rail component");
   assert.ok(main.includes('data-testid="battle-replay-rail"'), "battle replay rail should be selectable for browser verification");
   assert.ok(main.includes("BattlefieldBackdrop"), "battlefield should have a named layered backdrop component");
-  assert.ok(main.includes("RouteMazeLayer"), "battlefield should render a named route maze layer above the backdrop");
-  assert.ok(main.includes("renderObstacleFacets"), "battlefield should render obstacles as faceted terrain, not plain blocks");
+  assert.ok(main.includes("RouteGuideLayer"), "battlefield should render named route guides above the backdrop");
+  assert.ok(main.includes("FlatMapObstacleLayer"), "battlefield should render obstacles as flat 2D map blockers");
   assert.ok(main.includes('data-testid="battlefield-frame"'), "battlefield should expose a framed game-stage surface");
   assert.ok(main.includes('data-testid="battlefield-broadcast-overlay"'), "battlefield should carry a live broadcast overlay inside the map frame");
   assert.ok(main.includes("BattlefieldBroadcastOverlay"), "battlefield overlay should be implemented as a named component");
@@ -292,17 +290,16 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(css.includes(".high-arc-dominance"), "CSS should style high-arc dominance metadata");
   assert.ok(css.includes(".ceiling-lock"), "CSS should style ceiling-lock metadata");
   assert.ok(css.includes(".battlefield-depth"), "CSS should style battlefield depth metadata");
-  assert.ok(css.includes(".route-maze-layer"), "CSS should style the route maze overlay layer");
-  assert.ok(css.includes(".maze-band"), "CSS should style horizontal maze bands");
-  assert.ok(css.includes(".gate-slit"), "CSS should style narrow gate slits");
-  assert.ok(css.includes(".thread-slot"), "CSS should style thread slot guides");
+  assert.ok(css.includes(".route-guide-layer"), "CSS should style the route guide overlay layer");
+  assert.ok(css.includes(".map-obstacle"), "CSS should style flat 2D map blockers");
+  assert.ok(css.includes(".route-guide.gate-slit"), "CSS should style narrow gate guides");
+  assert.ok(css.includes(".route-guide.thread-slot"), "CSS should style thread-slot guides");
   assert.ok(css.includes(".solver-pressure"), "CSS should style solver pressure as game difficulty chrome");
   assert.ok(css.includes(".swap-window"), "CSS should style swap-window solvability");
   assert.ok(css.includes(".route-guides"), "CSS should style pass-through route guide metadata");
-  assert.ok(css.includes(".depth-fog"), "CSS should style battlefield depth fog");
   assert.ok(css.includes(".spectator-hud"), "CSS should style the spectator HUD");
   assert.ok(css.includes(".terrain-ridge"), "CSS should style layered terrain ridges");
-  assert.ok(css.includes(".obstacle-facet"), "CSS should style faceted obstacle terrain");
+  assert.ok(css.includes(".map-obstacle.ceiling-lock"), "CSS should style ceiling locks as flat terrain");
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
 }
 
@@ -487,6 +484,46 @@ function testBattleHeaderDoesNotCallDrawAWin() {
   assert.ok(!main.includes('`${state.winner} wins`'), "battle header should not render 'draw wins'");
 }
 
+function testWatchFirstProductShellUsesTabsAndModalAuth() {
+  assert.ok(main.includes("ProductTabs"), "app should expose top-level Play, Leaderboard, and Lab tabs");
+  assert.ok(main.includes("AuthModal"), "account and model setup should live in a modal");
+  assert.ok(!main.includes("<LoginCard login={login}"), "login card should not be rendered directly in the always-visible layout");
+  assert.ok(main.includes("LeaderboardView"), "leaderboards should be a named top-level view");
+  assert.ok(main.includes("LabView"), "simulation tooling should be a named top-level lab view");
+  assert.ok(main.includes("PlayView"), "ranked play should be a named top-level view");
+  assert.ok(main.includes("authModalOpen"), "app should track auth modal visibility as UI state");
+  assert.ok(main.includes("onOpenAuth"), "locked ranked actions should open the auth modal");
+  assert.ok(css.includes(".auth-modal-backdrop"), "CSS should provide modal scrim isolation");
+  assert.ok(css.includes(".auth-modal"), "CSS should style the account/model modal");
+  assert.ok(css.includes(".product-tabs"), "CSS should style top-level product tabs");
+  assert.ok(css.includes(".app-view-stack"), "CSS should hide inactive top-level surfaces from the main flow");
+}
+
+function testBattlefieldUsesFlat2DMapLayers() {
+  assert.ok(main.includes("FlatMapObstacleLayer"), "battlefield should use a flat 2D obstacle layer");
+  assert.ok(main.includes("RouteGuideLayer"), "battlefield should render route guides separately from solid blockers");
+  assert.ok(!main.includes("renderObstacleFacets"), "battlefield should not render pseudo-3D obstacle facets");
+  assert.ok(!main.includes("obstacleFacetPoints"), "battlefield should not compute cuboid facet points");
+  assert.ok(css.includes(".map-obstacle"), "CSS should style flat solid map obstacles");
+  assert.ok(css.includes(".route-guide"), "CSS should style route guides as lightweight map lines");
+  assert.ok(!css.includes(".obstacle-facet"), "CSS should not keep pseudo-3D obstacle faces");
+  assert.ok(!css.includes(".obstacle-cap"), "CSS should not keep pseudo-3D caps");
+  assert.ok(!css.includes(".obstacle-shadow"), "CSS should not keep pseudo-3D obstacle shadows");
+}
+
+function testLeaderboardsExplainCommanderModelPromptAndPairCompetition() {
+  assert.ok(main.includes("Commander Rank"), "leaderboard should name the player account ladder");
+  assert.ok(main.includes("Model League"), "leaderboard should distinguish model competition");
+  assert.ok(main.includes("Prompt League"), "leaderboard should distinguish prompt competition");
+  assert.ok(main.includes("Pair League"), "leaderboard should distinguish model plus prompt competition");
+  assert.ok(main.includes("prompt hash"), "prompt leaderboard should explain prompt identity tracking");
+  assert.ok(main.includes("model + prompt"), "pair leaderboard should explain combination ranking");
+  assert.ok(main.includes("Start Ranked"), "ranked play should expose a clear start action");
+  assert.ok(main.includes("Sign in to play ranked"), "guest play should be explicitly gated behind sign-in");
+  assert.ok(css.includes(".league-board-grid"), "CSS should style the multi-league leaderboard grid");
+  assert.ok(css.includes(".locked-play-card"), "CSS should style the locked ranked play state");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testFourSeatAgentBattleMatrixExists();
@@ -519,5 +556,8 @@ testUiPlaysAutoDuelFramesInsteadOfJumpingToFinalState();
 testSpectatorReplayHasWatchOnlyControls();
 testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels();
 testBattleHeaderDoesNotCallDrawAWin();
+testWatchFirstProductShellUsesTabsAndModalAuth();
+testBattlefieldUsesFlat2DMapLayers();
+testLeaderboardsExplainCommanderModelPromptAndPairCompetition();
 
 console.log("ui-source tests passed");

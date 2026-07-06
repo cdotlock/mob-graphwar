@@ -312,6 +312,35 @@ function testBattleBroadcastPanelMakesAiVsAiReadable() {
   assert.ok(css.includes(".broadcast-result"), "CSS should style the result callout");
 }
 
+function testDuelBroadcastScorebugMakesBattleReadableAtAGlance() {
+  assert.ok(main.includes("DuelBroadcastScorebug"), "battle stage should include a named esports-style duel scorebug");
+  assert.ok(main.includes('data-testid="duel-broadcast-scorebug"'), "scorebug should be selectable for browser verification");
+  assert.ok(main.includes("teamBattleStats"), "scorebug should derive team stats from real battle events");
+  assert.ok(main.includes("battleMomentum"), "scorebug should derive a readable momentum state from HP and event pressure");
+  assert.ok(main.includes("damageRace"), "scorebug should expose damage race copy instead of only raw coordinates");
+  assert.ok(main.includes("accuracy"), "scorebug should expose hit accuracy for each AI team");
+  assert.ok(main.includes("recent-model-action"), "scorebug should include a recent model action ticker");
+  assert.ok(main.includes("latestEvent?.damage"), "scorebug should surface recent damage from the latest event");
+  assert.ok(main.includes("<DuelBroadcastScorebug"), "battle stage should render the scorebug component");
+  assert.ok(
+    main.indexOf("<DuelBroadcastScorebug") < main.indexOf("<CombatCinematicLayer"),
+    "scorebug should appear before cinematic combat layers so the battle reads like a live game"
+  );
+  assert.ok(css.includes(".duel-broadcast-scorebug"), "CSS should style the duel scorebug");
+  assert.ok(css.includes(".scorebug-team"), "CSS should style each team block inside the scorebug");
+  assert.ok(css.includes(".momentum-track"), "CSS should style a visible momentum track");
+  assert.ok(css.includes(".recent-model-action"), "CSS should style the recent model action ticker");
+  assert.ok(css.includes(".damage-race"), "CSS should style damage-race metrics");
+  assert.ok(
+    css.includes(".duel-broadcast-scorebug {\n    grid-template-columns: repeat(2, minmax(0, 1fr));"),
+    "mobile scorebug should collapse to a compact two-column broadcast strip instead of a tall one-column stack"
+  );
+  assert.ok(
+    css.includes(".scorebug-team-stats span:nth-child(n+3)"),
+    "mobile scorebug should hide low-priority team stats to keep the battlefield visible"
+  );
+}
+
 function testCombatCinematicLayerMakesAiVsAiFeelLikeGame() {
   assert.ok(main.includes("CombatCinematicLayer"), "battle stage should include a named cinematic combat layer");
   assert.ok(main.includes('data-testid="combat-cinematic-layer"'), "cinematic combat layer should be selectable for browser verification");
@@ -412,6 +441,7 @@ testBattlefieldReadsAsGameSurface();
 testCommercialSpectatorPanelsExposeTopologyAndBareRules();
 testLiveModelTelemetryMakesAiDuelVisible();
 testBattleBroadcastPanelMakesAiVsAiReadable();
+testDuelBroadcastScorebugMakesBattleReadableAtAGlance();
 testCombatCinematicLayerMakesAiVsAiFeelLikeGame();
 testUiExplainsRetainedHandsAndSwapAction();
 testUiAutoStartsRankedAutoDuel();

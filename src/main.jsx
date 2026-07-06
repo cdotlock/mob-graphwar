@@ -153,6 +153,45 @@ function battleStats(state) {
   };
 }
 
+function teamBattleStats(state, team) {
+  const events = (state.events || []).filter((event) => event.team === team);
+  const hits = events.filter((event) => event.result === "hitEnemy").length;
+  const failures = events.filter((event) => ["blocked", "ground", "out", "miss", "invalid"].includes(event.result)).length;
+  const damage = events.reduce((sum, event) => sum + (Number(event.damage) || 0), 0);
+  const swapsUsed = Object.entries(state.hands || {})
+    .filter(([unitId]) => String(unitId).startsWith(team))
+    .reduce((sum, [, handState]) => sum + (Number(handState?.swapsUsed ?? handState?.rerollsUsed) || 0), 0);
+  const accuracy = events.length ? Math.round((hits / events.length) * 100) : 0;
+  return {
+    shots: events.length,
+    hits,
+    failures,
+    damage,
+    swapsUsed,
+    accuracy
+  };
+}
+
+function battleMomentum(state) {
+  const teamA = teamHealth(state, "A");
+  const teamB = teamHealth(state, "B");
+  const statsA = teamBattleStats(state, "A");
+  const statsB = teamBattleStats(state, "B");
+  const hpSwing = teamA.hp - teamB.hp;
+  const damageSwing = statsA.damage - statsB.damage;
+  const hitSwing = statsA.hits - statsB.hits;
+  const pressureSwing = Math.max(-100, Math.min(100, Math.round(hpSwing * 0.34 + damageSwing * 0.42 + hitSwing * 8)));
+  return {
+    leader: pressureSwing > 8 ? "A" : pressureSwing < -8 ? "B" : "EVEN",
+    pressureSwing,
+    trackPercent: Math.max(8, Math.min(92, 50 + pressureSwing / 2)),
+    teamA,
+    teamB,
+    statsA,
+    statsB
+  };
+}
+
 function currentActorLabel(state, activeUnitId, latestEvent) {
   if (state.winner) {
     const unit = latestEvent?.unitId || latestEvent?.shooterId || "final";
@@ -757,6 +796,14 @@ function App() {
           />
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
+            <DuelBroadcastScorebug
+              state={battleState}
+              match={match}
+              activeTeam={activeTeam}
+              latestEvent={latestEvent}
+              playback={battlePlayback}
+              lastDecision={visibleDecision}
+            />
             <CombatCinematicLayer
               state={battleState}
               match={match}
@@ -1256,6 +1303,64 @@ function VersusBanner({ state, match, activeTeam }) {
         <small>{b.health.hp}/{b.health.max} HP · {b.health.alive} online</small>
       </div>
     </div>
+  );
+}
+
+function DuelBroadcastScorebug({ state, match, activeTeam, latestEvent, playback, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const momentum = battleMomentum(state);
+  const action = playback?.action || lastDecision || null;
+  const recentUnit = action?.unitId || latestEvent?.unitId || latestEvent?.shooterId || "standby";
+  const recentTeam = action?.team || latestEvent?.team || activeTeam || "A";
+  const recentVerb = action?.action === "swap_hand" ? "SWAP HAND" : action?.action ? String(action.action).toUpperCase() : latestEvent ? "SHOT" : "WAITING";
+  const recentDamage = Number(latestEvent?.damage || action?.event?.damage || 0);
+  const result = latestEvent?.resultLabel || action?.resultLabel || action?.result || (state.winner ? battleResultLabel(state.winner) : "models reading the board");
+  const damageRace = `${momentum.statsA.damage}-${momentum.statsB.damage}`;
+  const teamNames = (team) => roster.filter((seat) => seat.team === team).map((seat) => seat.displayName).join(" / ") || `Team ${team}`;
+  const teamBlock = (team) => {
+    const health = team === "A" ? momentum.teamA : momentum.teamB;
+    const stats = team === "A" ? momentum.statsA : momentum.statsB;
+    const hpPct = health.max ? Math.max(0, Math.min(100, (health.hp / health.max) * 100)) : 0;
+    return (
+      <article className={`scorebug-team team-${team.toLowerCase()} ${activeTeam === team ? "active" : ""}`} key={team}>
+        <div className="scorebug-team-head">
+          <span>Team {team}</span>
+          <strong>{teamNames(team)}</strong>
+        </div>
+        <div className="scorebug-hp-rail" aria-label={`Team ${team} HP`}>
+          <i style={{ width: `${hpPct}%` }} />
+        </div>
+        <div className="scorebug-team-stats">
+          <span><b>{health.hp}</b>HP</span>
+          <span><b>{stats.damage}</b>DMG</span>
+          <span><b>{stats.accuracy}%</b>accuracy</span>
+          <span><b>{stats.swapsUsed}</b>swaps</span>
+        </div>
+      </article>
+    );
+  };
+  return (
+    <section className={`duel-broadcast-scorebug leader-${String(momentum.leader).toLowerCase()}`} data-testid="duel-broadcast-scorebug" aria-label="Live duel scoreboard">
+      {["A", "B"].map(teamBlock)}
+      <div className="scorebug-center">
+        <span>Momentum</span>
+        <strong>{momentum.leader === "EVEN" ? "Even fight" : `Team ${momentum.leader} pressure`}</strong>
+        <div className="momentum-track" aria-label="Battle momentum">
+          <i style={{ width: `${momentum.trackPercent}%` }} />
+          <b />
+        </div>
+        <div className="scorebug-center-metrics">
+          <span className="damage-race"><b>{damageRace}</b> damageRace</span>
+          <span><b>{state.turn}/{Sim.CONFIG.maxTurns}</b> tempo</span>
+          <span><b>{state.mapMeta?.difficulty || 0}</b> map</span>
+        </div>
+      </div>
+      <div className={`recent-model-action team-${String(recentTeam).toLowerCase()}`}>
+        <span>Recent model action</span>
+        <strong>{recentUnit} · {recentVerb}</strong>
+        <small>{result}{recentDamage ? ` · ${recentDamage} damage` : ""}</small>
+      </div>
+    </section>
   );
 }
 

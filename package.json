@@ -11,7 +11,8 @@
     "build": "vite build",
     "start": "node server/index.js",
     "test": "node test/sim-core.test.js && node test/agent-contract.test.js && node test/provider-catalog.test.js && node test/server.test.js && node test/ui-source.test.js",
-    "test:real:deepseek": "node test/real-deepseek-smoke.js"
+    "test:real:deepseek": "node test/real-deepseek-smoke.js",
+    "test:real:openrouter": "node test/real-openrouter-smoke.js"
   },
   "license": "MIT",
   "dependencies": {

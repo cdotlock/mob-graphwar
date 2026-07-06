@@ -1212,6 +1212,7 @@ function providerErrorStatus(error) {
   if (error.message === "missing_candidate_id") return 502;
   if (error.message === "invalid_provider_json") return 502;
   if (error.message === "provider_http_error") return 502;
+  if (error.message === "provider_timeout") return 504;
   if (error.message === "reroll_limit_reached") return 409;
   return 400;
 }

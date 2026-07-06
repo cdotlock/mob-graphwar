@@ -3,6 +3,7 @@ const { listProviders, getProvider } = require("../server/providers/catalog.js")
 const { normalizeProviderDecision } = require("../server/providers/normalize.js");
 const { buildOpenAICompatibleRequest } = require("../server/providers/openai-compatible.js");
 const { buildAnthropicRequest } = require("../server/providers/anthropic.js");
+const { executeProviderDecision } = require("../server/providers/execute.js");
 const Sim = require("../src/sim-core.js");
 const Contract = require("../src/agents/contract.js");
 const fs = require("fs");
@@ -24,6 +25,10 @@ function testProviderCatalogRedactsKeys() {
 function testNormalizeDecision() {
   const decision = normalizeProviderDecision('{"candidateId":"A-1","publicReason":"<think>x</think>Use high arc."}');
   assert.deepStrictEqual(decision, { action: "shot", candidateId: "A-1", publicReason: "Use high arc." });
+  assert.deepStrictEqual(
+    normalizeProviderDecision('Here is the legal JSON: {"action":"shot","candidateId":"B-2","publicReason":"thread lane"}'),
+    { action: "shot", candidateId: "B-2", publicReason: "thread lane" }
+  );
   assert.deepStrictEqual(normalizeProviderDecision('{"action":"swap_hand","publicReason":"Need a different hand."}'), {
     action: "swap_hand",
     candidateId: undefined,
@@ -87,6 +92,9 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
   assert.strictEqual(request.headers.authorization, "Bearer sk-router");
   assert.strictEqual(request.body.model, "openrouter/free");
   assert.deepStrictEqual(request.body.response_format, { type: "json_object" });
+  assert.strictEqual(request.body.include_reasoning, false);
+  assert.deepStrictEqual(request.body.reasoning, { exclude: true });
+  assert.strictEqual(request.body.reasoning_effort, undefined);
   assert.strictEqual(request.body.messages.length, 1, "OpenRouter should receive only the public rules payload");
   const userPayload = JSON.parse(request.body.messages[0].content);
   assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"));
@@ -125,15 +133,59 @@ function testAnthropicUsesSameBareRulesPayload() {
 function testRealDeepSeekSmokeScriptIsDiscoverable() {
   const pkg = require("../package.json");
   assert.strictEqual(pkg.scripts["test:real:deepseek"], "node test/real-deepseek-smoke.js");
+  assert.strictEqual(pkg.scripts["test:real:openrouter"], "node test/real-openrouter-smoke.js");
   const smokePath = path.resolve(__dirname, "real-deepseek-smoke.js");
+  const openrouterSmokePath = path.resolve(__dirname, "real-openrouter-smoke.js");
   assert.ok(fs.existsSync(smokePath), "real DeepSeek smoke test script should exist");
+  assert.ok(fs.existsSync(openrouterSmokePath), "real OpenRouter smoke test script should exist");
 }
 
-testProviderCatalogRedactsKeys();
-testNormalizeDecision();
-testDeepSeekUsesCurrentJsonModeDefaults();
-testOpenRouterUsesFreeJsonModeDefaults();
-testAnthropicUsesSameBareRulesPayload();
-testRealDeepSeekSmokeScriptIsDiscoverable();
+async function testProviderRequestTimeoutUsesEnvLimit() {
+  const openrouter = getProvider("openrouter");
+  const state = Sim.createInitialState({ seed: 7351 });
+  const rulesPayload = Contract.buildRulesPayload(state, "A1", "thread the maze");
+  let sawAbortSignal = false;
+  const fetchMock = async (_url, options) => {
+    sawAbortSignal = Boolean(options && options.signal);
+    if (!options || !options.signal) throw new Error("missing_abort_signal");
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        reject(err);
+      });
+    });
+  };
 
-console.log("provider-catalog tests passed");
+  await assert.rejects(
+    () =>
+      executeProviderDecision(
+        openrouter,
+        {
+          apiKey: "sk-redacted",
+          command: "thread the maze",
+          candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
+          stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
+          rulesPayload,
+          model: "openrouter/free"
+        },
+        { env: { GRAPHWAR_REQUEST_TIMEOUT_MS: "1" }, fetch: fetchMock }
+      ),
+    /provider_timeout/
+  );
+  assert.strictEqual(sawAbortSignal, true, "provider fetch should receive an AbortSignal");
+}
+
+(async () => {
+  testProviderCatalogRedactsKeys();
+  testNormalizeDecision();
+  testDeepSeekUsesCurrentJsonModeDefaults();
+  testOpenRouterUsesFreeJsonModeDefaults();
+  testAnthropicUsesSameBareRulesPayload();
+  testRealDeepSeekSmokeScriptIsDiscoverable();
+  await testProviderRequestTimeoutUsesEnvLimit();
+  console.log("provider-catalog tests passed");
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

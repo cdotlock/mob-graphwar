@@ -91,3 +91,14 @@ npm run test:real:deepseek
 
 This is intentionally separate from `npm test` because it spends real provider
 quota and depends on network availability.
+
+Set `OPENROUTER_API_KEY` and run:
+
+```sh
+npm run test:real:openrouter
+```
+
+`OPENROUTER_MODELS` accepts a comma-separated model list for model ranking
+experiments. `OPENROUTER_SMOKE_TIMEOUT_MS` controls the per-call timeout. The
+script exits non-zero when every tested model fails, but still prints a JSON
+summary with latency, HTTP status, timeout, and validation error details.

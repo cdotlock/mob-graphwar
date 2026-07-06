@@ -7,10 +7,24 @@ function stripReasoning(value) {
     .trim();
 }
 
+function parseProviderJson(raw) {
+  const text = stripReasoning(raw);
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(text.slice(start, end + 1));
+    }
+    throw err;
+  }
+}
+
 function normalizeProviderDecision(raw) {
   let parsed;
   try {
-    parsed = JSON.parse(stripReasoning(raw));
+    parsed = parseProviderJson(raw);
   } catch (err) {
     throw new Error("invalid_provider_json");
   }
@@ -28,6 +42,7 @@ function normalizeProviderDecision(raw) {
 }
 
 module.exports = {
+  parseProviderJson,
   normalizeProviderDecision,
   stripReasoning
 };

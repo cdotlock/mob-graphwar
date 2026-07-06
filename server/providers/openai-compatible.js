@@ -2,6 +2,7 @@
 
 function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const isDeepSeek = provider.id === "deepseek";
+  const isOpenRouter = provider.id === "openrouter";
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
@@ -29,6 +30,10 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   };
   if (isDeepSeek) {
     body.thinking = { type: "disabled" };
+  }
+  if (isOpenRouter) {
+    body.include_reasoning = false;
+    body.reasoning = { exclude: true };
   }
   return {
     url: `${String(payload.baseUrl || provider.defaultBaseUrl).replace(/\/$/, "")}/chat/completions`,

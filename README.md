@@ -66,6 +66,24 @@ This calls the hosted provider path against DeepSeek, validates the returned
 legal action for an auto-duel turn, and verifies the response does not echo the
 API key.
 
+Real OpenRouter free-model smoke test:
+
+```sh
+OPENROUTER_API_KEY=... npm run test:real:openrouter
+```
+
+Optional knobs:
+
+```sh
+OPENROUTER_MODELS=openrouter/free,openai/gpt-oss-20b:free \
+OPENROUTER_SMOKE_TIMEOUT_MS=45000 \
+npm run test:real:openrouter
+```
+
+This is the first pass for model ranking. It runs each listed model through the
+same bare-rules legal-action contract and reports latency, action validity, HTTP
+errors, timeouts, and JSON failures without printing the key.
+
 ## Current Game Rules
 
 - Ranked 2v2 artillery board with human player plus AI-filled seats.

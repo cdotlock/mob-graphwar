@@ -45,6 +45,55 @@ function extractProviderText(provider, json) {
   return provider.adapter === "anthropic" ? extractAnthropicText(json) : extractOpenAIText(json);
 }
 
+function providerTimeoutMs(options) {
+  const opts = options || {};
+  const source = opts.env || process.env;
+  const raw = opts.timeoutMs ?? source.GRAPHWAR_REQUEST_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 20_000;
+  return Math.min(parsed, 120_000);
+}
+
+async function fetchWithTimeout(fetchFn, url, request, timeoutMs) {
+  if (typeof AbortController !== "function" || request.signal) {
+    return fetchFn(url, request);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchFn(url, { ...request, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted || err.name === "AbortError") {
+      const timeoutError = new Error("provider_timeout");
+      timeoutError.timeoutMs = timeoutMs;
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function providerTimeoutError(timeoutMs) {
+  const timeoutError = new Error("provider_timeout");
+  timeoutError.timeoutMs = timeoutMs;
+  return timeoutError;
+}
+
+async function runWithProviderTimeout(operation, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(providerTimeoutError(timeoutMs)), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function executeProviderDecision(provider, payload, options) {
   const opts = options || {};
   const fetchFn = opts.fetch || globalThis.fetch;
@@ -53,51 +102,62 @@ async function executeProviderDecision(provider, payload, options) {
   const apiKey = resolveApiKey(provider, payload, opts.env);
   if (!apiKey) throw new Error("missing_api_key");
 
-  const request = buildProviderRequest(provider, payload, apiKey);
-  const response = await fetchFn(request.url, {
-    method: "POST",
-    headers: request.headers,
-    body: JSON.stringify(request.body)
-  });
-  if (!response || !response.ok) {
-    const err = new Error("provider_http_error");
-    err.status = response && response.status;
-    throw err;
-  }
+  const timeoutMs = providerTimeoutMs(opts);
+  return runWithProviderTimeout(async () => {
+    const request = buildProviderRequest(provider, payload, apiKey);
+    const response = await fetchWithTimeout(
+      fetchFn,
+      request.url,
+      {
+        method: "POST",
+        headers: request.headers,
+        body: JSON.stringify(request.body)
+      },
+      timeoutMs
+    );
+    if (!response || !response.ok) {
+      const err = new Error("provider_http_error");
+      err.status = response && response.status;
+      throw err;
+    }
 
-  const json = await response.json();
-  const decision = normalizeProviderDecision(extractProviderText(provider, json));
-  const validation = validateAgentDecision(
-    decision,
-    payload.rulesPayload && payload.rulesPayload.legalActions ? payload.rulesPayload.legalActions : payload.candidates
-  );
-  if (!validation.ok) {
-    const err = new Error(validation.reason);
-    err.validation = validation;
-    throw err;
-  }
-  if (validation.action === "swap_hand") {
+    const json = await response.json();
+    const decision = normalizeProviderDecision(extractProviderText(provider, json));
+    const validation = validateAgentDecision(
+      decision,
+      payload.rulesPayload && payload.rulesPayload.legalActions ? payload.rulesPayload.legalActions : payload.candidates
+    );
+    if (!validation.ok) {
+      const err = new Error(validation.reason);
+      err.validation = validation;
+      throw err;
+    }
+    if (validation.action === "swap_hand") {
+      return {
+        decision: {
+          action: "swap_hand",
+          publicReason: validation.publicReason
+        },
+        candidate: null
+      };
+    }
     return {
       decision: {
-        action: "swap_hand",
+        action: "shot",
+        candidateId: validation.candidate.candidateId,
         publicReason: validation.publicReason
       },
-      candidate: null
+      candidate: validation.candidate
     };
-  }
-  return {
-    decision: {
-      action: "shot",
-      candidateId: validation.candidate.candidateId,
-      publicReason: validation.publicReason
-    },
-    candidate: validation.candidate
-  };
+  }, timeoutMs);
 }
 
 module.exports = {
   buildProviderRequest,
   executeProviderDecision,
   extractProviderText,
+  fetchWithTimeout,
+  runWithProviderTimeout,
+  providerTimeoutMs,
   resolveApiKey
 };

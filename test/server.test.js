@@ -71,6 +71,29 @@ async function testHealthAndProviders() {
   assert.ok(!JSON.stringify(providers.json).includes("sk-router"), "response should redact OpenRouter keys");
 }
 
+async function testProviderModelsEndpointUsesByokForLiveCatalog() {
+  let captured;
+  const fetchMock = async (url, options) => {
+    captured = { url: String(url), headers: options?.headers || {} };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: [{ id: "gpt-live-byok", object: "model" }] })
+    };
+  };
+  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/providers/openai/models", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ apiKey: "sk-user-models" })
+  });
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.json.provider, "openai");
+  assert.ok(result.json.models.some((model) => model.id === "gpt-live-byok"), "BYOK model refresh should return live models");
+  assert.strictEqual(captured.url, "https://api.openai.com/v1/models");
+  assert.strictEqual(captured.headers.authorization, "Bearer sk-user-models");
+  assert.ok(!result.text.includes("sk-user-models"), "model refresh response should not leak the BYOK key");
+}
+
 async function testStaticServerOnlyServesMainEntrypoint() {
   const main = await request(createServer({ env: {} }), "/index.html");
   assert.strictEqual(main.status, 200);
@@ -693,6 +716,10 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
     autoDuel.json.match.state.events.every((event) => event.routeBonus && Array.isArray(event.routeBonus.pointIds)),
     "auto duel public events should expose route bonus scoring"
   );
+  assert.ok(
+    autoDuel.json.match.state.events.some((event) => event.expression && event.thinking && event.thinking.publicReason),
+    "auto duel public events should expose model function expressions and thoughts"
+  );
   assert.ok(autoDuel.json.score && Number.isFinite(autoDuel.json.score.value), "auto duel should return rank score");
   assert.ok(Number.isFinite(autoDuel.json.rankDelta), "auto duel should return rank delta");
   assert.ok(autoDuel.json.player.rank.games >= 1, "auto duel should settle the player's ranked profile");
@@ -716,6 +743,10 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.ok(
     autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "shot"),
     "playback frames should expose shot actions for the spectator timeline"
+  );
+  assert.ok(
+    autoDuel.json.autoBattle.modelTurns.some((turn) => turn.expression && turn.publicReason),
+    "model turn summary should carry the visible function and model thought"
   );
   const modelActionFrames = autoDuel.json.autoBattle.frames.filter((frame) => frame.action.action !== "start");
   assert.ok(modelActionFrames.length >= 1, "auto duel should include model action frames");
@@ -1217,6 +1248,7 @@ async function testProviderShotRequiresKey() {
 
 (async () => {
   await testHealthAndProviders();
+  await testProviderModelsEndpointUsesByokForLiveCatalog();
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();

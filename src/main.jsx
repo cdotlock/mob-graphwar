@@ -74,6 +74,9 @@ const I18N = {
     accountModelSetup: "Account / Model Key",
     updateRankedModel: "Update ranked model",
     signInToPlay: "Sign in to play ranked",
+    rankedLocked: "Ranked locked",
+    rankedLockedHelp: "Sign in, choose one model, write one standing order.",
+    modelCatalogUpdated: "Model list updated",
     register: "Register",
     handle: "Handle",
     displayName: "Display name",
@@ -93,6 +96,13 @@ const I18N = {
     decision: "Decision",
     routeBonus: "Route bonus",
     handRead: "Hand read",
+    modelThought: "Model thought",
+    functionLine: "Function",
+    shotResult: "Shot result",
+    youWin: "You won",
+    youLose: "You lost",
+    drawResult: "Draw",
+    untilKo: "until KO",
     commandRead: "Command read",
     targetRead: "Target read",
     waitingDecision: "Waiting for model decision",
@@ -130,6 +140,9 @@ const I18N = {
     accountModelSetup: "账号 / 模型设置",
     updateRankedModel: "更新排位模型",
     signInToPlay: "登录后开始排位",
+    rankedLocked: "排位未解锁",
+    rankedLockedHelp: "登录、选择模型、写一条开局指令。",
+    modelCatalogUpdated: "模型列表已更新",
     register: "注册",
     handle: "账号名",
     displayName: "显示名",
@@ -149,6 +162,13 @@ const I18N = {
     decision: "决策",
     routeBonus: "路线奖励",
     handRead: "手牌判断",
+    modelThought: "模型想法",
+    functionLine: "函数",
+    shotResult: "结果",
+    youWin: "你赢了",
+    youLose: "你输了",
+    drawResult: "平局",
+    untilKo: "击杀为止",
     commandRead: "指令理解",
     targetRead: "目标选择",
     waitingDecision: "等待模型决策",
@@ -180,7 +200,11 @@ function modelOptionsFor(catalog, providerId) {
 }
 
 function defaultModelFor(catalog, providerId) {
-  return modelOptionsFor(catalog, providerId)[0]?.id || DEFAULT_OPENROUTER_MODEL;
+  const providers = providerOptions(catalog);
+  const provider = providers.find((item) => item.id === providerId) || providers[0];
+  const models = modelOptionsFor(providers, providerId);
+  if (provider?.model && models.some((model) => model.id === provider.model)) return provider.model;
+  return models[0]?.id || DEFAULT_OPENROUTER_MODEL;
 }
 
 function MotionSection({ children, className = "", initial, animate, exit, transition, ...props }) {
@@ -570,6 +594,29 @@ function App() {
     return providers;
   }
 
+  async function refreshProviderModels(providerId = login.provider, apiKey = login.apiKey) {
+    const targetProvider = typeof providerId === "string" ? providerId : login.provider;
+    const key = typeof apiKey === "string" ? apiKey : login.apiKey;
+    const response = await fetch(`/api/providers/${targetProvider}/models`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: key })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "provider_models_failed");
+    const models = Array.isArray(payload.models) ? payload.models : [];
+    setProviderCatalog((current) => providerOptions(current).map((provider) => (
+      provider.id === targetProvider ? { ...provider, models } : provider
+    )));
+    setLogin((current) => {
+      if (current.provider !== targetProvider) return current;
+      const model = models.some((item) => item.id === current.model) ? current.model : models[0]?.id || current.model;
+      return { ...current, model };
+    });
+    setMessage(`${tx(locale, "modelCatalogUpdated")}: ${models.length}`);
+    return models;
+  }
+
   async function syncMatchRoom(matchId = match?.id, playerId = profile?.id) {
     if (!matchId || !playerId) return null;
     playbackToken.current += 1;
@@ -907,6 +954,8 @@ function App() {
         {activeMode === "play" ? (
           <PlayView
             login={login}
+            setLogin={setLogin}
+            providerCatalog={providerCatalog}
             profile={profile}
             sessionToken={sessionToken}
             match={match}
@@ -930,6 +979,7 @@ function App() {
             onOpenAuth={() => setAuthModalOpen(true)}
             onJoin={joinMatch}
             onSync={syncCurrentRoom}
+            onRefreshModels={refreshProviderModels}
             onTogglePlayback={togglePlayback}
             onStepPlayback={stepPlayback}
             onPlaybackSpeed={changePlaybackSpeed}
@@ -967,6 +1017,7 @@ function App() {
         busy={busy}
         onSubmit={signIn}
         onRestore={restoreProfile}
+        onRefreshModels={refreshProviderModels}
         onClose={() => setAuthModalOpen(false)}
       />
       <MobileSpectatorDock
@@ -1035,6 +1086,8 @@ function ProductTabs({ activeMode, profile, match, queueState, autoBattle, local
 
 function PlayView({
   login,
+  setLogin,
+  providerCatalog,
   profile,
   sessionToken,
   match,
@@ -1058,31 +1111,14 @@ function PlayView({
   onOpenAuth,
   onJoin,
   onSync,
+  onRefreshModels,
   onTogglePlayback,
   onStepPlayback,
   onPlaybackSpeed
 }) {
   return (
     <section className="play-shell play-view map-first" data-testid="play-view">
-      <section className="play-command-row game-panel" data-game-section="launch">
-        <LaunchBay
-          login={login}
-          profile={profile}
-          sessionToken={sessionToken}
-          match={match}
-          queueState={queueState}
-          autoBattle={autoBattle}
-          busy={busy}
-          onOpenAuth={onOpenAuth}
-          onJoin={onJoin}
-          onSync={onSync}
-          locale={locale}
-        />
-      </section>
-
       <section className="battle-panel primary-battle game-panel" data-game-section="watch">
-        <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} locale={locale} />
-        <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
         <BattlePlaybackHud
           playback={battlePlayback}
           paused={playbackPaused}
@@ -1095,9 +1131,26 @@ function PlayView({
         <section className="arena-stage" aria-label="AI duel stage">
           <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
           <div className="battle-core-layout">
+            <BattleSetupPanel
+              login={login}
+              setLogin={setLogin}
+              providerCatalog={providerCatalog}
+              profile={profile}
+              sessionToken={sessionToken}
+              match={match}
+              queueState={queueState}
+              autoBattle={autoBattle}
+              busy={busy}
+              locale={locale}
+              onOpenAuth={onOpenAuth}
+              onJoin={onJoin}
+              onSync={onSync}
+              onRefreshModels={onRefreshModels}
+            />
             <Battlefield
               state={battleState}
               match={match}
+              profile={profile}
               activeTeam={activeTeam}
               activeUnitId={activeUnitId}
               latestEvent={latestEvent}
@@ -1144,7 +1197,73 @@ function PlayView({
   );
 }
 
-function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore, onClose }) {
+function BattleSetupPanel({
+  login,
+  setLogin,
+  providerCatalog,
+  profile,
+  sessionToken,
+  match,
+  queueState,
+  autoBattle,
+  busy,
+  locale,
+  onOpenAuth,
+  onJoin,
+  onSync,
+  onRefreshModels
+}) {
+  const providers = providerOptions(providerCatalog);
+  const selectedProvider = providers.find((provider) => provider.id === login.provider) || providers[0];
+  const selectedModels = modelOptionsFor(providers, selectedProvider?.id || login.provider);
+  const canRank = Boolean(profile && sessionToken);
+  const status = autoBattle
+    ? `${battleResultLabel(autoBattle.winner)} / ${autoBattle.resolvedTurns} shots`
+    : match
+      ? match.status
+      : queueState
+        ? `${queueState.queueSize}/2`
+        : canRank
+          ? tx(locale, "ready")
+          : tx(locale, "signInRequired");
+  const selectProvider = (providerId) => {
+    setLogin({ ...login, provider: providerId, model: defaultModelFor(providers, providerId) });
+  };
+  const refreshModels = () => {
+    if (typeof onRefreshModels === "function") onRefreshModels(login.provider, login.apiKey).catch(() => {});
+  };
+  return (
+    <aside className="battle-setup-panel" data-testid="battle-setup-panel" data-game-section="launch">
+      <div className="setup-head">
+        <span>{tx(locale, "rankedDuel")}</span>
+        <strong>{profile ? `${profile.rank.tier} ${profile.rank.rating}` : tx(locale, "rankedLocked")}</strong>
+        <small>{status}</small>
+      </div>
+      <label>{tx(locale, "provider")}<select value={login.provider} onChange={(event) => selectProvider(event.target.value)}>
+        {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
+      </select></label>
+      <label>{tx(locale, "model")}<select data-testid="inline-model-select" value={login.model} onFocus={refreshModels} onChange={(event) => setLogin({ ...login, model: event.target.value })}>
+        {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id} · {model.free ? "free" : "paid"}</option>)}
+      </select></label>
+      <label>{tx(locale, "apiKey")}<input type="password" value={login.apiKey} onChange={(event) => setLogin({ ...login, apiKey: event.target.value })} onBlur={refreshModels} placeholder="BYOK" /></label>
+      <label className="standing-order-field">{tx(locale, "standingOrder")}<textarea maxLength={80} value={login.standingOrder} onChange={(event) => setLogin({ ...login, standingOrder: event.target.value })} placeholder={locale === "zh" ? "例：高弧线越过障碍，优先打残血，别误伤队友" : "Example: high arc over cover, focus low HP, avoid allies"} /></label>
+      <div className="setup-actions">
+        {!canRank ? (
+          <button type="button" onClick={onOpenAuth}>{tx(locale, "signInToPlay")}</button>
+        ) : (
+          <>
+            <button type="button" disabled={busy} onClick={() => onJoin({ allowAiFill: true })}>AI Fill</button>
+            <button type="button" disabled={busy} onClick={() => onJoin({ allowAiFill: false })}>Human</button>
+          </>
+        )}
+        <button type="button" disabled={!profile || busy} onClick={onSync}>Sync</button>
+      </div>
+      <p>{canRank ? tx(locale, "watchOnly") : tx(locale, "rankedLockedHelp")}</p>
+    </aside>
+  );
+}
+
+function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore, onRefreshModels, onClose }) {
   if (!open) return null;
   return (
     <div className="auth-modal-backdrop" role="presentation">
@@ -1168,6 +1287,7 @@ function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatal
           busy={busy}
           onSubmit={onSubmit}
           onRestore={onRestore}
+          onRefreshModels={onRefreshModels}
         />
       </section>
     </div>
@@ -1395,7 +1515,7 @@ function LaunchBay({
           onOpenAuth={onOpenAuth}
         />
       ) : (
-        <LockedPlayCard onOpenAuth={onOpenAuth} />
+        <LockedPlayCard onOpenAuth={onOpenAuth} locale={locale} />
       )}
     </section>
   );
@@ -1422,15 +1542,15 @@ function CompactLaunchSummary({ login, profile, sessionToken, match, queueState,
   );
 }
 
-function LockedPlayCard({ onOpenAuth }) {
+function LockedPlayCard({ onOpenAuth, locale }) {
   return (
     <div className="locked-play-card" data-testid="locked-play-card">
       <div>
-        <span>Ranked locked</span>
-        <strong>Sign in to play ranked</strong>
-        <p>Guests can inspect the public ladder, but ranked 2v2 needs an account, model choice, and one standing order.</p>
+        <span>{tx(locale, "rankedLocked")}</span>
+        <strong>{tx(locale, "signInToPlay")}</strong>
+        <p>{tx(locale, "rankedLockedHelp")}</p>
       </div>
-      <button type="button" onClick={onOpenAuth}>Sign in to play ranked</button>
+      <button type="button" onClick={onOpenAuth}>{tx(locale, "signInToPlay")}</button>
     </div>
   );
 }
@@ -1537,13 +1657,16 @@ function RankedGameStatePanel({ profile, match, queueState, autoBattle }) {
   );
 }
 
-function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore }) {
+function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore, onRefreshModels }) {
   const authMode = login.authMode === "login" ? "login" : "register";
   const providers = providerOptions(providerCatalog);
   const selectedProvider = providers.find((provider) => provider.id === login.provider) || providers[0];
   const selectedModels = modelOptionsFor(providers, selectedProvider?.id || login.provider);
   const selectProvider = (providerId) => {
     setLogin({ ...login, provider: providerId, model: defaultModelFor(providers, providerId) });
+  };
+  const refreshModels = () => {
+    if (typeof onRefreshModels === "function") onRefreshModels(login.provider, login.apiKey).catch(() => {});
   };
   return (
     <form className="login-card" onSubmit={onSubmit}>
@@ -1560,10 +1683,10 @@ function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, lo
       <label>{tx(locale, "provider")}<select value={login.provider} onChange={(e) => selectProvider(e.target.value)}>
         {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
       </select></label>
-      <label>{tx(locale, "model")}<select data-testid="model-select" value={login.model} onChange={(e) => setLogin({ ...login, model: e.target.value })}>
-        {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id}</option>)}
+      <label>{tx(locale, "model")}<select data-testid="model-select" value={login.model} onFocus={refreshModels} onChange={(e) => setLogin({ ...login, model: e.target.value })}>
+        {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id} · {model.free ? "free" : "paid"}</option>)}
       </select></label>
-      <label>{tx(locale, "apiKey")}<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} placeholder="Stored only for this browser session" /></label>
+      <label>{tx(locale, "apiKey")}<input type="password" autoComplete="current-password" value={login.apiKey} onChange={(e) => setLogin({ ...login, apiKey: e.target.value })} onBlur={onRefreshModels} placeholder="Stored only for this browser session" /></label>
       <ProviderReadinessGrid login={login} profile={profile} providerCatalog={providers} locale={locale} />
       <label>{tx(locale, "standingOrder")}<textarea maxLength={80} value={login.standingOrder} onChange={(e) => setLogin({ ...login, standingOrder: e.target.value })} placeholder="Optional 80-character instruction before matchmaking" /></label>
       <div className="profile-vault">
@@ -1807,7 +1930,7 @@ function DuelBroadcastScorebug({ state, match, activeTeam, latestEvent, playback
         </div>
         <div className="scorebug-center-metrics">
           <span className="damage-race"><b>{damageRace}</b> damageRace</span>
-          <span><b>{state.turn}/{Sim.CONFIG.maxTurns}</b> tempo</span>
+          <span><b>{state.events.length}</b> shots until KO</span>
           <span><b>{state.mapMeta?.difficulty || 0}</b> map</span>
         </div>
       </div>
@@ -2216,7 +2339,7 @@ function BattleHeader({ state, activeTeam, activeUnitId, message, locale }) {
   const statusLabel = resultLabel && message ? `${resultLabel} · ${message}` : resultLabel || message;
   return (
     <div className="battle-header">
-      <div><span>{tx(locale, "turn")}</span><strong>{state.turn}/{Sim.CONFIG.maxTurns}</strong></div>
+      <div><span>{tx(locale, "turn")}</span><strong>{state.events.length + (state.winner ? 0 : 1)} · {tx(locale, "untilKo")}</strong></div>
       <div><span>{tx(locale, "activeAgent")}</span><strong>{activeUnitId === "-" ? "Standby" : `${activeUnitId} / Team ${activeTeam}`}</strong></div>
       <div><span>Map</span><strong>{state.mapMeta.name} {state.mapMeta.difficulty}</strong></div>
       <div><span>Status</span><strong>{statusLabel}</strong></div>
@@ -2390,6 +2513,19 @@ function BonusPointLayer({ state }) {
   );
 }
 
+function playerTeamForMatch(match, profile) {
+  const roster = match?.roster || [];
+  const playerSeat = roster.find((seat) => seat.playerId && profile?.id && seat.playerId === profile.id);
+  return playerSeat?.team || "A";
+}
+
+function outcomeCopy(state, match, profile, locale) {
+  if (!state.winner) return "";
+  if (state.winner === "draw") return tx(locale, "drawResult");
+  const playerTeam = playerTeamForMatch(match, profile);
+  return state.winner === playerTeam ? tx(locale, "youWin") : tx(locale, "youLose");
+}
+
 function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnitId, activeHand, latestEvent, visibleDecision, playback, locale }) {
   const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
   const action = playback?.action || visibleDecision || eventDecision(latestEvent);
@@ -2399,12 +2535,14 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
   const event = latestEvent && (latestEvent.unitId === unitId || latestEvent.shooterId === unitId || latestEvent.team === team) ? latestEvent : null;
   const thinking = event?.thinking || {};
   const handAnalysis = Sim.analyzeHand(activeHand || [], Sim.getEnergy(state.turn));
-  const targetPriority = Array.isArray(thinking.targetPriority) && thinking.targetPriority.length
-    ? thinking.targetPriority.map((target) => target.id || target).join(" > ")
-    : event?.targetId || (team === "A" ? "B1 / B2" : "A1 / A2");
-  const commandRead = thinking.commandRules || thinking.intent || (state.winner ? battleResultLabel(state.winner) : tx(locale, "waitingDecision"));
-  const decisionReason = action?.publicReason || event?.resultLabel || tx(locale, "waitingDecision");
-  const routeBonus = event?.routeBonus?.value ? `+${event.routeBonus.value} / ${(event.routeBonus.pointIds || []).join(", ")}` : "0";
+  const modelThought = thinking.providerReason || action?.publicReason || thinking.publicReason || tx(locale, "waitingDecision");
+  const expression = event?.expression || action?.event?.expression || "";
+  const usedFunctions = event?.components?.length ? event.components.map((component) => component.label || component.id).join(" + ") : handAnalysis.archetype || "Mixed Curve";
+  const shotResult = event
+    ? `${event.resultLabel || event.result}${event.damage ? ` / ${event.damage} dmg` : ""}`
+    : state.winner
+      ? battleResultLabel(state.winner)
+      : tx(locale, "waitingDecision");
   return (
     <aside className={`agent-thought-panel team-${String(team || "a").toLowerCase()}`} data-testid="agent-thought-panel" aria-label={tx(locale, "agentThinking")}>
       <div className="agent-thought-head">
@@ -2413,33 +2551,40 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
         <small>{seat.displayName || tx(locale, "commander")} · {seat.provider || "local"}{seat.model ? ` / ${seat.model}` : ""}</small>
       </div>
       <div className="thought-focus-grid">
-        <span><b>{tx(locale, "decision")}</b>{decisionReason}</span>
-        <span><b>{tx(locale, "commandRead")}</b>{commandRead}</span>
-        <span><b>{tx(locale, "targetRead")}</b>{targetPriority}</span>
-        <span><b>{tx(locale, "routeBonus")}</b>{routeBonus}</span>
+        <span className="thought-large"><b>{tx(locale, "modelThought")}</b>{modelThought}</span>
+        <span className="function-line"><b>{tx(locale, "functionLine")}</b><code>{expression || "y = waiting"}</code></span>
+        <span><b>{tx(locale, "shotResult")}</b>{shotResult}</span>
       </div>
       <div className="thought-hand-read">
         <span>{tx(locale, "handRead")}</span>
-        <strong>{handAnalysis.archetype || "Mixed Curve"}</strong>
+        <strong>{usedFunctions}</strong>
         <small>{handAnalysis.energyRead || `${activeHand?.length || 0} ${tx(locale, "cards")}`} · {handAnalysis.risk || "stable"}</small>
       </div>
     </aside>
   );
 }
 
-function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision, locale }) {
+function Battlefield({ state, match, profile, activeTeam, activeUnitId, latestEvent, playback, lastDecision, locale }) {
   const latestPath = state.paths[state.paths.length - 1];
   const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
   const activeLabel = activeUnitId === "-" ? "standby" : `${activeUnitId} / Team ${activeTeam}`;
   const resultLabel = state.winner ? battleResultLabel(state.winner) : tx(locale, "liveRoute");
+  const outcome = outcomeCopy(state, match, profile, locale);
   return (
     <div className="battlefield-frame" data-testid="battlefield-frame">
       <div className="map-status-strip" data-testid="map-status-strip">
         <span><b>{state.mapMeta.name}</b> {tx(locale, "difficulty")} {state.mapMeta.difficulty}</span>
-        <span>{tx(locale, "turn")} {state.turn}/{Sim.CONFIG.maxTurns}</span>
+        <span>{tx(locale, "turn")} {state.events.length + (state.winner ? 0 : 1)} · {tx(locale, "untilKo")}</span>
         <span>{activeLabel}</span>
         <span>{resultLabel}</span>
       </div>
+      {state.winner ? (
+        <div className={`battle-outcome-banner winner-${String(state.winner).toLowerCase()}`} data-testid="battle-outcome-banner">
+          <span>{outcome}</span>
+          <strong>{battleResultLabel(state.winner)}</strong>
+          <small>{state.reason || "hp_zero"}</small>
+        </div>
+      ) : null}
       <svg className="battlefield simple-map" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
         <defs>
           <linearGradient id="arenaGround" x1="0" x2="1">
@@ -2498,7 +2643,7 @@ function BattleReplayRail({ state }) {
         <div className={`replay-chip team-${event.team.toLowerCase()} ${event.result}`} key={`${event.turn}-${event.team}-${event.candidateId || event.result}`}>
           <span>T{event.turn + 1}</span>
           <strong>{event.team} {event.resultLabel}</strong>
-          <small>{event.combo?.name || "Mixed Curve"}</small>
+          <small>{event.expression || event.combo?.name || "y = ..."}</small>
         </div>
       )) : <span className="empty-copy">No battle events yet.</span>}
     </div>
@@ -2513,9 +2658,9 @@ function HandRack({ hand, activeTeam, activeUnitId, className = "", locale }) {
       <div className="card-grid">
         {hand.map((card) => (
           <article className={`battle-card ${card.rarity}`} key={card.instanceId}>
-            <span>{card.family}</span>
+            <span>f:{card.family}</span>
             <h3>{card.label}<b>{card.cost}E</b></h3>
-            <p>{card.description}</p>
+            <p>{card.tags.join(" / ")}</p>
             <div>{card.tags.map((tag) => <small key={tag}>{tag}</small>)}</div>
           </article>
         ))}
@@ -2548,7 +2693,7 @@ function Timeline({ state }) {
     <div className="timeline-card">
       <div className="panel-title"><Swords size={18} /> Battle Timeline</div>
       <div className="timeline-grid">
-        {Array.from({ length: Sim.CONFIG.maxTurns }, (_, turn) => {
+        {Array.from({ length: Math.max(8, state.events.length + (state.winner ? 0 : 1)) }, (_, turn) => {
           const event = state.events.find((item) => item.turn === turn);
           return <span key={turn} className={`tick ${event ? event.result : ""} ${turn === state.turn ? "active" : ""}`}>{turn + 1}</span>;
         })}

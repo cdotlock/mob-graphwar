@@ -216,8 +216,12 @@ function testModelSetupUsesFetchedModelSelect() {
   const loginCard = componentSource("LoginCard");
   assert.ok(main.includes("loadProviders"), "client should request the provider/model catalog from the server");
   assert.ok(main.includes("/api/providers"), "client should fetch provider models instead of relying only on hardcoded options");
+  assert.ok(main.includes("refreshProviderModels"), "client should be able to refresh one provider's live model catalog after BYOK input");
+  assert.ok(main.includes("/api/providers/${targetProvider}/models"), "client should call the per-provider live model endpoint");
   assert.ok(loginCard.includes('data-testid="model-select"'), "model setup should expose a selectable model list");
   assert.ok(loginCard.includes("<select"), "model setup should use a select control for models");
+  assert.ok(loginCard.includes("onBlur={onRefreshModels}"), "API key entry should trigger automatic model list refresh on blur");
+  assert.ok(loginCard.includes("model.free ?"), "model options should visually distinguish free and paid OpenRouter choices");
   assert.ok(!loginCard.includes('label>Model<input'), "model setup should not require players to type model names manually");
 }
 
@@ -230,6 +234,37 @@ function testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch() {
   assert.ok(css.includes(".battle-core-layout"), "battlefield and agent thinking should share one compact grid");
   assert.ok(css.includes(".agent-thought-panel"), "CSS should style the current-agent thinking panel");
   assert.ok(css.includes(".language-toggle"), "CSS should style the language switch");
+}
+
+function testLaunchHudUsesCompactLocalizedLockedState() {
+  const launchBay = componentSource("LaunchBay");
+  const lockedPlayCard = componentSource("LockedPlayCard");
+  assert.ok(launchBay.includes("<LockedPlayCard"), "guest ranked lock should be a compact launch CTA");
+  assert.ok(launchBay.includes("locale={locale}"), "launch bay should pass locale into locked ranked state");
+  assert.ok(lockedPlayCard.includes("locale"), "locked ranked state should accept locale");
+  assert.ok(lockedPlayCard.includes("tx(locale"), "locked ranked state should not hardcode English inside the Chinese UI");
+  assert.ok(css.includes("grid-template-columns: minmax(220px, 0.34fr) minmax(520px, 1fr) minmax(260px, 0.38fr)"), "main battle screen should use compact setup/battle/thinking columns");
+  assert.ok(css.includes(".battle-setup-panel input,"), "left-side setup inputs should be compact inside the game screen");
+}
+
+function testGraphwarFirstScreenCentersModelPromptFunctionDuel() {
+  const playView = componentSource("PlayView");
+  const battlefield = componentSource("Battlefield");
+  const thoughtPanel = componentSource("AgentThoughtPanel");
+  assert.ok(main.includes("BattleSetupPanel"), "main game screen should include a left-side model and prompt setup panel");
+  assert.ok(main.includes('data-testid="battle-setup-panel"'), "setup panel should be selectable for browser verification");
+  assert.ok(main.includes('data-testid="inline-model-select"'), "model selection should live inside the game screen");
+  assert.ok(playView.indexOf("<BattleSetupPanel") < playView.indexOf("<Battlefield"), "model/prompt setup should sit opposite the thinking panel before the battlefield");
+  assert.ok(main.includes('data-testid="battle-outcome-banner"'), "battlefield should show an explicit win/loss/draw banner");
+  assert.ok(main.includes("youWin"), "Chinese/English UI should include explicit win copy");
+  assert.ok(thoughtPanel.includes("modelThought"), "agent thinking panel should directly show model thought text");
+  assert.ok(thoughtPanel.includes("functionLine"), "agent thinking panel should directly show the written function");
+  assert.ok(thoughtPanel.includes("event?.expression"), "agent thinking panel should read the actual shot expression");
+  assert.ok(main.includes('tx(locale, "untilKo")'), "battlefield turn display should explain that the duel runs until KO");
+  assert.ok(!main.includes("state.turn}/{Sim.CONFIG.maxTurns}"), "battlefield should not present the old 16-turn limit");
+  assert.ok(css.includes(".battle-setup-panel"), "CSS should style the left-side setup panel");
+  assert.ok(css.includes(".battle-outcome-banner"), "CSS should style explicit battle outcome");
+  assert.ok(css.includes(".function-line code"), "CSS should style long function expressions");
 }
 
 function testRankedGameStatePanelMakesAutoBattleLoopReadable() {
@@ -535,17 +570,18 @@ function testUiExplainsOneCommanderControlsTwoAgents() {
 }
 
 function testFirstScreenIsCompressedForMapFirstPlay() {
-  assert.ok(main.includes("CompactLaunchSummary"), "launch rail should use a compact account/model/queue summary");
+  assert.ok(main.includes("BattleSetupPanel"), "first screen should use an in-game model and prompt setup panel");
   assert.ok(!main.includes("<WatchLoopBrief />"), "product-loop explanation should not render in the first-screen launch rail");
   assert.ok(!main.includes("<RankedFlowPanel"), "ranked flow diagram should be moved out of the first screen");
   assert.ok(!main.includes("<SessionStatusPanel"), "session vault detail should be moved out of the first screen");
   assert.ok(!main.includes("<RankedGameStatePanel"), "state timeline should not compete with the battlefield above the fold");
-  assert.ok(main.includes('className="play-command-row game-panel"'), "match controls should become a compact row above the battlefield");
+  assert.ok(main.includes('className="battle-setup-panel"'), "model, prompt, and match controls should live beside the battlefield");
   assert.ok(!main.includes('className="tactical-panel game-panel"'), "the right-side tactical rail should not occupy the first screen");
+  assert.ok(main.indexOf("<BattleSetupPanel") < main.indexOf("<Battlefield"), "setup controls should sit to the left of the battlefield");
   assert.ok(main.indexOf("<Battlefield") < main.indexOf("<HandRack"), "hand cards should sit under the battlefield, not in the right rail");
   assert.ok(main.includes("TacticalIntelDrawer"), "secondary hand history and decisions should live in a collapsible drawer");
   assert.ok(css.includes(".play-shell.map-first"), "play screen should use a centered map-first shell");
-  assert.ok(css.includes(".play-command-row"), "match controls should be styled as a compact top command row");
+  assert.ok(css.includes(".battle-setup-panel"), "match controls should be styled as a compact left setup rail");
   assert.ok(css.includes(".battle-hand-bench"), "hand cards should have a dedicated bench below the battlefield");
   assert.ok(css.includes(".tactical-drawer"), "secondary tactical information should be collapsible");
 }
@@ -588,8 +624,10 @@ testSimulationApiIsVisibleAsProductSurface();
 testGameSurfacesPersistentProfileAndLeaderboard();
 testGameSurfacesRealAccountAuth();
 testGameShowsRankedOnboardingAndProviderReadiness();
-testModelSetupUsesFetchedModelSelect();
-testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch();
+  testModelSetupUsesFetchedModelSelect();
+  testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch();
+  testLaunchHudUsesCompactLocalizedLockedState();
+  testGraphwarFirstScreenCentersModelPromptFunctionDuel();
 testRankedGameStatePanelMakesAutoBattleLoopReadable();
 testUiExposesBareRulesPacketForModels();
 testMobileHasGameDockForWatchOnlyLoop();

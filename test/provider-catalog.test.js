@@ -26,8 +26,9 @@ async function testProviderCatalogIncludesSelectableModels() {
   const catalog = await listProviderCatalog(
     { OPENROUTER_API_KEY: "sk-router", OPENAI_API_KEY: "sk-test" },
     {
+      noCache: true,
       fetch: async (url) => {
-        assert.strictEqual(url, "https://openrouter.ai/api/v1/models");
+        assert.ok(String(url).startsWith("https://openrouter.ai/api/v1/models"));
         return {
           ok: true,
           status: 200,
@@ -41,10 +42,24 @@ async function testProviderCatalogIncludesSelectableModels() {
                 context_length: 256000
               },
               {
-                id: "paid/model",
-                name: "Paid Model",
-                pricing: { prompt: "1", completion: "1" },
+                id: "openai/gpt-5.5",
+                name: "OpenAI: GPT-5.5",
+                pricing: { prompt: "2", completion: "8" },
                 architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+                context_length: 400000
+              },
+              {
+                id: "google/image-model",
+                name: "Google: Image Model",
+                pricing: { prompt: "1", completion: "1" },
+                architecture: { input_modalities: ["text"], output_modalities: ["image"] },
+                context_length: 8192
+              },
+              {
+                id: "google/nano-banana-pro",
+                name: "Google: Nano Banana Pro (Gemini Image)",
+                pricing: { prompt: "1", completion: "1" },
+                architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
                 context_length: 8192
               }
             ]
@@ -58,9 +73,93 @@ async function testProviderCatalogIncludesSelectableModels() {
   assert.ok(openrouter.available, "OpenRouter should keep availability while adding models");
   assert.ok(Array.isArray(openrouter.models), "OpenRouter should expose selectable models");
   assert.ok(openrouter.models.some((model) => model.id === "cohere/north-mini-code:free"), "free OpenRouter model list should be exposed");
-  assert.ok(!openrouter.models.some((model) => model.id === "paid/model"), "paid OpenRouter models should not be shown as free defaults");
+  assert.ok(openrouter.models.some((model) => model.id === "openai/gpt-5.5" && model.free === false), "paid OpenRouter models should remain selectable");
+  assert.ok(!openrouter.models.some((model) => model.id === "google/image-model"), "image-output OpenRouter models should not appear in the function-writing game");
+  assert.ok(!openrouter.models.some((model) => model.id === "google/nano-banana-pro"), "named image-generation OpenRouter models should not appear in the function-writing game");
   assert.ok(openai.models.some((model) => model.id === "gpt-4.1-mini"), "static providers should expose their configured model as an option");
   assert.ok(!JSON.stringify(catalog).includes("sk-router"), "catalog should still redact keys");
+}
+
+async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
+  const calls = [];
+  const catalog = await listProviderCatalog(
+    {
+      OPENAI_API_KEY: "sk-openai",
+      DEEPSEEK_API_KEY: "sk-deepseek",
+      MINIMAX_API_KEY: "sk-minimax",
+      ZHIPU_API_KEY: "sk-zhipu",
+      ANTHROPIC_API_KEY: "sk-anthropic",
+      OPENROUTER_API_KEY: "sk-router"
+    },
+    {
+      noCache: true,
+      fetch: async (url, options) => {
+        calls.push({ url: String(url), headers: options?.headers || {} });
+        if (String(url).includes("anthropic.com")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [
+                { id: "claude-haiku-live", display_name: "Claude Haiku Live", created_at: "2026-01-01T00:00:00Z" }
+              ]
+            })
+          };
+        }
+        if (String(url).includes("openrouter.ai")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [
+                {
+                  id: "anthropic/claude-haiku-live",
+                  name: "Anthropic: Claude Haiku Live",
+                  pricing: { prompt: "0.8", completion: "4" },
+                  architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+                  context_length: 200000
+                }
+              ]
+            })
+          };
+        }
+        const host = new URL(String(url)).host;
+        const id = host.includes("deepseek")
+          ? "deepseek-live"
+          : host.includes("minimax")
+            ? "minimax-live"
+            : host.includes("bigmodel")
+              ? "glm-live"
+              : "gpt-live";
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: [{ id, object: "model" }] })
+        };
+      }
+    }
+  );
+  for (const [providerId, modelId] of Object.entries({
+    openai: "gpt-live",
+    deepseek: "deepseek-live",
+    minimax: "minimax-live",
+    zhipu: "glm-live",
+    anthropic: "claude-haiku-live",
+    openrouter: "anthropic/claude-haiku-live"
+  })) {
+    const provider = catalog.find((item) => item.id === providerId);
+    assert.ok(provider, `${providerId} should be present`);
+    assert.ok(provider.models.some((model) => model.id === modelId), `${providerId} should expose fetched live models`);
+  }
+  assert.ok(calls.some((call) => call.url === "https://api.openai.com/v1/models"), "OpenAI should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.deepseek.com/models"), "DeepSeek should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.minimax.io/v1/models"), "MiniMax should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://open.bigmodel.cn/api/paas/v4/models"), "Zhipu should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.anthropic.com/v1/models"), "Anthropic should use its live models endpoint");
+  assert.ok(calls.some((call) => call.headers.authorization === "Bearer sk-openai"), "OpenAI model list should use bearer auth");
+  assert.ok(calls.some((call) => call.headers["x-api-key"] === "sk-anthropic"), "Anthropic model list should use x-api-key auth");
+  assert.ok(!JSON.stringify(catalog).includes("sk-openai"), "dynamic catalog should redact OpenAI key");
+  assert.ok(!JSON.stringify(catalog).includes("sk-anthropic"), "dynamic catalog should redact Anthropic key");
 }
 
 function testNormalizeDecision() {
@@ -220,6 +319,7 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
 (async () => {
   testProviderCatalogRedactsKeys();
   await testProviderCatalogIncludesSelectableModels();
+  await testProviderCatalogFetchesDynamicModelsForConfiguredProviders();
   testNormalizeDecision();
   testDeepSeekUsesCurrentJsonModeDefaults();
   testOpenRouterUsesFreeJsonModeDefaults();

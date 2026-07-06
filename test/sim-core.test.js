@@ -23,6 +23,18 @@ function testDeterministicBattle() {
   assert.ok(["S", "A", "B", "C", "D"].includes(first.score.rank), "battle should include a rank");
 }
 
+function testBattleDoesNotDrawFromTurnLimit() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  for (const unit of state.units) {
+    unit.hp = 999;
+  }
+  for (let turn = 0; turn < Sim.CONFIG.maxTurns + 8; turn += 1) {
+    Sim.applyTurn(state, { A: "safe high arc", B: "safe high arc" });
+  }
+  assert.strictEqual(state.winner, null, "battle should not draw just because the old 16 turn display limit passed");
+  assert.notStrictEqual(state.reason, "max_turns", "max_turns should not be a terminal battle reason");
+}
+
 function testStandingOrdersStayLockedDuringAutoBattle() {
   const lockedOrders = {
     A: "must target B2, high safe arc",
@@ -500,7 +512,8 @@ function testTraceShapeIncludesMapAndScore() {
   assert.ok(trace.events.every((event) => event.mapFit === undefined), "events should not include route-window fit");
 }
 
-testDeterministicBattle();
+  testDeterministicBattle();
+  testBattleDoesNotDrawFromTurnLimit();
 testStandingOrdersStayLockedDuringAutoBattle();
 testTurnsRotateAcrossFourUnitSeats();
 testInvalidProviderCandidateDoesNotAdvanceTurn();

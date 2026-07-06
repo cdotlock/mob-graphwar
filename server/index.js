@@ -4,7 +4,7 @@ const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { listProviders, listProviderCatalog, getProvider } = require("./providers/catalog.js");
+const { listProviders, listProviderCatalog, listProviderModels, getProvider } = require("./providers/catalog.js");
 const { executeProviderDecision } = require("./providers/execute.js");
 const Contract = require("../src/agents/contract.js");
 const Sim = require("../src/sim-core.js");
@@ -790,8 +790,8 @@ async function advanceMatchToResolution(match, options) {
   const opts = options || {};
   opts.providerBudget = opts.providerBudget || createProviderBudget(opts.env);
   let guard = 0;
-  const maxActions = Sim.CONFIG.maxTurns * (Sim.CONFIG.maxRerollsPerTurn + 1) + 4;
-  while (!match.state.winner && match.state.turn < Sim.CONFIG.maxTurns && guard < maxActions) {
+  const maxActions = Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
+  while (!match.state.winner && guard < maxActions) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
     const resolved = await autoResolveDecisionForTurn(match, turn, opts);
@@ -836,6 +836,24 @@ async function advanceMatchToResolution(match, options) {
       rulesDigest: resolved.rulesDigest
     });
   }
+  if (!match.state.winner) {
+    Sim.forceResolveByHp(match.state, "resolution_guard");
+    pushPlaybackFrame(opts.frames, match, {
+      action: "state",
+      team: match.state.winner || "draw",
+      provider: "Battle Engine",
+      publicReason: "Resolution guard settled the extended duel by remaining HP.",
+      resultLabel: match.state.winner ? `${match.state.winner} wins by remaining HP` : "draw",
+      rulesDigest: {
+        promptPolicy: "bare_rules_only",
+        handRetained: true,
+        legalShotCount: 0,
+        allyIds: [],
+        opponentIds: [],
+        resolutionGuard: true
+      }
+    });
+  }
   match.status = "resolved";
   return match.state;
 }
@@ -857,6 +875,7 @@ function publicEventSummary(event) {
     combo: event.combo ? clonePublic(event.combo) : { name: "Mixed Curve" },
     routeBonus: clonePublic(event.routeBonus || { value: 0, pointIds: [] }),
     expression: event.expression || "",
+    thinking: clonePublic(event.thinking || null),
     damage: event.damage || 0,
     score: event.score,
     closestTargetDistance: event.closestTargetDistance,
@@ -960,6 +979,8 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode, frames) {
         unitId: frame.action.unitId,
         provider: frame.action.provider,
         resultLabel: frame.action.resultLabel,
+        expression: frame.action.event?.expression || "",
+        publicReason: frame.action.publicReason || "",
         rulesDigest: frame.action.rulesDigest || null
       })),
     frames: Array.isArray(frames) ? frames : []
@@ -1189,8 +1210,8 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
 async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
   const state = Sim.createInitialState({ seed });
   let guard = 0;
-  const maxActions = Sim.CONFIG.maxTurns * (Sim.CONFIG.maxRerollsPerTurn + 1) + 4;
-  while (!state.winner && state.turn < Sim.CONFIG.maxTurns && guard < maxActions) {
+  const maxActions = Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
+  while (!state.winner && guard < maxActions) {
     guard += 1;
     const unitId = getActiveUnitId(state);
     const team = getActiveTeam(state);
@@ -1215,6 +1236,9 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
     );
   }
   if (!state.winner) await advanceMatchToResolution({ state, status: "active" }, { env, fetchFn });
+  if (!state.winner) {
+    Sim.forceResolveByHp(state, "resolution_guard");
+  }
   return state;
 }
 
@@ -1282,6 +1306,24 @@ function createServer(options) {
       if (req.method === "GET" && url.pathname === "/api/providers") {
         const providers = await listProviderCatalog(env, { fetch: fetchFn });
         sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || DEFAULT_AI_PROVIDER, providers });
+        return;
+      }
+      const providerModelsMatch = url.pathname.match(/^\/api\/providers\/([^/]+)\/models$/);
+      if (req.method === "POST" && providerModelsMatch) {
+        const body = JSON.parse(await readBody(req, 64_000));
+        const providerId = String(providerModelsMatch[1] || "").slice(0, 40);
+        const provider = getProvider(providerId);
+        const allowedProviders = listProviders(env).map((item) => item.id);
+        if (!provider || !allowedProviders.includes(provider.id)) {
+          sendJson(res, 400, { error: "unknown_provider" });
+          return;
+        }
+        const models = await listProviderModels(provider.id, env, {
+          fetch: fetchFn,
+          apiKey: body.apiKey,
+          noCache: true
+        });
+        sendJson(res, 200, { provider: provider.id, models: models || [] });
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/session/me") {

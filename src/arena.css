@@ -1466,9 +1466,82 @@ label {
 
 .battle-core-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.34fr);
+  grid-template-columns: minmax(220px, 0.34fr) minmax(520px, 1fr) minmax(260px, 0.38fr);
   gap: 8px;
   align-items: stretch;
+}
+
+.battle-setup-panel {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(88, 212, 255, 0.3);
+  border-left: 4px solid var(--cyan);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(88, 212, 255, 0.14), transparent 58%),
+    rgba(3, 7, 14, 0.86);
+}
+
+.setup-head {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setup-head span,
+.setup-head small,
+.battle-setup-panel p {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+
+.setup-head strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Russo One", sans-serif;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.battle-setup-panel label {
+  display: grid;
+  gap: 4px;
+}
+
+.battle-setup-panel input,
+.battle-setup-panel select {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.battle-setup-panel textarea {
+  min-height: 74px;
+  padding: 8px;
+  font-size: 12px;
+  resize: none;
+}
+
+.setup-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.setup-actions button {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .primary-battle .arena-stage {
@@ -3188,6 +3261,20 @@ label {
   line-height: 1.25;
 }
 
+.thought-focus-grid .thought-large {
+  min-height: 84px;
+  align-content: start;
+  white-space: normal;
+}
+
+.thought-focus-grid .function-line code {
+  overflow-wrap: anywhere;
+  color: var(--cyan);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .thought-hand-read {
   border: 1px solid rgba(217, 255, 71, 0.28);
   border-radius: 8px;
@@ -3224,6 +3311,40 @@ label {
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.battle-outcome-banner {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  gap: 4px;
+  min-width: min(320px, 74%);
+  padding: 14px 18px;
+  border: 2px solid rgba(217, 255, 71, 0.78);
+  border-radius: 8px;
+  background: rgba(247, 247, 241, 0.94);
+  color: #080908;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.battle-outcome-banner span {
+  color: #111400;
+  font-family: "Russo One", sans-serif;
+  font-size: 34px;
+  text-transform: uppercase;
+}
+
+.battle-outcome-banner strong,
+.battle-outcome-banner small {
+  color: #1a1d20;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .map-status-strip b {

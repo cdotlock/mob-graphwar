@@ -12,6 +12,7 @@
     height: 60,
     viewPadding: 0,
     maxTurns: 16,
+    maxResolutionActions: 96,
     handSize: 4,
     baseEnergy: 4,
     maxEnergy: 8,
@@ -2328,6 +2329,33 @@
     state.score = calculateBattleScore(state);
   }
 
+  function forceResolveByHp(state, reason) {
+    if (!state || state.winner) return state;
+    const teamStats = (team) => {
+      const units = state.units.filter((unit) => unit.team === team);
+      return {
+        hp: units.reduce((sum, unit) => sum + Math.max(0, unit.hp), 0),
+        alive: units.filter((unit) => unit.hp > 0).length
+      };
+    };
+    const a = teamStats("A");
+    const b = teamStats("B");
+    let winner = null;
+    if (a.hp !== b.hp) winner = a.hp > b.hp ? "A" : "B";
+    else if (a.alive !== b.alive) winner = a.alive > b.alive ? "A" : "B";
+    else winner = "draw";
+    if (winner === "A" || winner === "B") {
+      const loser = winner === "A" ? "B" : "A";
+      for (const unit of state.units) {
+        if (unit.team === loser) unit.hp = 0;
+      }
+    }
+    state.winner = winner;
+    state.reason = reason || "resolution_guard";
+    finalizeBattle(state);
+    return state;
+  }
+
   function applyTurn(state, commands, options) {
     if (state.winner) return state;
     const opts = options || {};
@@ -2420,10 +2448,6 @@
       state.winner = winner;
       state.reason = "hp_zero";
       finalizeBattle(state);
-    } else if (state.turn + 1 >= CONFIG.maxTurns) {
-      state.winner = "draw";
-      state.reason = "max_turns";
-      finalizeBattle(state);
     }
 
     state.turn += 1;
@@ -2434,8 +2458,14 @@
     const opts = options || {};
     const commands = opts.commands || {};
     const state = createInitialState({ seed: opts.seed, lockedOrders: commands });
-    while (!state.winner && state.turn < CONFIG.maxTurns) {
+    const maxActions = Math.max(24, Number(opts.maxActions || CONFIG.maxResolutionActions) || 96);
+    let guard = 0;
+    while (!state.winner && guard < maxActions) {
       applyTurn(state, commands);
+      guard += 1;
+    }
+    if (!state.winner) {
+      forceResolveByHp(state, "resolution_guard");
     }
     return state;
   }
@@ -2471,6 +2501,7 @@
     swapHand,
     rerollHand,
     runBattle,
+    forceResolveByHp,
     exportTrace,
     dealHand,
     analyzeHand,

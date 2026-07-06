@@ -83,7 +83,7 @@ function testArenaDirectorHudMakesBattleReadAsLiveGame() {
   assert.ok(main.includes("currentActorLabel"), "HUD should expose the active or last AI actor");
   assert.ok(main.includes("rankDelta"), "HUD should surface ranked stake after auto duel settlement");
   assert.ok(main.includes("routePressure"), "HUD should expose map route pressure in the game chrome");
-  assert.ok(main.indexOf("<ArenaDirectorHud") < main.indexOf("<Battlefield"), "director HUD should appear before the battlefield inside the stage");
+  assert.ok(main.indexOf("<Battlefield") < main.indexOf("<ArenaDirectorHud"), "battlefield should lead the stage before secondary director chrome");
   assert.ok(css.includes(".arena-director-hud"), "CSS should style the director HUD as first-class game chrome");
   assert.ok(css.includes(".director-callout"), "CSS should style the live actor callout");
   assert.ok(css.includes(".director-rank-stake"), "CSS should style ranked stake information");
@@ -228,6 +228,11 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes("RouteMazeLayer"), "battlefield should render a named route maze layer above the backdrop");
   assert.ok(main.includes("renderObstacleFacets"), "battlefield should render obstacles as faceted terrain, not plain blocks");
   assert.ok(main.includes('data-testid="battlefield-frame"'), "battlefield should expose a framed game-stage surface");
+  assert.ok(main.includes('data-testid="battlefield-broadcast-overlay"'), "battlefield should carry a live broadcast overlay inside the map frame");
+  assert.ok(main.includes("BattlefieldBroadcastOverlay"), "battlefield overlay should be implemented as a named component");
+  assert.ok(main.includes("team-a-fieldline"), "battlefield overlay should show Team A as an active model lane");
+  assert.ok(main.includes("team-b-fieldline"), "battlefield overlay should show Team B as an active model lane");
+  assert.ok(main.includes("model-fire-control"), "battlefield overlay should show the current model fire-control callout");
   assert.ok(main.includes('data-testid="map-intel-strip"'), "battlefield should expose map complexity and pressure metadata");
   assert.ok(main.includes('data-testid="route-maze-layer"'), "route maze layer should be selectable for browser verification");
   assert.ok(main.includes("route-pressure"), "battlefield should show route pressure metadata");
@@ -400,9 +405,26 @@ function testSpectatorReplayHasWatchOnlyControls() {
   assert.ok(!main.includes('fetch(`/api/match/${match.id}/action`'), "replay controls must not submit server-side gameplay actions");
   assert.ok(css.includes(".playback-controls"), "CSS should style replay controls as game HUD controls");
   assert.ok(css.includes(".speed-strip"), "CSS should style replay speed choices");
+  assert.ok(css.includes(".battlefield-broadcast-overlay"), "CSS should style the map-level broadcast overlay");
+  assert.ok(css.includes(".team-fieldline"), "CSS should style AI team field lines on the battlefield");
+  assert.ok(css.includes(".model-fire-control"), "CSS should style the current model fire-control callout");
+  assert.ok(
+    css.includes(".map-intel-strip span:nth-child(n+8)"),
+    "mobile battlefield should hide low-priority map intel so the actual terrain appears in the first viewport"
+  );
+  assert.ok(
+    css.includes(".battlefield-broadcast-overlay {\n    grid-template-columns: repeat(3, minmax(0, 1fr));"),
+    "mobile battlefield overlay should compress to a one-row three-lane game HUD"
+  );
 }
 
 function testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels() {
+  for (const secondary of ["<DuelBroadcastScorebug", "<ArenaDirectorHud", "<MapTopologyScanner", "<LiveModelTelemetryPanel", "<BattleBroadcastPanel", "<AgentBattleMatrix", "<DuelCommanders"]) {
+    assert.ok(
+      main.indexOf("<Battlefield") < main.indexOf(secondary),
+      `battlefield should render before ${secondary} so the game map appears earlier than secondary telemetry`
+    );
+  }
   assert.ok(
     main.indexOf("<Battlefield") < main.indexOf("<DuelCommanders"),
     "battlefield should render before secondary commander panels so the game map appears earlier"

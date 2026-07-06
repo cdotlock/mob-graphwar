@@ -796,6 +796,15 @@ function App() {
           />
           <section className="arena-stage" aria-label="AI duel stage">
             <VersusBanner state={battleState} match={match} activeTeam={activeTeam} />
+            <Battlefield
+              state={battleState}
+              match={match}
+              activeTeam={activeTeam}
+              activeUnitId={activeUnitId}
+              latestEvent={latestEvent}
+              playback={battlePlayback}
+              lastDecision={visibleDecision}
+            />
             <DuelBroadcastScorebug
               state={battleState}
               match={match}
@@ -846,7 +855,6 @@ function App() {
               playback={battlePlayback}
               lastDecision={visibleDecision}
             />
-            <Battlefield state={battleState} latestEvent={latestEvent} />
             <AgentBattleMatrix state={battleState} match={match} activeTeam={activeTeam} activeUnitId={activeUnitId} lastDecision={visibleDecision} />
             <BattleReplayRail state={battleState} />
             <DuelCommanders state={battleState} match={match} activeTeam={activeTeam} lastDecision={visibleDecision} />
@@ -1820,6 +1828,46 @@ function BattlePlaybackHud({ playback, paused, speed, canControl, onToggle, onSt
   );
 }
 
+function BattlefieldBroadcastOverlay({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
+  const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
+  const activeAction = playback?.action || lastDecision || null;
+  const actorId = activeAction?.unitId || latestEvent?.unitId || latestEvent?.shooterId || (activeUnitId === "-" ? null : activeUnitId);
+  const actorSeat = roster.find((seat) => seat.unitId === actorId) || null;
+  const actorTeam = activeAction?.team || actorSeat?.team || latestEvent?.team || activeTeam || "-";
+  const eventCombo = activeAction?.event?.combo || latestEvent?.combo || null;
+  const resultLabel =
+    activeAction?.resultLabel ||
+    latestEvent?.resultLabel ||
+    activeAction?.result ||
+    (state.winner ? battleResultLabel(state.winner) : "models reading route maze");
+  const actionVerb = activeAction?.action === "swap_hand" ? "Swap hand" : activeAction?.action ? String(activeAction.action) : latestEvent ? "Shot" : "Standby";
+  const damage = Number(activeAction?.event?.damage || latestEvent?.damage || 0);
+  const teamLine = (team) => {
+    const health = teamHealth(state, team);
+    const seats = roster.filter((seat) => seat.team === team);
+    const sideClass = team === "A" ? "team-a-fieldline" : "team-b-fieldline";
+    return (
+      <article className={`team-fieldline ${sideClass} ${actorTeam === team ? "active" : ""}`} key={team}>
+        <span>Team {team}</span>
+        <strong>{seats.map((seat) => `${seat.unitId} ${seat.displayName}`).join(" / ") || `Team ${team}`}</strong>
+        <small>{health.hp}/{health.max} HP · {health.alive} AI online</small>
+      </article>
+    );
+  };
+  return (
+    <div className="battlefield-broadcast-overlay" data-testid="battlefield-broadcast-overlay" aria-label="Live AI duel overlay">
+      {teamLine("A")}
+      <div className="model-fire-control">
+        <span>Live model fire-control</span>
+        <strong>{actorId || "Standby"} · {actionVerb}</strong>
+        <small>{actorSeat?.provider || activeAction?.provider || "local model"} · {eventCombo?.name || "function combo pending"}</small>
+        <b>{resultLabel}{damage ? ` · ${damage} dmg` : ""}</b>
+      </div>
+      {teamLine("B")}
+    </div>
+  );
+}
+
 function BattlefieldBackdrop({ state }) {
   const complexity = state.mapMeta?.complexity || {};
   return (
@@ -1906,7 +1954,7 @@ function renderObstacleFacets(obstacle, index) {
   );
 }
 
-function Battlefield({ state, latestEvent }) {
+function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
   const complexity = state.mapMeta?.complexity || {};
   const latestPath = state.paths[state.paths.length - 1];
   const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
@@ -1928,6 +1976,15 @@ function Battlefield({ state, latestEvent }) {
         <span className="swap-window">{Math.round((complexity.swapWindowHitRate || 0) * 100)}% swap</span>
         <span className="battlefield-depth">{complexity.layerCount || 0} layers</span>
       </div>
+      <BattlefieldBroadcastOverlay
+        state={state}
+        match={match}
+        activeTeam={activeTeam}
+        activeUnitId={activeUnitId}
+        latestEvent={latestEvent}
+        playback={playback}
+        lastDecision={lastDecision}
+      />
       <svg className="battlefield" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
         <defs>
           <linearGradient id="arenaGround" x1="0" x2="1">

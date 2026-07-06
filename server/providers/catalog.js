@@ -27,25 +27,47 @@ const PROVIDERS = [
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
-    id: "deepseek",
-    label: "DeepSeek",
+    id: "anthropic",
+    label: "Anthropic",
+    adapter: "anthropic",
+    keyEnv: "ANTHROPIC_API_KEY",
+    baseUrlEnv: "ANTHROPIC_BASE_URL",
+    modelEnv: "ANTHROPIC_MODEL",
+    defaultBaseUrl: "https://api.anthropic.com/v1",
+    defaultModel: "claude-3-5-haiku-latest",
+    modelList: { path: "/models", auth: "anthropic", parser: "anthropic" }
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
     adapter: "openai-compatible",
-    keyEnv: "DEEPSEEK_API_KEY",
-    baseUrlEnv: "DEEPSEEK_BASE_URL",
-    modelEnv: "DEEPSEEK_MODEL",
-    defaultBaseUrl: "https://api.deepseek.com",
-    defaultModel: "deepseek-v4-flash",
+    keyEnv: "GEMINI_API_KEY",
+    baseUrlEnv: "GEMINI_BASE_URL",
+    modelEnv: "GEMINI_MODEL",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    defaultModel: "gemini-3.5-flash",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
-    id: "minimax",
-    label: "MiniMax",
+    id: "xai",
+    label: "Grok / xAI",
     adapter: "openai-compatible",
-    keyEnv: "MINIMAX_API_KEY",
-    baseUrlEnv: "MINIMAX_BASE_URL",
-    modelEnv: "MINIMAX_MODEL",
-    defaultBaseUrl: "https://api.minimax.io/v1",
-    defaultModel: "MiniMax-M1",
+    keyEnv: "XAI_API_KEY",
+    baseUrlEnv: "XAI_BASE_URL",
+    modelEnv: "XAI_MODEL",
+    defaultBaseUrl: "https://api.x.ai/v1",
+    defaultModel: "grok-4.3",
+    modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
+  },
+  {
+    id: "moonshot",
+    label: "Kimi / Moonshot",
+    adapter: "openai-compatible",
+    keyEnv: "MOONSHOT_API_KEY",
+    baseUrlEnv: "MOONSHOT_BASE_URL",
+    modelEnv: "MOONSHOT_MODEL",
+    defaultBaseUrl: "https://api.moonshot.ai/v1",
+    defaultModel: "kimi-k2.7",
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
@@ -61,24 +83,48 @@ const PROVIDERS = [
     modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
   },
   {
-    id: "anthropic",
-    label: "Anthropic",
-    adapter: "anthropic",
-    keyEnv: "ANTHROPIC_API_KEY",
-    baseUrlEnv: "ANTHROPIC_BASE_URL",
-    modelEnv: "ANTHROPIC_MODEL",
-    defaultBaseUrl: "https://api.anthropic.com/v1",
-    defaultModel: "claude-3-5-haiku-latest",
-    modelList: { path: "/models", auth: "anthropic", parser: "anthropic" }
-  }
+    id: "deepseek",
+    label: "DeepSeek",
+    adapter: "openai-compatible",
+    keyEnv: "DEEPSEEK_API_KEY",
+    baseUrlEnv: "DEEPSEEK_BASE_URL",
+    modelEnv: "DEEPSEEK_MODEL",
+    defaultBaseUrl: "https://api.deepseek.com",
+    defaultModel: "deepseek-v4-flash",
+    modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
+  },
+  {
+    id: "stepfun",
+    label: "StepFun",
+    adapter: "openai-compatible",
+    keyEnv: "STEPFUN_API_KEY",
+    alternateKeyEnv: "STEP_API_KEY",
+    baseUrlEnv: "STEPFUN_BASE_URL",
+    modelEnv: "STEPFUN_MODEL",
+    defaultBaseUrl: "https://api.stepfun.ai/v1",
+    defaultModel: "step-3.7-flash",
+    modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    adapter: "openai-compatible",
+    keyEnv: "MINIMAX_API_KEY",
+    baseUrlEnv: "MINIMAX_BASE_URL",
+    modelEnv: "MINIMAX_MODEL",
+    defaultBaseUrl: "https://api.minimax.io/v1",
+    defaultModel: "MiniMax-M1",
+    modelList: { path: "/models", auth: "bearer", parser: "openai-compatible" }
+  },
 ];
 
 const PROVIDER_MODEL_FALLBACKS = {
   openrouter: [
+    { id: "openrouter/auto", label: "Auto Router", family: "auto", free: false, contextLength: 200000 },
     { id: "openrouter/free", label: "Free Models Router", free: true, contextLength: 200000 },
-    { id: "cohere/north-mini-code:free", label: "Cohere: North Mini Code (free)", free: true, contextLength: 256000 },
-    { id: "qwen/qwen3-next-80b-a3b-instruct:free", label: "Qwen: Qwen3 Next 80B A3B Instruct (free)", free: true, contextLength: 262144 },
-    { id: "openai/gpt-oss-120b:free", label: "OpenAI: gpt-oss-120b (free)", free: true, contextLength: 131072 }
+    { id: "openai/gpt-oss-120b:free", label: "OpenAI: gpt-oss-120b (free)", family: "openai", free: true, contextLength: 131072 },
+    { id: "google/gemini-3.5-flash", label: "Google: Gemini 3.5 Flash", family: "gemini", free: false, contextLength: 1000000 },
+    { id: "anthropic/claude-3-5-haiku", label: "Anthropic: Claude Haiku", family: "anthropic", free: false, contextLength: 200000 }
   ],
   openai: [
     { id: "gpt-4.1-mini", label: "gpt-4.1-mini", free: false, contextLength: null },
@@ -88,9 +134,25 @@ const PROVIDER_MODEL_FALLBACKS = {
     { id: "deepseek-v4-flash", label: "deepseek-v4-flash", free: false, contextLength: null },
     { id: "deepseek-v4-pro", label: "deepseek-v4-pro", free: false, contextLength: null }
   ],
+  gemini: [
+    { id: "gemini-3.5-flash", label: "gemini-3.5-flash", free: false, contextLength: null },
+    { id: "gemini-3.5-pro", label: "gemini-3.5-pro", free: false, contextLength: null }
+  ],
+  xai: [
+    { id: "grok-4.3", label: "grok-4.3", free: false, contextLength: null },
+    { id: "grok-4.3-fast", label: "grok-4.3-fast", free: false, contextLength: null }
+  ],
+  moonshot: [
+    { id: "kimi-k2.7", label: "kimi-k2.7", free: false, contextLength: null },
+    { id: "kimi-k2.7-code", label: "kimi-k2.7-code", free: false, contextLength: null }
+  ],
   minimax: [
     { id: "MiniMax-M1", label: "MiniMax-M1", free: false, contextLength: null },
     { id: "MiniMax-M2", label: "MiniMax-M2", free: false, contextLength: null }
+  ],
+  stepfun: [
+    { id: "step-3.7-flash", label: "step-3.7-flash", free: false, contextLength: null },
+    { id: "step-3.7", label: "step-3.7", free: false, contextLength: null }
   ],
   zhipu: [
     { id: "glm-4-flash", label: "glm-4-flash", free: false, contextLength: null },
@@ -102,6 +164,19 @@ const PROVIDER_MODEL_FALLBACKS = {
   ]
 };
 const providerModelCache = new Map();
+const OPENROUTER_MODEL_LIMIT = 80;
+const OPENROUTER_FAMILY_ORDER = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "grok",
+  "kimi",
+  "zhipu",
+  "deepseek",
+  "stepfun",
+  "minimax",
+  "mimo"
+];
 
 function getProvider(id) {
   return PROVIDERS.find((provider) => provider.id === id) || null;
@@ -147,12 +222,48 @@ function modelSupportsText(model) {
   return encoded.includes("text") || !encoded.includes("image");
 }
 
+function openRouterFamily(model) {
+  const id = String(model?.id || "").toLowerCase();
+  const name = String(model?.name || "").toLowerCase();
+  const identity = `${id} ${name}`;
+  if (id === "openrouter/auto") return "auto";
+  if (id === "openrouter/free") return "free";
+  if (id.startsWith("openai/") || /\bopenai\b|gpt-|o\d\b/.test(identity)) return "openai";
+  if (id.startsWith("anthropic/") || /anthropic|claude/.test(identity)) return "anthropic";
+  if (/gemini/.test(identity) || /^google\/.*gemini/.test(id)) return "gemini";
+  if (id.startsWith("x-ai/") || /grok|xai|x\.ai/.test(identity)) return "grok";
+  if (/kimi|moonshot/.test(identity)) return "kimi";
+  if (id.startsWith("z-ai/") || id.startsWith("zhipu/") || /z\.ai|zhipu|\bglm[-_ ]/.test(identity)) return "zhipu";
+  if (id.startsWith("deepseek/") || /deepseek/.test(identity)) return "deepseek";
+  if (id.startsWith("stepfun/") || /stepfun|\bstep[-_ ]?\d/.test(identity)) return "stepfun";
+  if (id.startsWith("minimax/") || /minimax/.test(identity)) return "minimax";
+  if (id.startsWith("mimo/") || /\bmimo\b/.test(identity)) return "mimo";
+  return "";
+}
+
+function openRouterModelRank(model) {
+  const family = model.family || "";
+  if (family === "auto") return 1_000_000_000;
+  if (family === "free") return 999_000_000;
+  const identity = `${model.id || ""} ${model.label || ""}`.toLowerCase();
+  const familyRank = OPENROUTER_FAMILY_ORDER.indexOf(family);
+  const created = Number(model.created) || 0;
+  const latestBoost = /latest|preview|3\.5|4\.3|k2\.7|3\.7|v4|m2|glm-4\.|gpt-4\.1|gpt-5|sonnet|opus|pro/.test(identity)
+    ? 50_000
+    : 0;
+  const freePenalty = model.free ? 5_000 : 0;
+  return 800_000_000 + latestBoost + created - freePenalty - Math.max(0, familyRank) * 100;
+}
+
 function normalizeOpenRouterModel(model) {
   const inputCost = Number(model.pricing?.prompt || 0) || 0;
   const outputCost = Number(model.pricing?.completion || 0) || 0;
+  const family = openRouterFamily(model);
   return {
     id: String(model.id || "").trim(),
     label: String(model.name || model.id || "").trim(),
+    family,
+    created: Number(model.created || model.created_at || 0) || null,
     free: priceIsFree(model.pricing?.prompt) && priceIsFree(model.pricing?.completion),
     contextLength: Number(model.context_length || model.contextLength || 0) || null,
     inputCost,
@@ -166,7 +277,8 @@ function normalizeOpenAICompatibleModel(model) {
     id,
     label: String(model.name || model.display_name || id).trim(),
     free: typeof model.free === "boolean" ? model.free : false,
-    contextLength: Number(model.context_length || model.contextLength || model.context_window || 0) || null
+    contextLength: Number(model.context_length || model.contextLength || model.context_window || 0) || null,
+    created: Number(model.created || model.created_at || 0) || null
   };
 }
 
@@ -176,7 +288,8 @@ function normalizeAnthropicModel(model) {
     id,
     label: String(model.display_name || model.name || id).trim(),
     free: false,
-    contextLength: Number(model.context_length || model.contextLength || 0) || null
+    contextLength: Number(model.context_length || model.contextLength || 0) || null,
+    created: Number(model.created || model.created_at || 0) || null
   };
 }
 
@@ -187,6 +300,31 @@ function dedupeModels(models) {
     seen.add(model.id);
     return true;
   });
+}
+
+function curateOpenRouterModels(models) {
+  const routes = [];
+  const mainstream = [];
+  for (const model of models || []) {
+    const family = model.family || openRouterFamily(model);
+    if (family === "auto" || family === "free") {
+      routes.push({ ...model, family });
+    } else if (OPENROUTER_FAMILY_ORDER.includes(family)) {
+      mainstream.push({ ...model, family });
+    }
+  }
+  if (!routes.some((model) => model.id === "openrouter/auto")) {
+    routes.push({ id: "openrouter/auto", label: "Auto Router", family: "auto", free: false, contextLength: null });
+  }
+  if (!routes.some((model) => model.id === "openrouter/free")) {
+    routes.push({ id: "openrouter/free", label: "Free Models Router", family: "free", free: true, contextLength: null });
+  }
+  const sortedRoutes = dedupeModels(routes)
+    .sort((a, b) => openRouterModelRank(b) - openRouterModelRank(a) || String(a.label).localeCompare(String(b.label)));
+  const sortedMainstream = dedupeModels(mainstream)
+    .sort((a, b) => openRouterModelRank(b) - openRouterModelRank(a) || String(a.label).localeCompare(String(b.label)));
+  return dedupeModels(sortedRoutes.concat(sortedMainstream))
+    .slice(0, OPENROUTER_MODEL_LIMIT);
 }
 
 function fallbackProviderModels(provider, env) {
@@ -241,7 +379,8 @@ function normalizeProviderModels(provider, payload) {
       if (parser === "anthropic") return normalizeAnthropicModel(model);
       return normalizeOpenAICompatibleModel(model);
     });
-  return dedupeModels(models).slice(0, 240);
+  const deduped = dedupeModels(models);
+  return parser === "openrouter" ? curateOpenRouterModels(deduped) : deduped.slice(0, 240);
 }
 
 async function fetchProviderModels(provider, env, options) {

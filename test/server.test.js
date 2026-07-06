@@ -41,8 +41,8 @@ async function testHealthAndProviders() {
     json: async () => ({
       data: [
         {
-          id: "cohere/north-mini-code:free",
-          name: "Cohere: North Mini Code (free)",
+          id: "openrouter/free",
+          name: "Free Models Router",
           pricing: { prompt: "0", completion: "0" },
           architecture: { input_modalities: ["text"], output_modalities: ["text"] },
           context_length: 256000
@@ -62,9 +62,9 @@ async function testHealthAndProviders() {
       provider.id === "openrouter" &&
       provider.available &&
       Array.isArray(provider.models) &&
-      provider.models.some((model) => model.id === "cohere/north-mini-code:free")
+      provider.models.some((model) => model.id === "openrouter/free")
     ),
-    "OpenRouter free model list should be exposed as selectable provider options"
+    "OpenRouter free router should be exposed as a selectable provider option"
   );
   assert.strictEqual(providers.json.defaultProvider, "openrouter");
   assert.ok(!JSON.stringify(providers.json).includes("sk-test"), "response should redact keys");
@@ -842,6 +842,10 @@ async function testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel() {
   assert.ok(
     swapFrames.every((frame) => frame.action.swapsRemaining >= 0 && frame.action.swapsRemaining < 3),
     "swap frames should expose decreasing swap economy"
+  );
+  assert.ok(
+    swapFrames.every((frame) => Array.isArray(frame.action.hand) && frame.action.hand.length === 4),
+    "swap frames should expose the newly retained hand so spectators see what changed"
   );
   assert.ok(
     autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "shot"),

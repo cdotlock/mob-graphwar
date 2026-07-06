@@ -809,6 +809,7 @@ async function advanceMatchToResolution(match, options) {
         publicReason: resolved.decision.publicReason,
         swapsUsed: rerollResult.swapsUsed,
         swapsRemaining: rerollResult.swapsRemaining,
+        hand: rerollResult.cards,
         rulesDigest: resolved.rulesDigest
       });
       continue;
@@ -942,6 +943,7 @@ function buildPlaybackFrame(match, action) {
       candidateId: publicAction.candidateId || null,
       swapsUsed: Number.isFinite(Number(publicAction.swapsUsed)) ? Number(publicAction.swapsUsed) : null,
       swapsRemaining: Number.isFinite(Number(publicAction.swapsRemaining)) ? Number(publicAction.swapsRemaining) : null,
+      hand: Array.isArray(publicAction.hand) ? clonePublic(publicAction.hand) : null,
       rulesDigest: publicAction.rulesDigest ? clonePublic(publicAction.rulesDigest) : null,
       event: publicAction.event || null
     },
@@ -980,6 +982,7 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode, frames) {
         provider: frame.action.provider,
         resultLabel: frame.action.resultLabel,
         expression: frame.action.event?.expression || "",
+        hand: frame.action.hand || null,
         publicReason: frame.action.publicReason || "",
         rulesDigest: frame.action.rulesDigest || null
       })),

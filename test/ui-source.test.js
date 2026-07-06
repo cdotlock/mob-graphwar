@@ -173,6 +173,8 @@ function testSimulationApiIsVisibleAsProductSurface() {
 
 function testGameSurfacesPersistentProfileAndLeaderboard() {
   assert.ok(main.includes("restoreProfile"), "UI should restore a persisted ranked profile");
+  assert.ok(main.includes("restoreSavedSession"), "UI should automatically restore a saved ranked session on page load");
+  assert.ok(main.includes("window.localStorage.getItem(SESSION_STORAGE_KEY)"), "auto restore should use the persisted opaque session token");
   assert.ok(main.includes("LeaderboardPanel"), "UI should expose a ranked leaderboard panel");
   assert.ok(main.includes('data-testid="leaderboard-panel"'), "leaderboard should be selectable for browser verification");
   assert.ok(css.includes(".profile-vault"), "CSS should style the profile persistence surface");
@@ -203,11 +205,13 @@ function testGameShowsRankedOnboardingAndProviderReadiness() {
   assert.ok(main.includes('data-testid="ranked-flow-panel"'), "ranked flow should be selectable for browser verification");
   assert.ok(main.includes("ProviderReadinessGrid"), "account setup should expose a named provider readiness grid");
   assert.ok(main.includes('data-testid="provider-readiness-grid"'), "provider grid should be selectable for browser verification");
-  assert.ok(main.includes("API key armed"), "provider setup should visibly distinguish keyed models from local fallback");
+  assert.ok(main.includes("API key armed"), "provider setup should visibly distinguish keyed models from unarmed models");
   assert.ok(main.includes('id: "openrouter"'), "provider setup should include OpenRouter");
   assert.ok(main.includes("openrouter/free"), "provider setup should default to OpenRouter's free model router");
   assert.ok(main.includes('provider: "openrouter"'), "new sessions should prefer OpenRouter for default model play");
-  assert.ok(main.includes("Quick AI Fill"), "matchmaking should expose AI fallback when humans are unavailable");
+  assert.ok(main.includes("Random Match"), "matchmaking should expose one random ranked launch instead of human vs AI buttons");
+  assert.ok(!main.includes(">AI Fill<"), "ranked launch should not ask the player to choose AI fill explicitly");
+  assert.ok(!main.includes(">Human<"), "ranked launch should not ask the player to choose human-only matchmaking explicitly");
   assert.ok(css.includes(".ranked-flow-panel"), "CSS should style ranked onboarding as game chrome");
   assert.ok(css.includes(".provider-readiness-grid"), "CSS should style provider readiness");
 }
@@ -222,7 +226,21 @@ function testModelSetupUsesFetchedModelSelect() {
   assert.ok(loginCard.includes("<select"), "model setup should use a select control for models");
   assert.ok(loginCard.includes("onBlur={onRefreshModels}"), "API key entry should trigger automatic model list refresh on blur");
   assert.ok(loginCard.includes("model.free ?"), "model options should visually distinguish free and paid OpenRouter choices");
+  assert.ok(main.includes("modelSearch"), "model setup should include client-side search over the curated model list");
+  assert.ok(main.includes('data-testid="model-search"'), "model setup should expose a search field for provider model lists");
+  assert.ok(main.includes("filteredModelOptions"), "model select should show a filtered curated model list");
+  assert.ok(!main.includes("Local fallback"), "model setup should not present local fallback as a player-facing option");
+  assert.ok(!main.includes("本地兜底"), "Chinese UI should not present local fallback as a player-facing option");
   assert.ok(!loginCard.includes('label>Model<input'), "model setup should not require players to type model names manually");
+}
+
+function testRankedLaunchSupportsSingleButtonAutoRun() {
+  const setupPanel = componentSource("BattleSetupPanel");
+  assert.ok(setupPanel.includes("autoRounds"), "setup panel should let players choose how many ranked games to idle-run");
+  assert.ok(setupPanel.includes('data-testid="auto-rounds"'), "auto-run count should be selectable for browser verification");
+  assert.ok(setupPanel.includes("Random Match"), "setup panel should expose one random match button");
+  assert.ok(setupPanel.includes("onJoin({ rounds:"), "single launch button should pass the requested ranked run count");
+  assert.ok(!setupPanel.includes("allowAiFill: false"), "setup panel should not expose a human-only match branch");
 }
 
 function testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch() {
@@ -448,6 +466,8 @@ function testUiExplainsRetainedHandsAndSwapAction() {
   assert.ok(main.includes("Retained Hand"), "hand panel should use retained-hand game language");
   assert.ok(main.includes("Swap Hand x3"), "hand panel should explain the active model can swap hand up to three times");
   assert.ok(main.includes("swap_hand"), "model feed should surface the provider action vocabulary");
+  assert.ok(main.includes("action?.hand"), "agent thinking should be able to display the hand received after swap_hand");
+  assert.ok(main.includes("swapHandRead"), "UI should label model-selected swap hands clearly");
   assert.ok(!main.includes("choose rerolls and shots"), "model feed should not use old reroll wording");
 }
 
@@ -555,7 +575,7 @@ function testLeaderboardsExplainCommanderModelPromptAndPairCompetition() {
   assert.ok(main.includes("Pair League"), "leaderboard should distinguish model plus prompt competition");
   assert.ok(main.includes("prompt hash"), "prompt leaderboard should explain prompt identity tracking");
   assert.ok(main.includes("model + prompt"), "pair leaderboard should explain combination ranking");
-  assert.ok(main.includes("Start Ranked"), "ranked play should expose a clear start action");
+  assert.ok(main.includes("Random Match"), "ranked play should expose one clear random match action");
   assert.ok(main.includes("Sign in to play ranked"), "guest play should be explicitly gated behind sign-in");
   assert.ok(css.includes(".league-board-grid"), "CSS should style the multi-league leaderboard grid");
   assert.ok(css.includes(".locked-play-card"), "CSS should style the locked ranked play state");
@@ -564,7 +584,7 @@ function testLeaderboardsExplainCommanderModelPromptAndPairCompetition() {
 function testUiExplainsOneCommanderControlsTwoAgents() {
   assert.ok(main.includes("ranked_team_1v1"), "UI should surface the simplified A-vs-B commander match mode");
   assert.ok(main.includes("queueSize}/2 commanders"), "queue copy should explain that only two commanders are needed");
-  assert.ok(main.includes("AI filled opponent commander"), "AI fill copy should describe one simulated opponent commander");
+  assert.ok(main.includes("AI opponent commander active"), "AI fill copy should describe one simulated opponent commander");
   assert.ok(main.includes("commanderId"), "UI should consume commander ids shared by same-team agents");
   assert.ok(main.includes("Team Commander"), "UI should explain that one commander controls both agents on a team");
 }
@@ -625,6 +645,7 @@ testGameSurfacesPersistentProfileAndLeaderboard();
 testGameSurfacesRealAccountAuth();
 testGameShowsRankedOnboardingAndProviderReadiness();
   testModelSetupUsesFetchedModelSelect();
+  testRankedLaunchSupportsSingleButtonAutoRun();
   testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch();
   testLaunchHudUsesCompactLocalizedLockedState();
   testGraphwarFirstScreenCentersModelPromptFunctionDuel();

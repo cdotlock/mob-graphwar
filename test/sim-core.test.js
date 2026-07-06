@@ -300,6 +300,13 @@ function testRicherCardCatalog() {
   assert.ok(cards.every((card) => Array.isArray(card.amplitudes) && card.amplitudes.length > 0), "cards should have amplitudes");
 }
 
+function testCardLabelsReadLikeFunctionNames() {
+  assert.strictEqual(Sim.CARD_LIBRARY.arc.label, "Parabola", "lift cards should use recognizable function names");
+  assert.strictEqual(Sim.CARD_LIBRARY.bend.label, "Abs Bend", "bend cards should explain the function family");
+  assert.strictEqual(Sim.CARD_LIBRARY.wave.label, "Sine Wave", "wave cards should use recognizable sine naming");
+  assert.strictEqual(Sim.CARD_LIBRARY.needle.label, "Spike", "modifier cards should read like function operators");
+}
+
 function testCompactHandsStillGuaranteeShapeChoices() {
   assert.strictEqual(Sim.CONFIG.handSize, 4, "each turn should show a tighter four-card hand");
   for (let seed = 1; seed <= 24; seed += 1) {
@@ -530,6 +537,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testCardProfilesExposeTacticalCardRoles();
   testApplyTurnCanUseProviderCandidate();
   testRicherCardCatalog();
+  testCardLabelsReadLikeFunctionNames();
   testCompactHandsStillGuaranteeShapeChoices();
   testHandsPersistAndCanBeRerolledThreeTimes();
   testSeededHardMapGeneration();

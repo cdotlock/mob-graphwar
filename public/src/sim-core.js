@@ -31,7 +31,7 @@
   const CARD_LIBRARY = {
     arc: {
       id: "arc",
-      label: "Arc",
+      label: "Parabola",
       family: "lift",
       cost: 2,
       rarity: "basic",
@@ -42,7 +42,7 @@
     },
     low_lob: {
       id: "low_lob",
-      label: "Low Lob",
+      label: "Low Parabola",
       family: "lift",
       cost: 1,
       rarity: "basic",
@@ -53,7 +53,7 @@
     },
     sky_hook: {
       id: "sky_hook",
-      label: "Sky Hook",
+      label: "High Parabola",
       family: "lift",
       cost: 3,
       rarity: "rare",
@@ -64,7 +64,7 @@
     },
     overpass: {
       id: "overpass",
-      label: "Overpass",
+      label: "Tower Parabola",
       family: "lift",
       cost: 4,
       rarity: "rare",
@@ -75,7 +75,7 @@
     },
     bend: {
       id: "bend",
-      label: "Bend",
+      label: "Abs Bend",
       family: "bend",
       cost: 2,
       rarity: "basic",
@@ -86,7 +86,7 @@
     },
     knife_bend: {
       id: "knife_bend",
-      label: "Knife Bend",
+      label: "Sharp Abs",
       family: "bend",
       cost: 3,
       rarity: "rare",
@@ -98,7 +98,7 @@
     },
     tunnel: {
       id: "tunnel",
-      label: "Tunnel",
+      label: "Step Hook",
       family: "bend",
       cost: 2,
       rarity: "common",
@@ -109,7 +109,7 @@
     },
     wave: {
       id: "wave",
-      label: "Wave",
+      label: "Sine Wave",
       family: "wave",
       cost: 3,
       rarity: "rare",
@@ -120,7 +120,7 @@
     },
     sway: {
       id: "sway",
-      label: "Sway",
+      label: "Double Sine",
       family: "wave",
       cost: 3,
       rarity: "common",
@@ -131,7 +131,7 @@
     },
     ripple: {
       id: "ripple",
-      label: "Ripple",
+      label: "Small Sine",
       family: "wave",
       cost: 2,
       rarity: "common",
@@ -142,7 +142,7 @@
     },
     wobble: {
       id: "wobble",
-      label: "Wobble",
+      label: "Unstable Sine",
       family: "risk",
       cost: 1,
       rarity: "common",
@@ -200,7 +200,7 @@
     },
     booster: {
       id: "booster",
-      label: "Booster",
+      label: "Boost Arc",
       family: "risk",
       cost: 2,
       rarity: "rare",
@@ -212,7 +212,7 @@
     },
     needle: {
       id: "needle",
-      label: "Needle",
+      label: "Spike",
       family: "modifier",
       cost: 2,
       rarity: "common",
@@ -236,7 +236,7 @@
     },
     prism: {
       id: "prism",
-      label: "Prism",
+      label: "Hook",
       family: "modifier",
       cost: 3,
       rarity: "rare",
@@ -248,7 +248,7 @@
     },
     mortar: {
       id: "mortar",
-      label: "Mortar",
+      label: "Mortar Spike",
       family: "risk",
       cost: 3,
       rarity: "rare",
@@ -260,7 +260,7 @@
     },
     glide: {
       id: "glide",
-      label: "Glide",
+      label: "Glide Line",
       family: "control",
       cost: 2,
       rarity: "common",

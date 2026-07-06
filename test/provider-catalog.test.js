@@ -35,8 +35,8 @@ async function testProviderCatalogIncludesSelectableModels() {
           json: async () => ({
             data: [
               {
-                id: "cohere/north-mini-code:free",
-                name: "Cohere: North Mini Code (free)",
+                id: "openrouter/free",
+                name: "Free Models Router",
                 pricing: { prompt: "0", completion: "0" },
                 architecture: { input_modalities: ["text"], output_modalities: ["text"] },
                 context_length: 256000
@@ -72,12 +72,171 @@ async function testProviderCatalogIncludesSelectableModels() {
   const openai = catalog.find((provider) => provider.id === "openai");
   assert.ok(openrouter.available, "OpenRouter should keep availability while adding models");
   assert.ok(Array.isArray(openrouter.models), "OpenRouter should expose selectable models");
-  assert.ok(openrouter.models.some((model) => model.id === "cohere/north-mini-code:free"), "free OpenRouter model list should be exposed");
+  assert.ok(openrouter.models.some((model) => model.id === "openrouter/free"), "free OpenRouter router should be exposed");
   assert.ok(openrouter.models.some((model) => model.id === "openai/gpt-5.5" && model.free === false), "paid OpenRouter models should remain selectable");
   assert.ok(!openrouter.models.some((model) => model.id === "google/image-model"), "image-output OpenRouter models should not appear in the function-writing game");
   assert.ok(!openrouter.models.some((model) => model.id === "google/nano-banana-pro"), "named image-generation OpenRouter models should not appear in the function-writing game");
   assert.ok(openai.models.some((model) => model.id === "gpt-4.1-mini"), "static providers should expose their configured model as an option");
   assert.ok(!JSON.stringify(catalog).includes("sk-router"), "catalog should still redact keys");
+}
+
+async function testOpenRouterCatalogIsCuratedForGameModelSelection() {
+  const noisyModels = Array.from({ length: 120 }, (_, index) => ({
+    id: `unknown/vendor-${index}`,
+    name: `Unknown Vendor ${index}`,
+    pricing: { prompt: "0.000001", completion: "0.000002" },
+    architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+    context_length: 8192,
+    created: 1000 + index
+  }));
+  const catalog = await listProviderCatalog(
+    { OPENROUTER_API_KEY: "sk-router" },
+    {
+      noCache: true,
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [
+            {
+              id: "openrouter/auto",
+              name: "Auto Router",
+              pricing: { prompt: "0.000001", completion: "0.000002" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 200000,
+              created: 2000
+            },
+            {
+              id: "openrouter/free",
+              name: "Free Models Router",
+              pricing: { prompt: "0", completion: "0" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 200000,
+              created: 2001
+            },
+            {
+              id: "anthropic/claude-sonnet-latest",
+              name: "Anthropic: Claude Sonnet Latest",
+              pricing: { prompt: "0.000003", completion: "0.000015" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 200000,
+              created: 2002
+            },
+            {
+              id: "google/gemini-3.5-flash",
+              name: "Google: Gemini 3.5 Flash",
+              pricing: { prompt: "0.000001", completion: "0.000004" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 1000000,
+              created: 2010
+            },
+            {
+              id: "x-ai/grok-4.3",
+              name: "xAI: Grok 4.3",
+              pricing: { prompt: "0.000003", completion: "0.000015" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 256000,
+              created: 2011
+            },
+            {
+              id: "moonshotai/kimi-k2.7",
+              name: "Moonshot AI: Kimi K2.7",
+              pricing: { prompt: "0.000001", completion: "0.000004" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 256000,
+              created: 2_000_000_000
+            },
+            {
+              id: "z-ai/glm-4.7",
+              name: "Z.ai: GLM 4.7",
+              pricing: { prompt: "0.000001", completion: "0.000003" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2013
+            },
+            {
+              id: "deepseek/deepseek-v4.1",
+              name: "DeepSeek: DeepSeek V4.1",
+              pricing: { prompt: "0.000001", completion: "0.000003" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2014
+            },
+            {
+              id: "stepfun/step-3.7-flash",
+              name: "StepFun: Step 3.7 Flash",
+              pricing: { prompt: "0.000001", completion: "0.000003" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2015
+            },
+            {
+              id: "minimax/minimax-m2",
+              name: "MiniMax: MiniMax M2",
+              pricing: { prompt: "0.000001", completion: "0.000003" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2016
+            },
+            {
+              id: "mimo/mimo-vl-7b",
+              name: "Mimo: Mimo VL 7B",
+              pricing: { prompt: "0.000001", completion: "0.000003" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2017
+            },
+            {
+              id: "openai/gpt-4.1-mini",
+              name: "OpenAI: GPT-4.1 Mini",
+              pricing: { prompt: "0.0000004", completion: "0.0000016" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2003
+            },
+            {
+              id: "meta-llama/llama-4.1",
+              name: "Meta: Llama 4.1",
+              pricing: { prompt: "0.000001", completion: "0.000003" },
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+              context_length: 128000,
+              created: 2018
+            },
+            {
+              id: "google/imagen-pro",
+              name: "Google: Imagen Pro",
+              pricing: { prompt: "0.01", completion: "0.01" },
+              architecture: { input_modalities: ["text"], output_modalities: ["image"] },
+              context_length: 8192,
+              created: 2004
+            },
+            ...noisyModels
+          ]
+        })
+      })
+    }
+  );
+  const openrouter = catalog.find((provider) => provider.id === "openrouter");
+  const ids = openrouter.models.map((model) => model.id);
+  assert.ok(ids.length <= 80, "OpenRouter select should be curated instead of exposing the entire raw catalog");
+  assert.strictEqual(ids[0], "openrouter/auto", "OpenRouter auto router should be the first recommended option");
+  assert.strictEqual(ids[1], "openrouter/free", "OpenRouter free router should remain easy to choose");
+  for (const id of [
+    "anthropic/claude-sonnet-latest",
+    "google/gemini-3.5-flash",
+    "x-ai/grok-4.3",
+    "moonshotai/kimi-k2.7",
+    "z-ai/glm-4.7",
+    "deepseek/deepseek-v4.1",
+    "stepfun/step-3.7-flash",
+    "minimax/minimax-m2",
+    "mimo/mimo-vl-7b",
+    "openai/gpt-4.1-mini"
+  ]) {
+    assert.ok(ids.includes(id), `${id} should be kept as an allowed mainstream OpenRouter family`);
+  }
+  assert.ok(!ids.includes("meta-llama/llama-4.1"), "non-whitelisted OpenRouter families should be hidden from the player model select");
+  assert.ok(!ids.includes("google/imagen-pro"), "image-generation models should be filtered out of the function-writing game");
 }
 
 async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
@@ -86,7 +245,11 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
     {
       OPENAI_API_KEY: "sk-openai",
       DEEPSEEK_API_KEY: "sk-deepseek",
+      GEMINI_API_KEY: "sk-gemini",
+      XAI_API_KEY: "sk-xai",
+      MOONSHOT_API_KEY: "sk-moonshot",
       MINIMAX_API_KEY: "sk-minimax",
+      STEPFUN_API_KEY: "sk-stepfun",
       ZHIPU_API_KEY: "sk-zhipu",
       ANTHROPIC_API_KEY: "sk-anthropic",
       OPENROUTER_API_KEY: "sk-router"
@@ -126,6 +289,14 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
         const host = new URL(String(url)).host;
         const id = host.includes("deepseek")
           ? "deepseek-live"
+          : host.includes("generativelanguage")
+            ? "gemini-live"
+            : host.includes("api.x.ai")
+              ? "grok-live"
+              : host.includes("moonshot")
+                ? "kimi-live"
+                : host.includes("stepfun")
+                  ? "stepfun-live"
           : host.includes("minimax")
             ? "minimax-live"
             : host.includes("bigmodel")
@@ -142,7 +313,11 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
   for (const [providerId, modelId] of Object.entries({
     openai: "gpt-live",
     deepseek: "deepseek-live",
+    gemini: "gemini-live",
+    xai: "grok-live",
+    moonshot: "kimi-live",
     minimax: "minimax-live",
+    stepfun: "stepfun-live",
     zhipu: "glm-live",
     anthropic: "claude-haiku-live",
     openrouter: "anthropic/claude-haiku-live"
@@ -153,7 +328,11 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
   }
   assert.ok(calls.some((call) => call.url === "https://api.openai.com/v1/models"), "OpenAI should use its live models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.deepseek.com/models"), "DeepSeek should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://generativelanguage.googleapis.com/v1beta/openai/models"), "Gemini should use its OpenAI-compatible models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.x.ai/v1/models"), "xAI should use its OpenAI-compatible models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.moonshot.ai/v1/models"), "Kimi should use its OpenAI-compatible models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.minimax.io/v1/models"), "MiniMax should use its live models endpoint");
+  assert.ok(calls.some((call) => call.url === "https://api.stepfun.ai/v1/models"), "StepFun should use its OpenAI-compatible models endpoint");
   assert.ok(calls.some((call) => call.url === "https://open.bigmodel.cn/api/paas/v4/models"), "Zhipu should use its live models endpoint");
   assert.ok(calls.some((call) => call.url === "https://api.anthropic.com/v1/models"), "Anthropic should use its live models endpoint");
   assert.ok(calls.some((call) => call.headers.authorization === "Bearer sk-openai"), "OpenAI model list should use bearer auth");
@@ -319,6 +498,7 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
 (async () => {
   testProviderCatalogRedactsKeys();
   await testProviderCatalogIncludesSelectableModels();
+  await testOpenRouterCatalogIsCuratedForGameModelSelection();
   await testProviderCatalogFetchesDynamicModelsForConfiguredProviders();
   testNormalizeDecision();
   testDeepSeekUsesCurrentJsonModeDefaults();

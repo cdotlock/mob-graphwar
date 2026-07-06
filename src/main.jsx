@@ -31,11 +31,15 @@ const DEFAULT_ROSTER = [
 
 const MODEL_PROVIDERS = [
   { id: "openrouter", label: "OpenRouter", model: DEFAULT_OPENROUTER_MODEL, models: [{ id: DEFAULT_OPENROUTER_MODEL, label: "Free Models Router", free: true }] },
-  { id: "deepseek", label: "DeepSeek", model: "deepseek-v4-flash" },
   { id: "openai", label: "OpenAI", model: "gpt-4.1-mini" },
-  { id: "minimax", label: "MiniMax", model: "MiniMax-M1" },
+  { id: "anthropic", label: "Anthropic", model: "claude-3-5-haiku-latest" },
+  { id: "gemini", label: "Gemini", model: "gemini-3.5-flash" },
+  { id: "xai", label: "Grok / xAI", model: "grok-4.3" },
+  { id: "moonshot", label: "Kimi / Moonshot", model: "kimi-k2.7" },
   { id: "zhipu", label: "Zhipu", model: "glm-4-flash" },
-  { id: "anthropic", label: "Anthropic", model: "claude-3-5-haiku-latest" }
+  { id: "deepseek", label: "DeepSeek", model: "deepseek-v4-flash" },
+  { id: "stepfun", label: "StepFun", model: "step-3.7-flash" },
+  { id: "minimax", label: "MiniMax", model: "MiniMax-M1" }
 ];
 
 const PROFILE_STORAGE_KEY = "mob-graphwar-profile-id";
@@ -63,7 +67,7 @@ const I18N = {
     model: "Model",
     room: "Room",
     control: "Control",
-    localFallback: "Local fallback",
+    localFallback: "API key needed",
     watchOnly: "Watch-only after launch",
     signInRequired: "sign in required",
     roomArmed: "room armed",
@@ -89,7 +93,10 @@ const I18N = {
     createAccount: "Create Account",
     noAccount: "No active ranked account",
     providerReady: "API key armed",
-    providerFallback: "local fallback until keyed",
+    providerFallback: "API key required",
+    randomMatch: "Random Match",
+    autoRounds: "Games",
+    swapHandRead: "Swap hand",
     agentThinking: "Agent Thinking",
     activeAgent: "Active agent",
     commander: "Commander",
@@ -129,7 +136,7 @@ const I18N = {
     model: "模型",
     room: "房间",
     control: "控制",
-    localFallback: "本地兜底",
+    localFallback: "需要 API Key",
     watchOnly: "开战后只能观看",
     signInRequired: "需要登录",
     roomArmed: "房间已就绪",
@@ -155,7 +162,10 @@ const I18N = {
     createAccount: "创建账号",
     noAccount: "未登录排位账号",
     providerReady: "API key 已就绪",
-    providerFallback: "未填 key 时使用本地兜底",
+    providerFallback: "需要 API Key",
+    randomMatch: "随机匹配",
+    autoRounds: "挂机局数",
+    swapHandRead: "换牌结果",
     agentThinking: "智能体思考",
     activeAgent: "当前智能体",
     commander: "指挥官",
@@ -197,6 +207,17 @@ function modelOptionsFor(catalog, providerId) {
       ? [{ id: provider.model, label: provider.model }]
       : [{ id: DEFAULT_OPENROUTER_MODEL, label: DEFAULT_OPENROUTER_MODEL }];
   return models.filter((model) => model && model.id);
+}
+
+function filteredModelOptions(models, query, selectedId) {
+  const list = Array.isArray(models) ? models : [];
+  const needle = String(query || "").trim().toLowerCase();
+  const filtered = needle
+    ? list.filter((model) => `${model.id || ""} ${model.label || ""} ${model.family || ""}`.toLowerCase().includes(needle))
+    : list;
+  const selected = selectedId ? list.find((model) => model.id === selectedId) : null;
+  if (selected && !filtered.some((model) => model.id === selected.id)) return [selected, ...filtered];
+  return filtered;
 }
 
 function defaultModelFor(catalog, providerId) {
@@ -348,6 +369,10 @@ function frameDecision(frame) {
     team: frame.action.team,
     unitId: frame.action.unitId,
     provider: frame.action.provider,
+    hand: frame.action.hand,
+    swapsUsed: frame.action.swapsUsed,
+    swapsRemaining: frame.action.swapsRemaining,
+    event: frame.action.event,
     result: frame.action.resultLabel,
     publicReason: frame.action.publicReason || frame.action.event?.resultLabel || frame.action.candidateId
   };
@@ -413,6 +438,7 @@ function App() {
     provider: "openrouter",
     model: DEFAULT_OPENROUTER_MODEL,
     apiKey: "",
+    autoRounds: 1,
     standingOrder: ""
   });
   const [busy, setBusy] = useState(false);
@@ -426,6 +452,7 @@ function App() {
   const [activeMode, setActiveMode] = useState("play");
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [providerCatalog, setProviderCatalog] = useState(MODEL_PROVIDERS);
+  const [modelSearch, setModelSearch] = useState("");
   const [locale, setLocale] = useState(() => window.localStorage.getItem(LOCALE_STORAGE_KEY) || "zh");
   const playbackToken = useRef(0);
   const playbackFramesRef = useRef([]);
@@ -445,6 +472,7 @@ function App() {
   useEffect(() => {
     loadLeaderboard().catch(() => {});
     loadProviders().catch(() => {});
+    restoreSavedSession().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -501,6 +529,33 @@ function App() {
     window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
     setMessage(`${login.provider} model vault updated. Ranked queue is ready.`);
     return payload.player;
+  }
+
+  async function restoreSavedSession() {
+    const storedToken = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!storedToken) return null;
+    try {
+      const response = await fetch("/api/session/me", {
+        headers: authorizedHeaders({}, storedToken)
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "restore_failed");
+      setProfile(payload.player);
+      setSessionToken(storedToken);
+      window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+      setLogin((current) => ({
+        ...current,
+        handle: payload.player.handle || current.handle,
+        displayName: payload.player.displayName || current.displayName
+      }));
+      await loadLeaderboard();
+      return payload.player;
+    } catch (err) {
+      window.localStorage.removeItem(PROFILE_STORAGE_KEY);
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      setSessionToken("");
+      return null;
+    }
   }
 
   async function signIn(event) {
@@ -682,42 +737,50 @@ function App() {
   async function joinMatch(options) {
     if (!profile || !sessionToken) {
       setMessage("Sign in before joining ranked matchmaking.");
-      return;
+      return null;
     }
     const opts = options || {};
+    const rounds = Math.max(1, Math.min(25, Number(opts.rounds) || 1));
     setBusy(true);
-    setMessage(opts.allowAiFill === false ? "Entering human commander queue." : "Launching AI-fill ranked duel. Matchmaking first, auto-battle next.");
+    setMessage(rounds > 1 ? `Launching ${rounds} random ranked games.` : "Launching random ranked match.");
     try {
-      const response = await fetch("/api/match/join", {
-        method: "POST",
-        headers: authorizedHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({
-          preferredProvider: login.provider,
-          allowAiFill: opts.allowAiFill !== false,
-          standingOrder: login.standingOrder
-        })
-      });
-      const payload = await response.json();
-      if (response.status === 202) {
-        setQueueState({ ...payload, polling: true });
-        setMessage(`Waiting for humans. ${payload.queueSize}/2 commanders queued.`);
-        return;
+      let latestPayload = null;
+      for (let index = 0; index < rounds; index += 1) {
+        const response = await fetch("/api/match/join", {
+          method: "POST",
+          headers: authorizedHeaders({ "content-type": "application/json" }),
+          body: JSON.stringify({
+            preferredProvider: login.provider,
+            allowAiFill: true,
+            standingOrder: login.standingOrder
+          })
+        });
+        const payload = await response.json();
+        if (response.status === 202) {
+          setQueueState({ ...payload, polling: true });
+          setMessage(`Waiting for commanders. ${payload.queueSize}/2 queued.`);
+          latestPayload = payload;
+          break;
+        }
+        if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
+        playbackToken.current += 1;
+        setMatch(payload.match);
+        setBattleState(payload.match.state);
+        setBattlePlayback(null);
+        setPlaybackDeck([]);
+        playbackFramesRef.current = [];
+        setPlaybackPaused(false);
+        setLastDecision(null);
+        setQueueState(null);
+        setAutoBattle(null);
+        setMessage(rounds > 1 ? `Ranked game ${index + 1}/${rounds} resolving.` : "Random match ready. Auto duel launching.");
+        latestPayload = payload;
+        await autoStartRankedDuel(payload.match, profile.id, { skipReplay: rounds > 1 && index < rounds - 1 });
       }
-      if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
-      playbackToken.current += 1;
-      setMatch(payload.match);
-      setBattleState(payload.match.state);
-      setBattlePlayback(null);
-      setPlaybackDeck([]);
-      playbackFramesRef.current = [];
-      setPlaybackPaused(false);
-      setLastDecision(null);
-      setQueueState(null);
-      setAutoBattle(null);
-      setMessage(payload.match.filledByAi ? "AI filled opponent commander. Auto duel launching." : "Ranked team commander match ready. Auto duel launching.");
-      await autoStartRankedDuel(payload.match, profile.id);
+      return latestPayload;
     } catch (err) {
       setMessage(err.message || "Matchmaking failed.");
+      return null;
     } finally {
       setBusy(false);
     }
@@ -884,7 +947,7 @@ function App() {
     });
   }
 
-  async function autoStartRankedDuel(room = match, playerId = profile?.id) {
+  async function autoStartRankedDuel(room = match, playerId = profile?.id, options = {}) {
     if (!room || !playerId || room.status === "resolved" || room.state?.winner) return room;
     const lockKey = `${room.id}:${playerId}`;
     if (autoStartRef.current === lockKey) return room;
@@ -902,7 +965,20 @@ function App() {
       setMatch(payload.match);
       setAutoBattle({ ...payload.autoBattle, rankDelta: payload.rankDelta, rating: payload.player.rank.rating });
       window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
-      await playAutoBattleFrames(payload.autoBattle?.frames, payload.match, payload.autoBattle);
+      if (options.skipReplay) {
+        const frames = payload.autoBattle?.frames || [];
+        const lastFrame = frames[frames.length - 1] || null;
+        setBattleState(payload.match.state);
+        setBattlePlayback({
+          active: false,
+          index: frames.length,
+          total: frames.length,
+          action: lastFrame?.action || null,
+          winner: payload.autoBattle?.winner || payload.match.state.winner || "draw"
+        });
+      } else {
+        await playAutoBattleFrames(payload.autoBattle?.frames, payload.match, payload.autoBattle);
+      }
       await loadLeaderboard();
       setLastDecision({
         action: "auto duel",
@@ -955,6 +1031,8 @@ function App() {
           <PlayView
             login={login}
             setLogin={setLogin}
+            modelSearch={modelSearch}
+            setModelSearch={setModelSearch}
             providerCatalog={providerCatalog}
             profile={profile}
             sessionToken={sessionToken}
@@ -1013,6 +1091,8 @@ function App() {
         profile={profile}
         sessionToken={sessionToken}
         providerCatalog={providerCatalog}
+        modelSearch={modelSearch}
+        setModelSearch={setModelSearch}
         locale={locale}
         busy={busy}
         onSubmit={signIn}
@@ -1087,6 +1167,8 @@ function ProductTabs({ activeMode, profile, match, queueState, autoBattle, local
 function PlayView({
   login,
   setLogin,
+  modelSearch,
+  setModelSearch,
   providerCatalog,
   profile,
   sessionToken,
@@ -1134,6 +1216,8 @@ function PlayView({
             <BattleSetupPanel
               login={login}
               setLogin={setLogin}
+              modelSearch={modelSearch}
+              setModelSearch={setModelSearch}
               providerCatalog={providerCatalog}
               profile={profile}
               sessionToken={sessionToken}
@@ -1200,6 +1284,8 @@ function PlayView({
 function BattleSetupPanel({
   login,
   setLogin,
+  modelSearch,
+  setModelSearch,
   providerCatalog,
   profile,
   sessionToken,
@@ -1215,8 +1301,14 @@ function BattleSetupPanel({
 }) {
   const providers = providerOptions(providerCatalog);
   const selectedProvider = providers.find((provider) => provider.id === login.provider) || providers[0];
-  const selectedModels = modelOptionsFor(providers, selectedProvider?.id || login.provider);
+  const selectedModels = filteredModelOptions(
+    modelOptionsFor(providers, selectedProvider?.id || login.provider),
+    modelSearch,
+    login.model
+  );
   const canRank = Boolean(profile && sessionToken);
+  const rounds = Math.max(1, Math.min(25, Number(login.autoRounds) || 1));
+  const launchLabel = tx(locale, "randomMatch") || "Random Match";
   const status = autoBattle
     ? `${battleResultLabel(autoBattle.winner)} / ${autoBattle.resolvedTurns} shots`
     : match
@@ -1242,19 +1334,18 @@ function BattleSetupPanel({
       <label>{tx(locale, "provider")}<select value={login.provider} onChange={(event) => selectProvider(event.target.value)}>
         {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
       </select></label>
+      <label>{locale === "zh" ? "搜索模型" : "Search models"}<input data-testid="model-search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={locale === "zh" ? "OpenAI / Claude / Gemini / Kimi..." : "OpenAI / Claude / Gemini / Kimi..."} /></label>
       <label>{tx(locale, "model")}<select data-testid="inline-model-select" value={login.model} onFocus={refreshModels} onChange={(event) => setLogin({ ...login, model: event.target.value })}>
         {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id} · {model.free ? "free" : "paid"}</option>)}
       </select></label>
       <label>{tx(locale, "apiKey")}<input type="password" value={login.apiKey} onChange={(event) => setLogin({ ...login, apiKey: event.target.value })} onBlur={refreshModels} placeholder="BYOK" /></label>
       <label className="standing-order-field">{tx(locale, "standingOrder")}<textarea maxLength={80} value={login.standingOrder} onChange={(event) => setLogin({ ...login, standingOrder: event.target.value })} placeholder={locale === "zh" ? "例：高弧线越过障碍，优先打残血，别误伤队友" : "Example: high arc over cover, focus low HP, avoid allies"} /></label>
+      <label>{tx(locale, "autoRounds")}<input data-testid="auto-rounds" type="number" min="1" max="25" value={login.autoRounds} onChange={(event) => setLogin({ ...login, autoRounds: event.target.value })} /></label>
       <div className="setup-actions">
         {!canRank ? (
           <button type="button" onClick={onOpenAuth}>{tx(locale, "signInToPlay")}</button>
         ) : (
-          <>
-            <button type="button" disabled={busy} onClick={() => onJoin({ allowAiFill: true })}>AI Fill</button>
-            <button type="button" disabled={busy} onClick={() => onJoin({ allowAiFill: false })}>Human</button>
-          </>
+          <button type="button" disabled={busy} onClick={() => onJoin({ rounds: rounds })}>{busy ? "Resolving" : launchLabel}</button>
         )}
         <button type="button" disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
@@ -1263,7 +1354,7 @@ function BattleSetupPanel({
   );
 }
 
-function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore, onRefreshModels, onClose }) {
+function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatalog, modelSearch, setModelSearch, locale, busy, onSubmit, onRestore, onRefreshModels, onClose }) {
   if (!open) return null;
   return (
     <div className="auth-modal-backdrop" role="presentation">
@@ -1283,6 +1374,8 @@ function AuthModal({ open, login, setLogin, profile, sessionToken, providerCatal
           profile={profile}
           sessionToken={sessionToken}
           providerCatalog={providerCatalog}
+          modelSearch={modelSearch}
+          setModelSearch={setModelSearch}
           locale={locale}
           busy={busy}
           onSubmit={onSubmit}
@@ -1365,6 +1458,7 @@ function ApiDocsView({ result, busy, state, activeUnitId, standingOrder, onRun }
       <div className="lab-grid">
         <LeagueLab result={result} busy={busy} onRun={onRun} />
         <SimulationApiPanel />
+        <FunctionLibraryPanel />
         <RulesPacketPanel state={state} activeUnitId={activeUnitId} standingOrder={standingOrder} />
         <MapTopologyScanner state={state} />
       </div>
@@ -1557,7 +1651,7 @@ function LockedPlayCard({ onOpenAuth, locale }) {
 
 function WatchLoopBrief() {
   const steps = [
-    { label: "Configure model", value: "BYOK or local fallback" },
+    { label: "Configure model", value: "BYOK or hosted key" },
     { label: "Write one standing order", value: "80 characters before queue" },
     { label: "Watch auto duel", value: "No mid-fight commands" },
     { label: "Study replay", value: "Rank, frames, rules proof" }
@@ -1625,7 +1719,7 @@ function RankedGameStatePanel({ profile, match, queueState, autoBattle }) {
       <div className="ranked-state-header">
         <span>Auto-battle loop</span>
         <strong>{phase}</strong>
-        <small>{match?.filledByAi ? "Quick AI Fill" : match ? "Human room" : queueState ? "Waiting for room" : "No active room"}</small>
+        <small>{match?.filledByAi ? "AI commander mixed in" : match ? "Random room" : queueState ? "Waiting for room" : "No active room"}</small>
       </div>
       <div className="ranked-state-timeline">
         {stateNodes.map((node, index) => (
@@ -1657,11 +1751,15 @@ function RankedGameStatePanel({ profile, match, queueState, autoBattle }) {
   );
 }
 
-function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, locale, busy, onSubmit, onRestore, onRefreshModels }) {
+function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, modelSearch, setModelSearch, locale, busy, onSubmit, onRestore, onRefreshModels }) {
   const authMode = login.authMode === "login" ? "login" : "register";
   const providers = providerOptions(providerCatalog);
   const selectedProvider = providers.find((provider) => provider.id === login.provider) || providers[0];
-  const selectedModels = modelOptionsFor(providers, selectedProvider?.id || login.provider);
+  const selectedModels = filteredModelOptions(
+    modelOptionsFor(providers, selectedProvider?.id || login.provider),
+    modelSearch,
+    login.model
+  );
   const selectProvider = (providerId) => {
     setLogin({ ...login, provider: providerId, model: defaultModelFor(providers, providerId) });
   };
@@ -1683,6 +1781,7 @@ function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, lo
       <label>{tx(locale, "provider")}<select value={login.provider} onChange={(e) => selectProvider(e.target.value)}>
         {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.label}</option>)}
       </select></label>
+      <label>{locale === "zh" ? "搜索模型" : "Search models"}<input data-testid="model-search" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} placeholder="OpenAI / Claude / Gemini / Kimi..." /></label>
       <label>{tx(locale, "model")}<select data-testid="model-select" value={login.model} onFocus={refreshModels} onChange={(e) => setLogin({ ...login, model: e.target.value })}>
         {selectedModels.map((model) => <option value={model.id} key={model.id}>{model.label || model.id} · {model.free ? "free" : "paid"}</option>)}
       </select></label>
@@ -1701,7 +1800,7 @@ function LoginCard({ login, setLogin, profile, sessionToken, providerCatalog, lo
 function RankedFlowPanel({ profile, sessionToken, match, queueState, login }) {
   const steps = [
     { id: "account", label: "Account", value: profile && sessionToken ? "secure session" : profile ? "profile only" : "guest", ready: Boolean(profile && sessionToken) },
-    { id: "model", label: "Model", value: profile?.providers?.[login.provider]?.configured || login.apiKey.trim() ? "API key armed" : "local fallback", ready: Boolean(profile?.providers?.[login.provider]?.configured || login.apiKey.trim()) },
+    { id: "model", label: "Model", value: profile?.providers?.[login.provider]?.configured || login.apiKey.trim() ? "API key armed" : "API key needed", ready: Boolean(profile?.providers?.[login.provider]?.configured || login.apiKey.trim()) },
     { id: "match", label: "Match", value: match ? match.status : queueState ? "queue live" : "not queued", ready: Boolean(match || queueState) },
     { id: "watch", label: "Watch", value: match ? "auto duel" : "exhibition", ready: Boolean(match) },
     { id: "rank", label: "Rank", value: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "unrated", ready: Boolean(profile?.rank?.games) }
@@ -1732,7 +1831,7 @@ function SessionStatusPanel({ profile, sessionToken, login }) {
       <span className={modelReady ? "ready" : ""}>
         <KeyRound size={16} />
         <b>Model vault</b>
-        <small>{modelReady ? `${login.provider} / ${selectedProvider?.model || login.model}` : "BYOK key or local fallback"}</small>
+        <small>{modelReady ? `${login.provider} / ${selectedProvider?.model || login.model}` : "BYOK key needed"}</small>
       </span>
     </div>
   );
@@ -1760,8 +1859,7 @@ function ProviderReadinessGrid({ login, profile, providerCatalog, locale }) {
 
 function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
   const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id}` : "No room synced";
-  const aiFillLabel = busy ? "Resolving Duel" : match && !match.state?.winner ? "Run Auto Duel" : "Start Ranked: AI Fill";
-  const humanLabel = busy ? "Waiting" : "Start Ranked: Humans";
+  const matchLabel = busy ? "Resolving Duel" : match && !match.state?.winner ? "Run Auto Duel" : "Random Match";
   return (
     <div className="match-card">
       <div className="panel-title"><RadioTower size={18} /> Ranked Matchmaking</div>
@@ -1783,8 +1881,7 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
         <button disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
       <div className="match-actions">
-        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: false })}>{humanLabel}</button>
-        <button disabled={!profile || busy} onClick={() => onJoin({ allowAiFill: true })}>{aiFillLabel}</button>
+        <button disabled={!profile || busy} onClick={() => onJoin({ rounds: 1 })}>{matchLabel}</button>
       </div>
     </div>
   );
@@ -2529,6 +2626,8 @@ function outcomeCopy(state, match, profile, locale) {
 function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnitId, activeHand, latestEvent, visibleDecision, playback, locale }) {
   const roster = match?.roster?.length ? match.roster : DEFAULT_ROSTER;
   const action = playback?.action || visibleDecision || eventDecision(latestEvent);
+  const isSwap = action?.action === "swap_hand";
+  const swappedHand = Array.isArray(action?.hand) ? action.hand : [];
   const unitId = action?.unitId || (activeUnitId === "-" ? latestEvent?.unitId || latestEvent?.shooterId || displayUnitId : activeUnitId);
   const team = action?.team || activeTeam || (String(unitId).startsWith("B") ? "B" : "A");
   const seat = roster.find((item) => item.unitId === unitId) || roster.find((item) => item.team === team) || {};
@@ -2536,9 +2635,15 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
   const thinking = event?.thinking || {};
   const handAnalysis = Sim.analyzeHand(activeHand || [], Sim.getEnergy(state.turn));
   const modelThought = thinking.providerReason || action?.publicReason || thinking.publicReason || tx(locale, "waitingDecision");
-  const expression = event?.expression || action?.event?.expression || "";
-  const usedFunctions = event?.components?.length ? event.components.map((component) => component.label || component.id).join(" + ") : handAnalysis.archetype || "Mixed Curve";
-  const shotResult = event
+  const expression = isSwap ? "swap_hand()" : event?.expression || action?.event?.expression || "";
+  const usedFunctions = isSwap && swappedHand.length
+    ? swappedHand.map((card) => card.label || card.id).join(" + ")
+    : event?.components?.length
+      ? event.components.map((component) => component.label || component.id).join(" + ")
+      : handAnalysis.archetype || "Mixed Curve";
+  const shotResult = isSwap
+    ? `${tx(locale, "swapHandRead")}: ${swappedHand.length || 0} ${tx(locale, "cards")}${Number.isFinite(Number(action?.swapsRemaining)) ? ` / ${action.swapsRemaining} left` : ""}`
+    : event
     ? `${event.resultLabel || event.result}${event.damage ? ` / ${event.damage} dmg` : ""}`
     : state.winner
       ? battleResultLabel(state.winner)
@@ -2792,6 +2897,31 @@ function RulesPacketPanel({ state, activeUnitId, standingOrder }) {
         <span>opponentIds <b>{snapshot.opponentIds.join(" / ")}</b></span>
       </div>
       <pre className="rules-json-preview">{JSON.stringify(preview, null, 2)}</pre>
+    </div>
+  );
+}
+
+function FunctionLibraryPanel() {
+  const cards = Object.entries(Sim.CARD_LIBRARY || {})
+    .map(([id, card]) => ({
+      id,
+      label: card.label || id,
+      cost: card.cost,
+      family: card.family || "function",
+      tags: Array.isArray(card.tags) ? card.tags.slice(0, 2) : []
+    }))
+    .sort((a, b) => Number(a.cost) - Number(b.cost) || a.label.localeCompare(b.label));
+  return (
+    <div className="function-library-panel" data-testid="function-library-panel">
+      <div className="panel-title"><ListOrdered size={18} /> Function Cards</div>
+      <div className="function-library-grid">
+        {cards.map((card) => (
+          <span key={card.id}>
+            <b>{card.label}</b>
+            <small>{card.cost}E · {card.family}{card.tags.length ? ` · ${card.tags.join(" / ")}` : ""}</small>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

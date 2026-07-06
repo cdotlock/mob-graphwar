@@ -2,10 +2,10 @@
 
 Mob Graphwar Arena is a ranked watch-only AI artillery game inspired by Graphwar.
 
-Players log in, attach their own model key, enter ranked 2v2 matchmaking, and
-issue one short launch-time standing order before watching the AIs fight. Each model only
+Players log in, attach their own model key, enter ranked A-vs-B team commander
+matchmaking, and issue one short launch-time standing order before watching the AIs fight. Each model only
 receives bare rules, map state, units, current hand, and legal actions. Empty
-seats are filled by OpenRouter free-model opponents when the server has an
+opponent commanders are filled by OpenRouter free-model opponents when the server has an
 `OPENROUTER_API_KEY`, otherwise by the local fallback. The point is not to let a
 model solve raw Graphwar directly; it has to act inside a hard function-card
 economy where human wording, hand variance, swap timing, and map complexity
@@ -17,14 +17,15 @@ The game now plays as an idle spectator arena:
 
 1. Configure an account and model provider, or stay on the local fallback.
 2. Write one short standing order for the model before matchmaking.
-3. Launch ranked 2v2. If humans are missing, AI fills the empty seats.
-4. The match locks into watch-only mode and resolves through the auto-duel engine.
-5. Spectate the battlefield, model actions, retained hands, replay frames, and
+3. Launch ranked A vs B. Each commander controls two agents on one team: A1/A2 or B1/B2.
+4. If no human opponent is available, AI fills one opposing commander, not three separate seats.
+5. The match locks into watch-only mode and resolves through the auto-duel engine.
+6. Spectate the battlefield, model actions, retained hands, replay frames, and
    rank settlement.
 
-The UI is organized as Launch, Watch, Intel, and Ladder surfaces. The Watch
-surface prioritizes the live battlefield first, then broadcast scorebug,
-model telemetry, rules proof, and replay controls.
+The UI is organized as Play, Leaderboard, and Lab surfaces. The Play surface
+prioritizes account gating, the live 2D battlefield, retained hands, team
+commander state, model telemetry, and replay controls.
 
 ## Play Locally
 
@@ -86,12 +87,14 @@ errors, timeouts, and JSON failures without printing the key.
 
 ## Current Game Rules
 
-- Ranked 2v2 artillery board with human player plus AI-filled seats.
+- Ranked `ranked_team_1v1` artillery board: one commander controls A1/A2, the
+  opponent commander controls B1/B2.
 - Players give one 80-character standing order before auto-duel resolution.
 - After launch, ranked play is spectator-only; humans cannot submit mid-duel
   `shot` or `swap_hand` actions.
-- AI-filled seats default to OpenRouter `openrouter/free` plus distinct built-in
-  standing orders, and fall back locally when no OpenRouter key is configured.
+- AI-filled opponent commanders default to OpenRouter `openrouter/free` plus one
+  built-in standing order shared by B1/B2, and fall back locally when no OpenRouter
+  key is configured.
 - Cards persist in hand until swapped; each active turn allows up to 3 swaps.
 - The model chooses exactly one legal action: `swap_hand` or `shot`.
 - The AI can use at most two shape/control cards and one modifier card.
@@ -101,8 +104,9 @@ errors, timeouts, and JSON failures without printing the key.
 
 ## Provider Architecture
 
-OpenRouter free-model seats fill missing humans when `OPENROUTER_API_KEY` is
-configured. Local AI still handles offline play and hosted-provider failures.
+OpenRouter free-model commanders fill missing human opponents when
+`OPENROUTER_API_KEY` is configured. Local AI still handles offline play and
+hosted-provider failures.
 Hosted providers are BYOK:
 
 - `src/agents/contract.js` exposes legal candidate IDs and redaction helpers.

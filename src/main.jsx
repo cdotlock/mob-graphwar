@@ -22,10 +22,10 @@ import "./arena.css";
 const Sim = window.GraphwarSim;
 
 const DEFAULT_ROSTER = [
-  { unitId: "A1", team: "A", control: "human", displayName: "You", provider: "local" },
-  { unitId: "A2", team: "A", control: "ai", displayName: "Auto Ally", provider: "openrouter", model: "openrouter/free" },
-  { unitId: "B1", team: "B", control: "ai", displayName: "AI Rival 1", provider: "openrouter", model: "openrouter/free" },
-  { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "openrouter", model: "openrouter/free" }
+  { unitId: "A1", team: "A", control: "human", commanderId: "you", displayName: "You", provider: "local" },
+  { unitId: "A2", team: "A", control: "human", commanderId: "you", displayName: "You", provider: "local" },
+  { unitId: "B1", team: "B", control: "ai", commanderId: "ai-opponent", displayName: "AI Rival", provider: "openrouter", model: "openrouter/free" },
+  { unitId: "B2", team: "B", control: "ai", commanderId: "ai-opponent", displayName: "AI Rival", provider: "openrouter", model: "openrouter/free" }
 ];
 
 const MODEL_PROVIDERS = [
@@ -490,7 +490,7 @@ function App() {
       const payload = await response.json();
       if (response.status === 202) {
         setQueueState({ ...payload, polling: true });
-        setMessage(`Waiting for humans. ${payload.queueSize}/4 commanders queued.`);
+        setMessage(`Waiting for humans. ${payload.queueSize}/2 commanders queued.`);
         return;
       }
       if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
@@ -504,7 +504,7 @@ function App() {
       setLastDecision(null);
       setQueueState(null);
       setAutoBattle(null);
-      setMessage(payload.match.filledByAi ? "AI filled ally and rivals. Auto duel launching." : "Ranked lobby matched. Auto duel launching.");
+      setMessage(payload.match.filledByAi ? "AI filled opponent commander. Auto duel launching." : "Ranked team commander match ready. Auto duel launching.");
       await autoStartRankedDuel(payload.match, profile.id);
     } catch (err) {
       setMessage(err.message || "Matchmaking failed.");
@@ -1299,13 +1299,13 @@ function RankedGameStatePanel({ profile, match, queueState, autoBattle }) {
   const stateNodes = [
     {
       label: "Queue",
-      value: queueState ? `${queueState.queueSize}/4 humans` : match ? "closed" : "idle",
+      value: queueState ? `${queueState.queueSize}/2 commanders` : match ? "closed" : "idle",
       ready: Boolean(queueState || match || autoBattle),
       active: Boolean(queueState && !match)
     },
     {
       label: "Matched",
-      value: match ? (match.filledByAi ? "AI fill" : "2v2 humans") : "waiting",
+      value: match ? (match.filledByAi ? "AI opponent" : "ranked_team_1v1") : "waiting",
       ready: Boolean(match || autoBattle),
       active: Boolean(match && !autoBattle && !match?.state?.winner)
     },
@@ -1468,7 +1468,7 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
       </div>
       <div className="queue-strip" data-testid="ranked-queue">
         <Activity size={16} />
-        <span>{queueState ? `${queueState.queueSize}/4 humans queued` : match?.filledByAi ? "AI fallback active" : "Queue idle"}</span>
+        <span>{queueState ? `${queueState.queueSize}/2 commanders queued` : match?.filledByAi ? "AI opponent commander active" : "Queue idle"}</span>
       </div>
       <div className="spectator-lock-strip" data-testid="spectator-lock">
         <Shield size={15} />
@@ -1490,7 +1490,7 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
 function MobileSpectatorDock({ profile, queueState, match, state, activeUnitId, autoBattle }) {
   const dock = {
     ranked: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "guest",
-    queue: queueState ? `${queueState.queueSize}/4` : match ? match.status : "idle",
+    queue: queueState ? `${queueState.queueSize}/2` : match ? match.status : "idle",
     actor: activeUnitId === "-" ? state.winner || "standby" : activeUnitId,
     result: state.winner ? battleResultLabel(state.winner) : autoBattle ? `${autoBattle.resolvedTurns} turns` : "watching"
   };
@@ -1506,16 +1506,29 @@ function MobileSpectatorDock({ profile, queueState, match, state, activeUnitId, 
 
 function RosterCard({ match }) {
   const roster = match?.roster || [];
+  const commanders = ["A", "B"].map((team) => {
+    const seats = roster.filter((seat) => seat.team === team);
+    const first = seats[0] || null;
+    return {
+      team,
+      seats,
+      commanderId: first?.commanderId || first?.playerId || `${team}-pending`,
+      displayName: first?.displayName || `Team ${team}`,
+      control: first?.control || "waiting",
+      provider: first?.provider || "pending",
+      model: first?.model || ""
+    };
+  });
   return (
     <div className="roster-card">
-      <div className="panel-title"><Shield size={18} /> Seats</div>
-      {roster.length ? roster.map((seat) => (
-        <div className={`seat seat-${seat.team.toLowerCase()}`} key={seat.unitId}>
-          <span>{seat.unitId} / Team {seat.team}</span>
-          <strong>{seat.displayName}</strong>
-          <small>{seat.control} · {seat.provider}</small>
+      <div className="panel-title"><Shield size={18} /> Team Commander Seats</div>
+      {roster.length ? commanders.map((commander) => (
+        <div className={`seat seat-${commander.team.toLowerCase()}`} key={commander.team}>
+          <span>Team Commander {commander.team} / {commander.seats.map((seat) => seat.unitId).join(" + ")}</span>
+          <strong>{commander.displayName}</strong>
+          <small>{commander.control} · {commander.provider}{commander.model ? ` / ${commander.model}` : ""} · {commander.commanderId}</small>
         </div>
-      )) : <p className="empty-copy">Join matchmaking to fill your ally and rivals.</p>}
+      )) : <p className="empty-copy">Join matchmaking to claim Team A and find one Team B commander.</p>}
     </div>
   );
 }

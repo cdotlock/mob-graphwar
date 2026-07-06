@@ -20,11 +20,12 @@ let nextMatchId = 1;
 let loadedStoreFile = null;
 const DEFAULT_AI_PROVIDER = "openrouter";
 const DEFAULT_AI_MODEL = "openrouter/free";
-const DEFAULT_AI_ORDERS = {
-  A2: "protect A1; bend through mid maze; swap weak hands; avoid ally fire",
-  B1: "pressure weakest enemy; mix low thread and side pocket; swap no-lane hands",
-  B2: "hold patient route; use ceiling locks to punish arcs; swap for precision"
+const MATCH_COMMANDER_COUNT = 2;
+const TEAM_UNITS = {
+  A: ["A1", "A2"],
+  B: ["B1", "B2"]
 };
+const DEFAULT_AI_ORDER = "pressure weakest enemy; swap no-lane hands; use low threads and ceiling locks";
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -409,10 +410,8 @@ function seatStandingOrder(seat) {
 
 function createRoster(player, preferredProvider, standingOrder) {
   return [
-    createHumanSeat(player, preferredProvider, "A1", "A", standingOrder),
-    createAiSeat("A2", "A", "Auto Ally"),
-    createAiSeat("B1", "B", "AI Rival 1"),
-    createAiSeat("B2", "B", "AI Rival 2")
+    ...createHumanCommanderSeats(player, preferredProvider, "A", standingOrder),
+    ...createAiCommanderSeats("B", "AI Rival")
   ];
 }
 
@@ -430,17 +429,36 @@ function createHumanSeat(player, preferredProvider, unitId, team, standingOrder)
     team,
     control: "human",
     playerId: player.id,
+    commanderId: player.id,
+    commanderSlot: team,
     displayName: player.displayName,
     provider,
     model: providerConfig.model || ""
   }, standingOrder);
 }
 
+function createHumanCommanderSeats(player, preferredProvider, team, standingOrder) {
+  return (TEAM_UNITS[team] || []).map((unitId) => createHumanSeat(player, preferredProvider, unitId, team, standingOrder));
+}
+
 function createAiSeat(unitId, team, displayName) {
   return attachStandingOrder(
-    { unitId, team, control: "ai", displayName, provider: DEFAULT_AI_PROVIDER, model: DEFAULT_AI_MODEL },
-    DEFAULT_AI_ORDERS[unitId] || "play the maze; swap weak hands; avoid ally fire"
+    {
+      unitId,
+      team,
+      control: "ai",
+      commanderId: `${team.toLowerCase()}-ai-commander`,
+      commanderSlot: team,
+      displayName,
+      provider: DEFAULT_AI_PROVIDER,
+      model: DEFAULT_AI_MODEL
+    },
+    DEFAULT_AI_ORDER
   );
+}
+
+function createAiCommanderSeats(team, displayName) {
+  return (TEAM_UNITS[team] || []).map((unitId) => createAiSeat(unitId, team, displayName));
 }
 
 function createRankedMatchFromRoster(roster, options) {
@@ -449,7 +467,7 @@ function createRankedMatchFromRoster(roster, options) {
   const seed = 9000 + nextMatchId * 37 + roster.length * 11;
   const match = {
     id,
-    mode: "ranked_2v2",
+    mode: "ranked_team_1v1",
     status: "matched",
     seed,
     roster,
@@ -469,11 +487,10 @@ function createRankedMatch(player, preferredProvider, standingOrder) {
 }
 
 function createHumanRankedMatch(entries) {
-  const seats = entries.map((entry, index) => {
+  const seats = entries.flatMap((entry, index) => {
     const player = players.get(entry.playerId);
-    const unitId = index < 2 ? `A${index + 1}` : `B${index - 1}`;
-    const team = index < 2 ? "A" : "B";
-    return createHumanSeat(player, entry.preferredProvider, unitId, team, entry.standingOrder);
+    const team = index === 0 ? "A" : "B";
+    return createHumanCommanderSeats(player, entry.preferredProvider, team, entry.standingOrder);
   });
   return createRankedMatchFromRoster(seats, { filledByAi: false });
 }
@@ -501,7 +518,7 @@ function publicMatchmakingStatus(player) {
       status: "matched",
       match: publicMatch(match),
       queueSize: matchmakingQueue.length,
-      needed: Math.max(0, 4 - matchmakingQueue.length)
+      needed: Math.max(0, MATCH_COMMANDER_COUNT - matchmakingQueue.length)
     };
   }
   const queuedIndex = matchmakingQueue.findIndex((entry) => entry.playerId === player.id);
@@ -510,13 +527,13 @@ function publicMatchmakingStatus(player) {
       status: "queued",
       queueSize: matchmakingQueue.length,
       position: queuedIndex + 1,
-      needed: Math.max(0, 4 - matchmakingQueue.length)
+      needed: Math.max(0, MATCH_COMMANDER_COUNT - matchmakingQueue.length)
     };
   }
   return {
     status: "idle",
     queueSize: matchmakingQueue.length,
-    needed: Math.max(0, 4 - matchmakingQueue.length)
+    needed: Math.max(0, MATCH_COMMANDER_COUNT - matchmakingQueue.length)
   };
 }
 
@@ -528,16 +545,16 @@ function queueRankedPlayer(player, preferredProvider, standingOrder) {
     standingOrder: normalizeStandingOrder(standingOrder),
     joinedAt: Date.now()
   });
-  if (matchmakingQueue.length >= 4) {
-    return createHumanRankedMatch(matchmakingQueue.splice(0, 4));
+  if (matchmakingQueue.length >= MATCH_COMMANDER_COUNT) {
+    return createHumanRankedMatch(matchmakingQueue.splice(0, MATCH_COMMANDER_COUNT));
   }
   return null;
 }
 
 function createAiFallbackMatch(player, preferredProvider, standingOrder) {
   removeQueuedPlayer(player.id);
-  if (matchmakingQueue.length >= 3) {
-    const entries = matchmakingQueue.splice(0, 3).concat({
+  if (matchmakingQueue.length >= MATCH_COMMANDER_COUNT - 1) {
+    const entries = matchmakingQueue.splice(0, MATCH_COMMANDER_COUNT - 1).concat({
       playerId: player.id,
       preferredProvider: preferredProvider || preferredPlayerProvider(player),
       standingOrder: normalizeStandingOrder(standingOrder)
@@ -615,6 +632,8 @@ function publicRosterSeat(seat) {
     team: seat.team,
     control: seat.control,
     playerId: seat.playerId || null,
+    commanderId: seat.commanderId || seat.playerId || null,
+    commanderSlot: seat.commanderSlot || seat.team,
     displayName: seat.displayName,
     provider: seat.provider,
     model: seat.model || "",

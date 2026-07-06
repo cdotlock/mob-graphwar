@@ -100,8 +100,13 @@ async function testLoginMatchmakingAndRankLoop() {
     body: JSON.stringify({ playerId: session.json.player.id, preferredProvider: "deepseek" })
   });
   assert.strictEqual(match.status, 200);
-  assert.strictEqual(match.json.match.mode, "ranked_2v2");
-  assert.ok(match.json.match.roster.filter((seat) => seat.control === "ai").length >= 3, "empty matchmaking should fill seats with AI");
+  assert.strictEqual(match.json.match.mode, "ranked_team_1v1");
+  assert.strictEqual(match.json.match.roster.filter((seat) => seat.control === "ai").length, 2, "empty matchmaking should fill one opposing AI commander");
+  assert.deepStrictEqual(
+    match.json.match.roster.filter((seat) => seat.playerId === session.json.player.id).map((seat) => seat.unitId),
+    ["A1", "A2"],
+    "one player should command both allied agents"
+  );
   assert.ok(match.json.match.state.mapMeta.difficulty >= 90, "ranked match should use complex maps");
 
   const result = await request(createServer({ env: {} }), `/api/match/${match.json.match.id}/resolve`, {
@@ -134,7 +139,9 @@ async function testAiFallbackSeatsDefaultToOpenRouterFreePrompts() {
   });
   assert.strictEqual(match.status, 200);
   const aiSeats = match.json.match.roster.filter((seat) => seat.control === "ai");
-  assert.strictEqual(aiSeats.length, 3);
+  assert.strictEqual(aiSeats.length, 2, "AI fill should create one opposing commander controlling B1 and B2");
+  assert.deepStrictEqual(aiSeats.map((seat) => seat.unitId), ["B1", "B2"]);
+  assert.strictEqual(new Set(aiSeats.map((seat) => seat.commanderId)).size, 1, "AI-filled B1/B2 should share one commander id");
   assert.ok(aiSeats.every((seat) => seat.provider === "openrouter"), "AI-filled seats should default to OpenRouter");
   assert.ok(aiSeats.every((seat) => seat.model === "openrouter/free"), "AI-filled seats should default to the free model router");
   assert.ok(aiSeats.every((seat) => seat.standingOrderConfigured), "AI-filled seats should carry default prompts");
@@ -391,35 +398,34 @@ async function createTestPlayer(displayName) {
 
 async function testHumanMatchmakingQueueCanFormRanked2v2() {
   const players = [];
-  for (const name of ["Alpha", "Bravo", "Cinder", "Delta"]) {
+  for (const name of ["Alpha", "Bravo"]) {
     players.push(await createTestPlayer(name));
   }
 
-  for (let index = 0; index < 3; index += 1) {
-    const queued = await request(createServer({ env: {} }), "/api/match/join", {
-      method: "POST",
-      headers: authHeaders(players[index], { "content-type": "application/json" }),
-      body: JSON.stringify({ playerId: players[index].id, preferredProvider: "deepseek", allowAiFill: false })
-    });
-    assert.strictEqual(queued.status, 202);
-    assert.strictEqual(queued.json.status, "queued");
-    assert.strictEqual(queued.json.queueSize, index + 1);
-    assert.ok(!queued.text.includes(`${players[index].displayName}-secret`), "queue response should not leak API keys");
-  }
+  const queued = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(players[0], { "content-type": "application/json" }),
+    body: JSON.stringify({ playerId: players[0].id, preferredProvider: "deepseek", allowAiFill: false })
+  });
+  assert.strictEqual(queued.status, 202);
+  assert.strictEqual(queued.json.status, "queued");
+  assert.strictEqual(queued.json.queueSize, 1);
+  assert.strictEqual(queued.json.needed, 1);
+  assert.ok(!queued.text.includes(`${players[0].displayName}-secret`), "queue response should not leak API keys");
 
   const matched = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: authHeaders(players[3], { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId: players[3].id, preferredProvider: "deepseek", allowAiFill: false })
+    headers: authHeaders(players[1], { "content-type": "application/json" }),
+    body: JSON.stringify({ playerId: players[1].id, preferredProvider: "deepseek", allowAiFill: false })
   });
   assert.strictEqual(matched.status, 200);
   assert.strictEqual(matched.json.match.status, "matched");
   assert.strictEqual(matched.json.match.filledByAi, false);
   assert.strictEqual(matched.json.match.roster.filter((seat) => seat.control === "human").length, 4);
   assert.deepStrictEqual(
-    matched.json.match.roster.map((seat) => seat.team),
-    ["A", "A", "B", "B"],
-    "matchmaker should split four humans into two teams"
+    matched.json.match.roster.map((seat) => [seat.unitId, seat.playerId]),
+    [["A1", players[0].id], ["A2", players[0].id], ["B1", players[1].id], ["B2", players[1].id]],
+    "matchmaker should split two commanders into two two-agent teams"
   );
   assert.ok(!matched.text.includes("Alpha-secret"), "match response should not leak queued player keys");
 }
@@ -457,11 +463,9 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
   const players = [];
   const launchOrders = [
     "alpha locks B1 with safe high arc",
-    "bravo protects ally and pressures B2",
-    "cinder bends low toward A1",
-    "delta threads center toward A2"
+    "bravo bends low toward A1"
   ];
-  for (const name of ["OrderAlpha", "OrderBravo", "OrderCinder", "OrderDelta"]) {
+  for (const name of ["OrderAlpha", "OrderBravo"]) {
     const session = await request(createServer({ env: {} }), "/api/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -474,36 +478,39 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
     players.push({ ...session.json.player, sessionToken: session.json.sessionToken });
   }
 
-  for (let index = 0; index < 3; index += 1) {
-    const queued = await request(createServer({ env: {} }), "/api/match/join", {
-      method: "POST",
-      headers: authHeaders(players[index], { "content-type": "application/json" }),
-      body: JSON.stringify({
-        playerId: players[index].id,
-        preferredProvider: "openai",
-        allowAiFill: false,
-        standingOrder: launchOrders[index]
-      })
-    });
-    assert.strictEqual(queued.status, 202);
-    assert.ok(!queued.text.includes(launchOrders[index]), "queue response should not leak launch orders");
-  }
+  const queued = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(players[0], { "content-type": "application/json" }),
+    body: JSON.stringify({
+      playerId: players[0].id,
+      preferredProvider: "openai",
+      allowAiFill: false,
+      standingOrder: launchOrders[0]
+    })
+  });
+  assert.strictEqual(queued.status, 202);
+  assert.ok(!queued.text.includes(launchOrders[0]), "queue response should not leak launch orders");
 
   const matched = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: authHeaders(players[3], { "content-type": "application/json" }),
+    headers: authHeaders(players[1], { "content-type": "application/json" }),
     body: JSON.stringify({
-      playerId: players[3].id,
+      playerId: players[1].id,
       preferredProvider: "openai",
       allowAiFill: false,
-      standingOrder: launchOrders[3]
+      standingOrder: launchOrders[1]
     })
   });
   assert.strictEqual(matched.status, 200);
   assert.deepStrictEqual(
     matched.json.match.roster.map((seat) => [seat.unitId, seat.standingOrderConfigured]),
     [["A1", true], ["A2", true], ["B1", true], ["B2", true]],
-    "matched roster should expose that every human seat is armed without exposing the text"
+    "matched roster should expose that both team commanders armed both agents without exposing the text"
+  );
+  assert.deepStrictEqual(
+    matched.json.match.roster.map((seat) => [seat.unitId, seat.commanderId]),
+    [["A1", players[0].id], ["A2", players[0].id], ["B1", players[1].id], ["B2", players[1].id]],
+    "same team agents should share the same commander id"
   );
   for (const order of launchOrders) {
     assert.ok(!matched.text.includes(order), "match response should not leak launch order text");
@@ -522,9 +529,9 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
     }
   }
   assert.strictEqual(firstPromptByUnit.get("A1"), launchOrders[0]);
-  assert.strictEqual(firstPromptByUnit.get("A2"), launchOrders[1]);
-  assert.strictEqual(firstPromptByUnit.get("B1"), launchOrders[2]);
-  assert.strictEqual(firstPromptByUnit.get("B2"), launchOrders[3]);
+  assert.strictEqual(firstPromptByUnit.get("A2"), launchOrders[0]);
+  assert.strictEqual(firstPromptByUnit.get("B1"), launchOrders[1]);
+  assert.strictEqual(firstPromptByUnit.get("B2"), launchOrders[1]);
   for (const order of launchOrders) {
     assert.ok(!autoDuel.text.includes(order), "auto duel response should not leak other players' launch orders");
   }
@@ -532,32 +539,30 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
 
 async function testQueuedPlayersCanPollMatchedRoom() {
   const players = [];
-  for (const name of ["Echo", "Flux", "Glint", "Helix"]) {
+  for (const name of ["Echo", "Flux"]) {
     players.push(await createTestPlayer(name));
   }
 
-  for (let index = 0; index < 3; index += 1) {
-    const queued = await request(createServer({ env: {} }), "/api/match/join", {
-      method: "POST",
-      headers: authHeaders(players[index], { "content-type": "application/json" }),
-      body: JSON.stringify({ playerId: players[index].id, preferredProvider: "deepseek", allowAiFill: false })
-    });
-    assert.strictEqual(queued.status, 202);
-  }
+  const queued = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(players[0], { "content-type": "application/json" }),
+    body: JSON.stringify({ playerId: players[0].id, preferredProvider: "deepseek", allowAiFill: false })
+  });
+  assert.strictEqual(queued.status, 202);
 
   const waiting = await request(createServer({ env: {} }), `/api/matchmaking/${players[0].id}`, {
     headers: authHeaders(players[0])
   });
   assert.strictEqual(waiting.status, 200);
   assert.strictEqual(waiting.json.status, "queued");
-  assert.strictEqual(waiting.json.queueSize, 3);
+  assert.strictEqual(waiting.json.queueSize, 1);
   assert.strictEqual(waiting.json.position, 1);
   assert.strictEqual(waiting.json.needed, 1);
 
   const matched = await request(createServer({ env: {} }), "/api/match/join", {
     method: "POST",
-    headers: authHeaders(players[3], { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId: players[3].id, preferredProvider: "deepseek", allowAiFill: false })
+    headers: authHeaders(players[1], { "content-type": "application/json" }),
+    body: JSON.stringify({ playerId: players[1].id, preferredProvider: "deepseek", allowAiFill: false })
   });
   assert.strictEqual(matched.status, 200);
   const matchId = matched.json.match.id;
@@ -569,6 +574,7 @@ async function testQueuedPlayersCanPollMatchedRoom() {
   assert.strictEqual(synced.json.status, "matched");
   assert.strictEqual(synced.json.match.id, matchId);
   assert.strictEqual(synced.json.match.roster.filter((seat) => seat.control === "human").length, 4);
+  assert.strictEqual(new Set(synced.json.match.roster.map((seat) => seat.playerId)).size, 2);
   assert.ok(!synced.text.includes("Echo-secret"), "matchmaking poll should not leak API keys");
 
   const fetched = await request(createServer({ env: {} }), `/api/match/${matchId}?playerId=${players[0].id}`, {
@@ -940,7 +946,7 @@ async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
   assert.ok(captured.every((call) => call.url === "https://openrouter.ai/api/v1/chat/completions"));
   assert.ok(captured.every((call) => call.options.headers.authorization === "Bearer sk-router-env"));
   assert.ok(captured.every((call) => call.requestBody.model === "openrouter/free"));
-  assert.ok(captured.some((call) => ["B1", "B2", "A2"].includes(call.prompt.activeUnitId)), "captured prompts should come from AI-filled seats");
+  assert.ok(captured.some((call) => ["B1", "B2"].includes(call.prompt.activeUnitId)), "captured prompts should come from the single AI-filled opponent commander");
   assert.ok(
     autoDuel.json.autoBattle.providers.some((provider) => provider.includes("openrouter/free")),
     "auto duel summary should show OpenRouter free model opponents"

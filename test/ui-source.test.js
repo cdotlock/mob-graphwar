@@ -524,6 +524,14 @@ function testLeaderboardsExplainCommanderModelPromptAndPairCompetition() {
   assert.ok(css.includes(".locked-play-card"), "CSS should style the locked ranked play state");
 }
 
+function testUiExplainsOneCommanderControlsTwoAgents() {
+  assert.ok(main.includes("ranked_team_1v1"), "UI should surface the simplified A-vs-B commander match mode");
+  assert.ok(main.includes("queueSize}/2 commanders"), "queue copy should explain that only two commanders are needed");
+  assert.ok(main.includes("AI filled opponent commander"), "AI fill copy should describe one simulated opponent commander");
+  assert.ok(main.includes("commanderId"), "UI should consume commander ids shared by same-team agents");
+  assert.ok(main.includes("Team Commander"), "UI should explain that one commander controls both agents on a team");
+}
+
 testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testFourSeatAgentBattleMatrixExists();
@@ -559,5 +567,6 @@ testBattleHeaderDoesNotCallDrawAWin();
 testWatchFirstProductShellUsesTabsAndModalAuth();
 testBattlefieldUsesFlat2DMapLayers();
 testLeaderboardsExplainCommanderModelPromptAndPairCompetition();
+testUiExplainsOneCommanderControlsTwoAgents();
 
 console.log("ui-source tests passed");

@@ -31,152 +31,152 @@
   const CARD_LIBRARY = {
     arc: {
       id: "arc",
-      label: "Parabola",
+      label: "4*a*t*(1-t)",
       family: "lift",
       cost: 2,
       rarity: "basic",
       tags: ["clearance", "stable"],
       component: "arc",
       amplitudes: [14, 20, 26, 32],
-      description: "Reliable parabolic lift for clearing towers."
+      description: "Symmetric quadratic bump with zero endpoints."
     },
     low_lob: {
       id: "low_lob",
-      label: "Low Parabola",
+      label: "a*(sqrt(t)-t)",
       family: "lift",
       cost: 1,
       rarity: "basic",
       tags: ["cheap", "flat"],
-      component: "arc",
-      amplitudes: [7, 10, 13, -7],
-      description: "Cheap shallow lift when energy is tight."
+      component: "sqrt",
+      amplitudes: [8, 12, 16, -8],
+      description: "Early lift from a square-root curve."
     },
     sky_hook: {
       id: "sky_hook",
-      label: "High Parabola",
+      label: "a*(1-cos(2*pi*t))/2",
       family: "lift",
       cost: 3,
       rarity: "rare",
       tags: ["clearance", "high"],
-      component: "arc",
-      amplitudes: [28, 36, 44],
-      description: "Big over-wall lift with a high ceiling."
+      component: "cos_window",
+      amplitudes: [20, 28, 36],
+      description: "Raised cosine window for a smooth crest."
     },
     overpass: {
       id: "overpass",
-      label: "Tower Parabola",
+      label: "a*exp(-((t-0.50)^2)/(2*0.18^2))",
       family: "lift",
       cost: 4,
       rarity: "rare",
       tags: ["clearance", "expensive"],
-      component: "arc",
-      amplitudes: [38, 46, 54],
-      description: "Huge arc that solves brutal central cover."
+      component: "gaussian",
+      amplitudes: [28, 36, 44],
+      description: "Gaussian center bump for tall, narrow clearance."
     },
     bend: {
       id: "bend",
-      label: "Abs Bend",
+      label: "a*(1-abs(2*t-1))",
       family: "bend",
       cost: 2,
       rarity: "basic",
       tags: ["corner", "stable"],
       component: "bend",
       amplitudes: [10, 16, 22, -12],
-      description: "Sharp triangular lift or dip."
+      description: "Absolute-value triangle wave with a center peak."
     },
     knife_bend: {
       id: "knife_bend",
-      label: "Sharp Abs",
+      label: "a*(2*t-1)*(1-abs(2*t-1))",
       family: "bend",
       cost: 3,
       rarity: "rare",
       tags: ["corner", "volatile", "damage"],
-      component: "bend",
-      amplitudes: [24, 31, -22],
+      component: "chevron",
+      amplitudes: [26, 34, -26, -34],
       effect: { damageBonus: 8, volatility: 16 },
-      description: "Hard bend with extra damage and extra risk."
+      description: "Signed triangular chevron for late directional bends."
     },
     tunnel: {
       id: "tunnel",
-      label: "Step Hook",
+      label: "a*sin(pi*t)*(t<0.58?0.55:1.25)",
       family: "bend",
       cost: 2,
       rarity: "common",
       tags: ["thread", "corner"],
       component: "hook",
       amplitudes: [12, 18, -12, -18],
-      description: "Asymmetric hook for threading around slots."
+      description: "Piecewise sine hook with a stronger late half."
     },
     wave: {
       id: "wave",
-      label: "Sine Wave",
+      label: "a*sin(pi*t)",
       family: "wave",
       cost: 3,
       rarity: "rare",
       tags: ["clearance", "smooth"],
       component: "wave",
       amplitudes: [18, 24, 32, 38],
-      description: "Half sine wave for smooth high arcs."
+      description: "Half-period sine lift."
     },
     sway: {
       id: "sway",
-      label: "Double Sine",
+      label: "a*sin(2*pi*t)",
       family: "wave",
       cost: 3,
       rarity: "common",
       tags: ["weave", "volatile"],
       component: "sway",
       amplitudes: [9, 15, 21, -15, -21],
-      description: "Full sine wave for vertical weaving."
+      description: "Full sine oscillation for over-under routing."
     },
     ripple: {
       id: "ripple",
-      label: "Small Sine",
+      label: "0.55*a*sin(3*pi*t)",
       family: "wave",
       cost: 2,
       rarity: "common",
       tags: ["weave", "cheap"],
       component: "ripple",
       amplitudes: [6, 10, 14, -10, -14],
-      description: "Small oscillation for nudging a curve."
+      description: "Three-lobe sine ripple."
     },
     wobble: {
       id: "wobble",
-      label: "Unstable Sine",
+      label: "a*sinc(10*(t-0.5))*4*t*(1-t)",
       family: "risk",
       cost: 1,
       rarity: "common",
       tags: ["volatile", "cheap"],
-      component: "ripple",
-      amplitudes: [12, 18, -12, -18],
+      component: "sinc",
+      amplitudes: [14, 20, -14, -20],
       effect: { volatility: 12 },
-      description: "Cheap unstable correction with odd misses."
+      description: "Windowed sinc correction with side lobes."
     },
     cubic: {
       id: "cubic",
-      label: "Cubic",
+      label: "a*6.2*t*(1-t)*(t-0.5)",
       family: "control",
       cost: 3,
       rarity: "rare",
       tags: ["dive", "control"],
       component: "cubic",
       amplitudes: [12, 20, 28, -12, -20, -28],
-      description: "Early rise and late dive, or the reverse."
+      description: "Cubic S-curve with opposite signs on each half."
     },
     clamp: {
       id: "clamp",
-      label: "Clamp",
+      label: "a*(t>0.26&&t<0.74?0.65:0)",
       family: "control",
       cost: 1,
       rarity: "common",
       tags: ["shelf", "cheap"],
       component: "clamp",
       amplitudes: [5, 9, -5, -9],
-      description: "Flattens the middle of a shot."
+      description: "Boxcar middle shelf."
     },
     shelf: {
       id: "shelf",
-      label: "Shelf",
+      label: "a*(t>0.18&&t<0.82?0.72:0.18)",
       family: "control",
       cost: 2,
       rarity: "common",
@@ -184,11 +184,11 @@
       component: "shelf",
       amplitudes: [10, 16, -10, -16],
       effect: { precisionBonus: 18 },
-      description: "Holds the mid-curve steady near ledges."
+      description: "Raised plateau with nonzero tails."
     },
     late_dive: {
       id: "late_dive",
-      label: "Late Dive",
+      label: "a*t*t*(1.35-0.35*t)",
       family: "risk",
       cost: 2,
       rarity: "common",
@@ -196,23 +196,23 @@
       component: "dive",
       amplitudes: [-8, -14, -20, 10],
       effect: { volatility: 10 },
-      description: "Drops late to punish elevated targets."
+      description: "Quadratic late ramp."
     },
     booster: {
       id: "booster",
-      label: "Boost Arc",
+      label: "a*max(0,t-0.45)*(1-t)",
       family: "risk",
       cost: 2,
       rarity: "rare",
       tags: ["damage", "volatile"],
-      component: "arc",
-      amplitudes: [18, 28, 38, -18],
+      component: "relu",
+      amplitudes: [22, 32, -22],
       effect: { damageBonus: 12, volatility: 18 },
-      description: "Adds force, damage, and risk."
+      description: "ReLU-style hinge that only activates late."
     },
     needle: {
       id: "needle",
-      label: "Spike",
+      label: "a*max(0,1-abs(t-0.62)/0.22)",
       family: "modifier",
       cost: 2,
       rarity: "common",
@@ -220,47 +220,47 @@
       component: "spike",
       amplitudes: [10, 16, 22, -10],
       effect: { precisionBonus: 24 },
-      description: "Narrow mid-flight correction for tight shots."
+      description: "Triangular localized basis function."
     },
     anchor: {
       id: "anchor",
-      label: "Anchor",
+      label: "a*(log1p(6*t)/log(7)-t)",
       family: "modifier",
       cost: 1,
       rarity: "basic",
       tags: ["precision", "cheap"],
-      component: "clamp",
-      amplitudes: [4, 7, -4, -7],
+      component: "log",
+      amplitudes: [8, 12, -8, -12],
       effect: { precisionBonus: 12 },
-      description: "Small stabilizer that favors clean paths."
+      description: "Logarithmic easing correction with zero endpoints."
     },
     prism: {
       id: "prism",
-      label: "Hook",
+      label: "a*tanh(4*(t-0.5))*4*t*(1-t)",
       family: "modifier",
       cost: 3,
       rarity: "rare",
       tags: ["thread", "precision"],
-      component: "hook",
+      component: "tanh",
       amplitudes: [18, 24, -18, -24],
       effect: { precisionBonus: 16 },
-      description: "Late hook for side-door angles."
+      description: "Windowed hyperbolic tangent bend."
     },
     mortar: {
       id: "mortar",
-      label: "Mortar Spike",
+      label: "a*exp(-((t-0.68)^2)/(2*0.08^2))",
       family: "risk",
       cost: 3,
       rarity: "rare",
       tags: ["high", "damage", "volatile"],
-      component: "spike",
+      component: "narrow_gaussian",
       amplitudes: [24, 34, 44],
       effect: { damageBonus: 10, volatility: 22 },
-      description: "Tall punchy crest that can overcook."
+      description: "Late narrow Gaussian pulse."
     },
     glide: {
       id: "glide",
-      label: "Glide Line",
+      label: "a*sin(pi*t)*(1-0.25*t)",
       family: "control",
       cost: 2,
       rarity: "common",
@@ -268,34 +268,145 @@
       component: "lift",
       amplitudes: [8, 14, 20, -8],
       effect: { precisionBonus: 10 },
-      description: "Smooth early lift that keeps the tail readable."
+      description: "Damped sine lift with a readable tail."
+    },
+    sigmoid_gate: {
+      id: "sigmoid_gate",
+      label: "a*(sigmoid(12*(t-0.5))-0.5)*4*t*(1-t)",
+      family: "control",
+      cost: 3,
+      rarity: "rare",
+      tags: ["smooth", "precision"],
+      component: "sigmoid",
+      amplitudes: [16, 24, -16, -24],
+      effect: { precisionBonus: 14 },
+      description: "Windowed logistic activation for S-shaped corrections."
+    },
+    softplus_ramp: {
+      id: "softplus_ramp",
+      label: "a*(softplus(8*(t-0.5))-softplus(-4))*(1-t)",
+      family: "control",
+      cost: 2,
+      rarity: "common",
+      tags: ["smooth", "dive"],
+      component: "softplus",
+      amplitudes: [10, 16, -10, -16],
+      description: "Softplus ramp that turns on without a hard corner."
+    },
+    gelu_gate: {
+      id: "gelu_gate",
+      label: "a*GELU(2*t-1)*4*t*(1-t)",
+      family: "risk",
+      cost: 3,
+      rarity: "rare",
+      tags: ["damage", "smooth", "volatile"],
+      component: "gelu",
+      amplitudes: [18, 26, -18],
+      effect: { damageBonus: 8, volatility: 12 },
+      description: "Transformer-style GELU activation, windowed for shots."
+    },
+    silu_gate: {
+      id: "silu_gate",
+      label: "a*SiLU(4*(t-0.5))*4*t*(1-t)",
+      family: "control",
+      cost: 2,
+      rarity: "common",
+      tags: ["smooth", "thread"],
+      component: "silu",
+      amplitudes: [12, 18, -12, -18],
+      description: "SiLU/Swish activation for asymmetric glide."
+    },
+    beta_peak: {
+      id: "beta_peak",
+      label: "a*30*t^2*(1-t)^5",
+      family: "modifier",
+      cost: 2,
+      rarity: "common",
+      tags: ["precision", "thread"],
+      component: "beta",
+      amplitudes: [18, 26, -18],
+      effect: { precisionBonus: 18 },
+      description: "Beta-distribution pulse that peaks early."
+    },
+    rational_bump: {
+      id: "rational_bump",
+      label: "a*t*(1-t)/(0.12+abs(t-0.5))",
+      family: "bend",
+      cost: 2,
+      rarity: "common",
+      tags: ["corner", "stable"],
+      component: "rational",
+      amplitudes: [10, 16, -10, -16],
+      description: "Rational bump with a broad center shoulder."
+    },
+    atan_bend: {
+      id: "atan_bend",
+      label: "a*atan(5*(t-0.5))*4*t*(1-t)",
+      family: "bend",
+      cost: 2,
+      rarity: "common",
+      tags: ["corner", "smooth"],
+      component: "atan",
+      amplitudes: [12, 18, -12, -18],
+      description: "Arctangent bend with saturated tails."
+    },
+    softsign_bend: {
+      id: "softsign_bend",
+      label: "a*((2*t-1)/(1+abs(2*t-1)))*4*t*(1-t)",
+      family: "modifier",
+      cost: 1,
+      rarity: "basic",
+      tags: ["precision", "cheap"],
+      component: "softsign",
+      amplitudes: [10, 14, -10, -14],
+      effect: { precisionBonus: 10 },
+      description: "Softsign activation for cheap signed correction."
+    },
+    elu_gate: {
+      id: "elu_gate",
+      label: "a*ELU(4*(t-0.5))*4*t*(1-t)",
+      family: "risk",
+      cost: 2,
+      rarity: "common",
+      tags: ["volatile", "smooth"],
+      component: "elu",
+      amplitudes: [14, 20, -14, -20],
+      effect: { volatility: 10 },
+      description: "ELU activation with a negative soft tail."
     }
   };
 
   const STARTER_POOL = [
     "arc",
-    "arc",
     "low_lob",
+    "sky_hook",
+    "overpass",
     "bend",
-    "bend",
+    "knife_bend",
+    "tunnel",
     "wave",
     "sway",
     "ripple",
+    "wobble",
     "cubic",
     "clamp",
     "shelf",
     "late_dive",
+    "booster",
     "needle",
     "anchor",
-    "tunnel",
-    "glide",
-    "sky_hook",
-    "knife_bend",
-    "wobble",
-    "booster",
     "prism",
     "mortar",
-    "overpass"
+    "glide",
+    "sigmoid_gate",
+    "softplus_ramp",
+    "gelu_gate",
+    "silu_gate",
+    "beta_peak",
+    "rational_bump",
+    "atan_bend",
+    "softsign_bend",
+    "elu_gate"
   ];
 
   const BASE_SCENARIO = {
@@ -443,9 +554,9 @@
 
   function createTeamDeck(seed, owner) {
     const shuffled = shuffle(STARTER_POOL, `${seed}:${owner}:starter-deck`);
-    const required = ["arc", "bend", "wave", "low_lob", "anchor", "needle"];
+    const required = ["arc", "bend", "wave", "sigmoid_gate", "overpass", "needle"].filter((id) => CARD_LIBRARY[id]);
     const deck = required.concat(shuffled);
-    return deck.slice(0, 24);
+    return deck.slice(0, 32);
   }
 
   function dealHand(seed, turn, owner, reroll) {
@@ -1559,6 +1670,10 @@
 
   function componentValue(component, tau) {
     const kind = component.component || component.id;
+    const x = 2 * tau - 1;
+    const window = 4 * tau * (1 - tau);
+    const sigmoid = (value) => 1 / (1 + Math.exp(-value));
+    const softplus = (value) => Math.log1p(Math.exp(value));
     if (kind === "arc") {
       return component.amp * 4 * tau * (1 - tau);
     }
@@ -1567,6 +1682,9 @@
     }
     if (kind === "bend") {
       return component.amp * (1 - Math.abs(2 * tau - 1));
+    }
+    if (kind === "chevron") {
+      return component.amp * x * (1 - Math.abs(x));
     }
     if (kind === "hook") {
       return component.amp * Math.sin(Math.PI * tau) * (tau < 0.58 ? 0.55 : 1.25);
@@ -1580,6 +1698,11 @@
     if (kind === "ripple") {
       return component.amp * Math.sin(Math.PI * 3 * tau) * 0.55;
     }
+    if (kind === "sinc") {
+      const z = 10 * (tau - 0.5);
+      const sinc = Math.abs(z) < 0.0001 ? 1 : Math.sin(z) / z;
+      return component.amp * sinc * window;
+    }
     if (kind === "cubic") {
       return component.amp * 6.2 * tau * (1 - tau) * (tau - 0.5);
     }
@@ -1589,6 +1712,52 @@
     if (kind === "spike") {
       const spike = Math.max(0, 1 - Math.abs(tau - 0.62) / 0.22);
       return component.amp * spike;
+    }
+    if (kind === "narrow_gaussian") {
+      return component.amp * Math.exp(-((tau - 0.68) ** 2) / (2 * 0.08 ** 2));
+    }
+    if (kind === "sqrt") {
+      return component.amp * (Math.sqrt(Math.max(0, tau)) - tau);
+    }
+    if (kind === "cos_window") {
+      return component.amp * (1 - Math.cos(2 * Math.PI * tau)) / 2;
+    }
+    if (kind === "gaussian") {
+      return component.amp * Math.exp(-((tau - 0.5) ** 2) / (2 * 0.18 ** 2));
+    }
+    if (kind === "sigmoid") {
+      return component.amp * (sigmoid(12 * (tau - 0.5)) - 0.5) * window;
+    }
+    if (kind === "softplus") {
+      return component.amp * (softplus(8 * (tau - 0.5)) - softplus(-4)) * (1 - tau);
+    }
+    if (kind === "gelu") {
+      const gelu = 0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * x ** 3)));
+      return component.amp * gelu * window;
+    }
+    if (kind === "silu") {
+      const siluX = 4 * (tau - 0.5);
+      return component.amp * (siluX * sigmoid(siluX)) * window;
+    }
+    if (kind === "beta") {
+      return component.amp * 30 * tau ** 2 * (1 - tau) ** 5;
+    }
+    if (kind === "log") {
+      return component.amp * (Math.log1p(6 * tau) / Math.log(7) - tau);
+    }
+    if (kind === "rational") {
+      return component.amp * (tau * (1 - tau)) / (0.12 + Math.abs(tau - 0.5));
+    }
+    if (kind === "atan") {
+      return component.amp * Math.atan(5 * (tau - 0.5)) * window;
+    }
+    if (kind === "softsign") {
+      return component.amp * (x / (1 + Math.abs(x))) * window;
+    }
+    if (kind === "elu") {
+      const eluX = 4 * (tau - 0.5);
+      const elu = eluX >= 0 ? eluX : Math.exp(eluX) - 1;
+      return component.amp * elu * window;
     }
     if (kind === "clamp") {
       const shelf = tau > 0.26 && tau < 0.74 ? component.amp : 0;
@@ -1848,16 +2017,24 @@
     return uniqueValues(components.map((component) => component.family));
   }
 
+  function summarizeFunctionLabels(items) {
+    const labels = uniqueValues((items || []).map((item) => item && item.label).filter(Boolean));
+    if (!labels.length) return "y0+dy*t";
+    if (labels.length <= 2) return labels.join(" + ");
+    return `${labels.slice(0, 2).join(" + ")} + ${labels.length - 2} more`;
+  }
+
   function assessCombo(components, directive) {
     const parts = components || [];
     if (!parts.length) {
       return {
-        name: "Raw Line",
+        name: "y0+dy*t",
         traits: ["baseline"],
         scoreBonus: 0,
         note: "No card spend; only exposed lines work."
       };
     }
+    const comboName = summarizeFunctionLabels(parts);
 
     const tags = componentTags(parts);
     const families = componentFamilies(parts);
@@ -1870,7 +2047,7 @@
 
     if (usesFamily("risk") && precisionCount > 0) {
       return {
-        name: "Armed Needle",
+        name: comboName,
         traits: uniqueValues(["damage", "precision", "volatile"].concat(directive.aggressive ? ["finisher"] : [])),
         scoreBonus: directive.aggressive ? 42 : 26,
         note: "precision support reins in a volatile damage card."
@@ -1878,7 +2055,7 @@
     }
     if (usesFamily("risk")) {
       return {
-        name: "Loose Charge",
+        name: comboName,
         traits: uniqueValues(["damage", "volatile"].concat(volatileCount > 1 ? ["overheat"] : [])),
         scoreBonus: directive.aggressive ? 24 : -10,
         note: "Damage pressure without stabilization."
@@ -1886,7 +2063,7 @@
     }
     if (clearanceCount > 0 && precisionCount > 0) {
       return {
-        name: "Guided Overpass",
+        name: comboName,
         traits: ["clearance", "precision", "stable"],
         scoreBonus: directive.high ? 38 : 24,
         note: "precision stabilizes a high clearance route."
@@ -1894,7 +2071,7 @@
     }
     if (clearanceCount >= 2) {
       return {
-        name: "Sky Stack",
+        name: comboName,
         traits: ["clearance", "height", "ceiling-risk"],
         scoreBonus: directive.high ? 26 : 10,
         note: "Stacked lift can clear brutal cover but may overcook."
@@ -1902,7 +2079,7 @@
     }
     if (cornerCount > 0 && (has("thread") || usesFamily("modifier"))) {
       return {
-        name: "Threaded Hook",
+        name: comboName,
         traits: ["corner", "thread", "technical"],
         scoreBonus: directive.bend ? 34 : 20,
         note: "A corner card gets a narrow threading helper."
@@ -1910,7 +2087,7 @@
     }
     if (has("shelf") && precisionCount > 0) {
       return {
-        name: "Hold Line",
+        name: comboName,
         traits: ["shelf", "precision", "stable"],
         scoreBonus: 18,
         note: "Shelf control keeps the mid-curve readable."
@@ -1918,7 +2095,7 @@
     }
     if (has("weave")) {
       return {
-        name: "Weave Line",
+        name: comboName,
         traits: uniqueValues(["weave"].concat(has("precision") ? ["precision"] : volatileCount > 0 ? ["volatile"] : ["drift"])),
         scoreBonus: has("precision") ? 16 : 4,
         note: "Oscillation searches for a side-door angle."
@@ -1926,14 +2103,14 @@
     }
     if (has("cheap")) {
       return {
-        name: "Tempo Shot",
+        name: comboName,
         traits: ["cheap", "efficient"],
         scoreBonus: 8,
         note: "Low spend keeps the shot efficient."
       };
     }
     return {
-      name: "Mixed Curve",
+      name: comboName,
       traits: tags.slice(0, 3),
       scoreBonus: 10,
       note: "A compact mix of card effects."
@@ -2002,31 +2179,22 @@
     const cheapCount = countTag(cards, "cheap");
     const volatileCount = countTag(cards, "volatile");
 
-    let archetype = "Mixed Curve";
     let commandRead = "Flexible hand with no single dominant lane.";
     if (clearanceCount > 0 && precisionCount > 0) {
-      archetype = "Guided Overpass";
       commandRead = "High clearance and precision are available.";
     } else if (clearanceCount >= 2) {
-      archetype = "Sky Stack";
       commandRead = "High lift is available, with ceiling risk.";
     } else if (cornerCount > 0 && (has("thread") || precisionCount > 0)) {
-      archetype = "Threaded Hook";
       commandRead = "Corner and threading tools are available.";
     } else if (has("shelf") && precisionCount > 0) {
-      archetype = "Hold Line";
       commandRead = "Shelf control can stabilize mid-curve shots.";
     } else if (usesFamily("risk") && precisionCount > 0) {
-      archetype = "Armed Needle";
       commandRead = "Damage pressure has precision support.";
     } else if (usesFamily("risk") || has("damage")) {
-      archetype = "Loose Charge";
       commandRead = "Damage pressure is available without much stability.";
     } else if (has("weave")) {
-      archetype = "Weave Line";
       commandRead = "Oscillation can search for side-door angles.";
     } else if (cheapCount >= 2) {
-      archetype = "Tempo Shot";
       commandRead = "Cheap cards can conserve energy.";
     }
 
@@ -2044,7 +2212,7 @@
     const energyRead = `${playable.length}/${cards.length} playable at ${energy}E; avg ${averageCost}E`;
 
     return {
-      archetype,
+      archetype: summarizeFunctionLabels(cards),
       traits: traits.length ? traits : families.slice(0, 3),
       playableCount: playable.length,
       handSize: cards.length,
@@ -2155,7 +2323,7 @@
   }
 
   function makeCandidateId(owner, turn, index, shot) {
-    return `${owner}-${turn}-${index}-${shot.target.id}-${shot.usedCardIds.join(".") || "baseline"}`;
+    return `${owner}-${turn}-${index}-${shot.target.id}`;
   }
 
   function assignCandidateIds(choices, owner, turn) {
@@ -2235,15 +2403,15 @@
     return buildShotChoices(state, owner, command).map((choice) => ({
       candidateId: choice.candidateId,
       targetId: choice.target.id,
-      cards: choice.shot.components.map((component) => ({
-        id: component.id,
+      cards: choice.shot.components.map((component, index) => ({
+        slot: index + 1,
+        function: component.label,
         label: component.label,
         family: component.family,
         tags: component.tags,
         cost: choice.hand.find((card) => card.instanceId === component.cardId)?.cost || 0
       })),
       cost: choice.shot.cost,
-      usedCardIds: choice.shot.usedCardIds,
       combo: choice.combo,
       expression: formatExpression(choice.shot),
       result: choice.sim.kind,
@@ -2255,24 +2423,41 @@
   function formatComponent(component) {
     const amp = round(component.amp, 1);
     const kind = component.component || component.id;
-    if (kind === "arc") return `${amp}*arc(u/d)`;
-    if (kind === "lift") return `${amp}*lift(u/d)`;
-    if (kind === "bend") return `${amp}*bend(u/d)`;
-    if (kind === "hook") return `${amp}*hook(u/d)`;
-    if (kind === "wave") return `${amp}*sin(pi*u/d)`;
-    if (kind === "sway") return `${amp}*sin(2*pi*u/d)`;
-    if (kind === "ripple") return `${amp}*ripple(u/d)`;
-    if (kind === "cubic") return `${amp}*cubic(u/d)`;
-    if (kind === "dive") return `${amp}*dive(u/d)`;
-    if (kind === "spike") return `${amp}*spike(u/d)`;
-    if (kind === "clamp" || kind === "shelf") return `${amp}*shelf(u/d)`;
+    if (kind === "arc") return `${amp}*(4*t*(1-t))`;
+    if (kind === "lift") return `${amp}*(sin(pi*t)*(1-0.25*t))`;
+    if (kind === "bend") return `${amp}*(1-abs(2*t-1))`;
+    if (kind === "chevron") return `${amp}*((2*t-1)*(1-abs(2*t-1)))`;
+    if (kind === "hook") return `${amp}*(sin(pi*t)*(t<0.58?0.55:1.25))`;
+    if (kind === "wave") return `${amp}*sin(pi*t)`;
+    if (kind === "sway") return `${amp}*sin(2*pi*t)`;
+    if (kind === "ripple") return `${amp}*(0.55*sin(3*pi*t))`;
+    if (kind === "sinc") return `${amp}*(sinc(10*(t-0.5))*4*t*(1-t))`;
+    if (kind === "cubic") return `${amp}*(6.2*t*(1-t)*(t-0.5))`;
+    if (kind === "dive") return `${amp}*(t*t*(1.35-0.35*t))`;
+    if (kind === "spike") return `${amp}*max(0,1-abs(t-0.62)/0.22)`;
+    if (kind === "narrow_gaussian") return `${amp}*exp(-((t-0.68)^2)/(2*0.08^2))`;
+    if (kind === "sqrt") return `${amp}*(sqrt(t)-t)`;
+    if (kind === "cos_window") return `${amp}*((1-cos(2*pi*t))/2)`;
+    if (kind === "gaussian") return `${amp}*exp(-((t-0.50)^2)/(2*0.18^2))`;
+    if (kind === "sigmoid") return `${amp}*((sigmoid(12*(t-0.5))-0.5)*4*t*(1-t))`;
+    if (kind === "softplus") return `${amp}*((softplus(8*(t-0.5))-softplus(-4))*(1-t))`;
+    if (kind === "gelu") return `${amp}*(GELU(2*t-1)*4*t*(1-t))`;
+    if (kind === "silu") return `${amp}*(SiLU(4*(t-0.5))*4*t*(1-t))`;
+    if (kind === "beta") return `${amp}*(30*t^2*(1-t)^5)`;
+    if (kind === "log") return `${amp}*(log1p(6*t)/log(7)-t)`;
+    if (kind === "rational") return `${amp}*(t*(1-t)/(0.12+abs(t-0.5)))`;
+    if (kind === "atan") return `${amp}*(atan(5*(t-0.5))*4*t*(1-t))`;
+    if (kind === "softsign") return `${amp}*(((2*t-1)/(1+abs(2*t-1)))*4*t*(1-t))`;
+    if (kind === "elu") return `${amp}*(ELU(4*(t-0.5))*4*t*(1-t))`;
+    if (kind === "clamp") return `${amp}*(t>0.26&&t<0.74?0.65:0)`;
+    if (kind === "shelf") return `${amp}*(t>0.18&&t<0.82?0.72:0.18)`;
     return `${amp}*${kind}(u/d)`;
   }
 
   function formatExpression(shot) {
-    const base = `y=${round(shot.shooter.y, 1)}+${round(shot.deltaY, 1)}*(u/d)`;
+    const base = `y=${round(shot.shooter.y, 1)}+${round(shot.deltaY, 1)}*t`;
     if (!shot.components.length) return base;
-    return `${base}+${shot.components.map(formatComponent).join("+")}`;
+    return `${base}+${shot.components.map(formatComponent).join("+")}; t=(u/d)`;
   }
 
   function resultLabel(sim) {

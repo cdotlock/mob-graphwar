@@ -60,9 +60,9 @@
     const activeUnitId = controlledUnit ? controlledUnit.id : String(owner || "A1").toUpperCase();
     const team = controlledUnit ? controlledUnit.team : activeUnitId.startsWith("B") ? "B" : "A";
     const handState = state.hands && state.hands[activeUnitId] ? state.hands[activeUnitId] : null;
-    const cards = Sim.getCurrentHand(state, activeUnitId).map((card) => ({
-      id: card.id,
-      instanceId: card.instanceId,
+    const cards = Sim.getCurrentHand(state, activeUnitId).map((card, index) => ({
+      slot: index + 1,
+      function: card.label,
       label: card.label,
       family: card.family,
       cost: card.cost,

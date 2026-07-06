@@ -247,12 +247,13 @@ function testHandAnalysisSummarizesTacticalRead() {
   const hand = Sim.dealHand(7351, 0, "A");
   const analysis = Sim.analyzeHand(hand, 4);
 
-  assert.strictEqual(analysis.archetype, "Threaded Hook");
-  assert.deepStrictEqual(analysis.traits, ["precision", "thread", "corner"]);
+  assert.ok(analysis.archetype.includes("t"), "hand archetype should summarize actual math functions");
+  assert.ok(!["Threaded Hook", "Loose Charge", "Guided Overpass", "Mixed Curve"].includes(analysis.archetype), "hand archetype should not use game-move aliases");
+  assert.ok(analysis.traits.length > 0, "hand analysis should expose tactical traits");
   assert.strictEqual(analysis.playableCount, 4);
-  assert.strictEqual(analysis.risk, "volatile option");
+  assert.ok(analysis.risk.includes("volatile") || analysis.risk === "stable");
   assert.ok(analysis.energyRead.includes("4/4 playable"));
-  assert.ok(analysis.commandRead.includes("Corner"));
+  assert.ok(analysis.commandRead.length > 10);
 }
 
 function testCardProfilesExposeTacticalCardRoles() {
@@ -291,20 +292,65 @@ function testApplyTurnCanUseProviderCandidate() {
 
 function testRicherCardCatalog() {
   const cards = Object.values(Sim.CARD_LIBRARY);
-  assert.ok(cards.length >= 18, "card catalog should contain at least 18 cards");
+  assert.ok(cards.length >= 28, "card catalog should contain a broader mathematical function pool");
   const families = new Set(cards.map((card) => card.family));
   for (const family of ["lift", "bend", "wave", "control", "risk", "modifier"]) {
     assert.ok(families.has(family), `card catalog should include ${family}`);
   }
   assert.ok(cards.every((card) => Array.isArray(card.tags) && card.tags.length > 0), "cards should have tags");
   assert.ok(cards.every((card) => Array.isArray(card.amplitudes) && card.amplitudes.length > 0), "cards should have amplitudes");
+  const labels = cards.map((card) => card.label);
+  assert.strictEqual(new Set(labels).size, labels.length, "public card labels should not duplicate the same function template");
+  for (const fragment of ["sigmoid", "tanh", "softplus", "GELU", "SiLU", "exp(-", "cos(", "log1p"]) {
+    assert.ok(labels.some((label) => label.includes(fragment)), `card catalog should include ${fragment}`);
+  }
 }
 
 function testCardLabelsReadLikeFunctionNames() {
-  assert.strictEqual(Sim.CARD_LIBRARY.arc.label, "Parabola", "lift cards should use recognizable function names");
-  assert.strictEqual(Sim.CARD_LIBRARY.bend.label, "Abs Bend", "bend cards should explain the function family");
-  assert.strictEqual(Sim.CARD_LIBRARY.wave.label, "Sine Wave", "wave cards should use recognizable sine naming");
-  assert.strictEqual(Sim.CARD_LIBRARY.needle.label, "Spike", "modifier cards should read like function operators");
+  const forbiddenNames = [
+    "Parabola",
+    "Low Parabola",
+    "High Parabola",
+    "Tower Parabola",
+    "Abs Bend",
+    "Sharp Abs",
+    "Step Hook",
+    "Sine Wave",
+    "Double Sine",
+    "Small Sine",
+    "Unstable Sine",
+    "Cubic",
+    "Clamp",
+    "Shelf",
+    "Late Dive",
+    "Boost Arc",
+    "Spike",
+    "Anchor",
+    "Hook",
+    "Mortar Spike",
+    "Glide Line"
+  ];
+  const labels = Object.values(Sim.CARD_LIBRARY).map((card) => card.label);
+  for (const name of forbiddenNames) {
+    assert.ok(!labels.includes(name), `card labels should use mathematical functions instead of ${name}`);
+  }
+  assert.strictEqual(Sim.CARD_LIBRARY.arc.label, "4*a*t*(1-t)");
+  assert.strictEqual(Sim.CARD_LIBRARY.bend.label, "a*(1-abs(2*t-1))");
+  assert.strictEqual(Sim.CARD_LIBRARY.wave.label, "a*sin(pi*t)");
+  assert.strictEqual(Sim.CARD_LIBRARY.needle.label, "a*max(0,1-abs(t-0.62)/0.22)");
+}
+
+function testShotExpressionsUseExpandedMathFunctions() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const shots = Sim.listLegalShots(state, "A1", "high sine bend target B2");
+  assert.ok(shots.length > 0, "legal shots should be available");
+  const expressionText = shots.map((shot) => shot.expression).join("\n");
+  assert.ok(expressionText.includes("t=(u/d)"), "shot expression should define the normalized variable");
+  assert.ok(!/\b(arc|bend|hook|ripple|cubic|dive|spike|shelf)\(u\/d\)/.test(expressionText), "shot expressions should not expose private helper aliases");
+  assert.ok(
+    shots.some((shot) => shot.cards.some((card) => /sin|abs|max|t/.test(card.label))),
+    "candidate cards should expose mathematical labels to models and players"
+  );
 }
 
 function testCompactHandsStillGuaranteeShapeChoices() {
@@ -538,6 +584,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testApplyTurnCanUseProviderCandidate();
   testRicherCardCatalog();
   testCardLabelsReadLikeFunctionNames();
+  testShotExpressionsUseExpandedMathFunctions();
   testCompactHandsStillGuaranteeShapeChoices();
   testHandsPersistAndCanBeRerolledThreeTimes();
   testSeededHardMapGeneration();

@@ -395,7 +395,7 @@ function rulesSnapshot(state, activeUnitId, command) {
       candidateId: shot.candidateId,
       targetId: shot.targetId,
       cost: shot.cost,
-      combo: shot.combo?.name || "Mixed Curve"
+      combo: shot.combo?.name || "y0+dy*t"
     }))
   ];
   const allyIds = state.units.filter((item) => item.team === team && item.hp > 0).map((item) => item.id);
@@ -412,7 +412,7 @@ function rulesSnapshot(state, activeUnitId, command) {
       swapsUsed,
       swapsRemaining,
       analysis: Sim.analyzeHand(hand, Sim.getEnergy(state.turn)),
-      cards: hand.map((card) => ({ id: card.id, label: card.label, family: card.family, cost: card.cost }))
+      cards: hand.map((card, index) => ({ slot: index + 1, function: card.label, label: card.label, family: card.family, cost: card.cost }))
     },
     legalActions
   };
@@ -2643,7 +2643,7 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
     ? swappedHand.map((card) => card.label || card.id).join(" + ")
     : event?.components?.length
       ? event.components.map((component) => component.label || component.id).join(" + ")
-      : handAnalysis.archetype || "Mixed Curve";
+      : handAnalysis.archetype || "y0+dy*t";
   const shotResult = isSwap
     ? `${tx(locale, "swapHandRead")}: ${swappedHand.length || 0} ${tx(locale, "cards")}${Number.isFinite(Number(action?.swapsRemaining)) ? ` / ${action.swapsRemaining} left` : ""}`
     : event
@@ -2951,7 +2951,7 @@ function ModelDecisionStack({ state, lastDecision }) {
             <i>{String(index + 1).padStart(2, "0")}</i>
             <div>
               <span>{event.provider || "Local AI"} · Team {event.team}</span>
-              <strong>{event.combo?.name || "Mixed Curve"}</strong>
+              <strong>{event.combo?.name || "y0+dy*t"}</strong>
               <small>{event.resultLabel} into {event.targetId}</small>
             </div>
           </div>
@@ -2984,7 +2984,7 @@ function ModelWarFeed({ state, lastDecision }) {
           <div className={`feed-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.candidateId}`}>
             <span>T{event.turn + 1} · Team {event.team}</span>
             <strong>{event.resultLabel}</strong>
-            <small>{event.provider || "Local AI"} · {event.combo?.name || "Mixed Curve"}</small>
+            <small>{event.provider || "Local AI"} · {event.combo?.name || "y0+dy*t"}</small>
           </div>
         )) : <p className="empty-copy">The duel feed will fill as models choose swap_hand or shot.</p>}
       </div>
@@ -3000,7 +3000,7 @@ function ShotIntel({ event, state }) {
         <div className="intel-list">
           <span>Team <b>{event.team}</b></span>
           <span>Result <b>{event.resultLabel}</b></span>
-          <span>Combo <b>{event.combo?.name || "Mixed Curve"}</b></span>
+          <span>Combo <b>{event.combo?.name || "y0+dy*t"}</b></span>
           <span>Provider <b>{event.provider || "Local AI"}</b></span>
           <code>{event.expression}</code>
         </div>

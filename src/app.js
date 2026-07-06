@@ -325,7 +325,7 @@
       thinkingRow("Hand", thinking.handConstraint || `${event.hand.length} cards`),
       thinkingRow(
         "Combo",
-        `${thinking.comboName || "Mixed Curve"} - ${
+        `${thinking.comboName || "y0+dy*t"} - ${
           thinking.selectedCombo || event.components.map((component) => component.label).join(" + ") || "baseline"
         }`,
         true
@@ -354,7 +354,7 @@
           <li class="${cls}">
             <strong>Turn ${event.turn} - Team ${event.team} - ${esc(event.resultLabel)}</strong>
             <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} using ${event.cost}/${event.energy} energy.</div>
-            <div>${esc(event.combo ? event.combo.name : "Mixed Curve")} - ${esc(
+            <div>${esc(event.combo ? event.combo.name : "y0+dy*t")} - ${esc(
               event.components.map((component) => component.label).join(" + ") || "baseline"
             )}</div>
           </li>`;

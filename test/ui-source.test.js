@@ -479,6 +479,9 @@ function testUiExplainsRetainedHandsAndSwapAction() {
   assert.ok(handRack.includes("card-function-name"), "function card names should have a dedicated readable style hook");
   assert.ok(!handRack.includes("f:{card.family}"), "hand cards should not present card family as the primary function label");
   assert.ok(css.includes(".card-function-name"), "function card names should be styled as the main hand-card text");
+  assert.ok(css.includes("overflow-wrap: anywhere"), "long mathematical function names should be allowed to wrap");
+  assert.ok(!css.includes(".card-function-name {\n  min-width: 0;\n  overflow: hidden;"), "function card names should not be clipped like short code labels");
+  assert.ok(!css.includes(".function-library-grid b {\n  overflow: hidden;"), "function library should not hide long mathematical expressions");
   assert.ok(!main.includes("choose rerolls and shots"), "model feed should not use old reroll wording");
 }
 

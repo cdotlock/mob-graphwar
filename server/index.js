@@ -873,7 +873,7 @@ function publicEventSummary(event) {
     cost: event.cost,
     result: event.result,
     resultLabel: event.resultLabel,
-    combo: event.combo ? clonePublic(event.combo) : { name: "Mixed Curve" },
+    combo: event.combo ? clonePublic(event.combo) : { name: "y0+dy*t" },
     routeBonus: clonePublic(event.routeBonus || { value: 0, pointIds: [] }),
     expression: event.expression || "",
     thinking: clonePublic(event.thinking || null),

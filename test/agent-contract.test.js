@@ -44,6 +44,31 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(!serialized.includes("hitEnemy"), "payload should not expose simulated outcomes");
 }
 
+function testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const payload = Contract.buildRulesPayload(state, "A1", "hit B2 high");
+  const publicCardText = JSON.stringify({
+    hand: payload.hand.cards,
+    shots: payload.legalActions.filter((action) => action.action === "shot").map((action) => ({
+      candidateId: action.candidateId,
+      cards: action.cards
+    }))
+  });
+  for (const internalName of ["arc", "low_lob", "sky_hook", "overpass", "needle", "prism", "mortar"]) {
+    assert.ok(!publicCardText.includes(internalName), `provider payload should not expose internal card id ${internalName}`);
+  }
+  assert.ok(
+    payload.hand.cards.every((card) => typeof card.function === "string" && card.function.includes("t")),
+    "hand cards should expose math function expressions"
+  );
+  assert.ok(
+    payload.legalActions
+      .filter((action) => action.action === "shot")
+      .every((action) => action.cards.every((card) => typeof card.function === "string" && card.function.length > 0)),
+    "shot candidates should expose math functions for every card"
+  );
+}
+
 function testDecisionValidation() {
   const state = Sim.createInitialState({ seed: 7351 });
   const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
@@ -85,6 +110,7 @@ function testSecretRedaction() {
 
 testCandidateExportIsSafe();
 testRulesPayloadIsBareGameStateAndLegalActions();
+testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames();
 testDecisionValidation();
 testSecretRedaction();
 

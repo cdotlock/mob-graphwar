@@ -1098,6 +1098,38 @@ async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
   assert.ok(!result.text.includes("bend-secret"), "simulation response should not echo API keys");
 }
 
+async function testModelLeagueRoundRobinCanExportCompleteTraces() {
+  const result = await request(createServer({ env: {} }), "/api/simulations/league", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      schedule: "round_robin",
+      gamesPerPair: 2,
+      includeTraces: true,
+      continueOnProviderError: true,
+      contestants: [
+        { id: "raw-a", label: "Raw A", provider: "local", command: "", apiKey: "raw-a-secret" },
+        { id: "raw-b", label: "Raw B", provider: "local", command: "", apiKey: "raw-b-secret" },
+        { id: "raw-c", label: "Raw C", provider: "local", command: "", apiKey: "raw-c-secret" }
+      ]
+    })
+  });
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.json.matches.length, 6, "three contestants with two games per pair should produce six matches");
+  assert.deepStrictEqual(
+    result.json.matches.map((match) => `${match.teamA.id}->${match.teamB.id}`),
+    ["raw-a->raw-b", "raw-b->raw-a", "raw-a->raw-c", "raw-c->raw-a", "raw-b->raw-c", "raw-c->raw-b"],
+    "round robin should alternate sides for each pair"
+  );
+  assert.ok(result.json.matches.every((match) => Array.isArray(match.actions) && match.actions.length > 0), "each match should export agent action trajectory");
+  assert.ok(result.json.matches.every((match) => match.trace && Array.isArray(match.trace.events) && match.trace.events.length > 0), "each match should export event traces");
+  assert.ok(result.json.matches.every((match) => match.trace && Array.isArray(match.trace.paths) && match.trace.paths.length > 0), "each match should export path traces");
+  assert.ok(result.json.api.responseShape.includes("trace"), "simulation API should document trace output");
+  assert.ok(!result.text.includes("raw-a-secret"), "round-robin trace should not echo contestant keys");
+  assert.ok(!result.text.includes("raw-b-secret"), "round-robin trace should not echo contestant keys");
+  assert.ok(!result.text.includes("raw-c-secret"), "round-robin trace should not echo contestant keys");
+}
+
 async function testProviderShotUsesByokAndValidatesCandidate() {
   let captured;
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
@@ -1272,6 +1304,7 @@ async function testProviderShotRequiresKey() {
   await testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists();
   await testAutoDuelCapsSlowProviderCallsAndFallsBackLocally();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
+  await testModelLeagueRoundRobinCanExportCompleteTraces();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();
   await testProviderCanChooseSwapHand();

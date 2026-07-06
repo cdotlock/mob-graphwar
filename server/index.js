@@ -21,6 +21,8 @@ let loadedStoreFile = null;
 const DEFAULT_AI_PROVIDER = "openrouter";
 const DEFAULT_AI_MODEL = "openrouter/free";
 const MATCH_COMMANDER_COUNT = 2;
+const LEAGUE_MAX_CONTESTANTS = 16;
+const LEAGUE_MAX_MATCHES = 240;
 const TEAM_UNITS = {
   A: ["A1", "A2"],
   B: ["B1", "B2"]
@@ -1053,13 +1055,15 @@ function normalizeContestants(rawContestants) {
           command: "pressure weakest enemy; bend low when ceiling locks high arcs"
         }
       ];
-  return source.slice(0, 8).map((item, index) => ({
+  return source.slice(0, LEAGUE_MAX_CONTESTANTS).map((item, index) => ({
     id: String(item.id || `model-${index + 1}`).slice(0, 48),
     label: String(item.label || item.model || item.provider || `Model ${index + 1}`).slice(0, 80),
     provider: String(item.provider || "local").slice(0, 40),
     model: String(item.model || "").slice(0, 80),
     command: String(item.command || "").slice(0, Sim.CONFIG.maxCommandLength),
-    apiKey: typeof item.apiKey === "string" ? item.apiKey : ""
+    apiKey: typeof item.apiKey === "string" ? item.apiKey : "",
+    reasoning: item.reasoning && typeof item.reasoning === "object" ? clonePublic(item.reasoning) : null,
+    strictDecisionSchema: item.strictDecisionSchema === true
   }));
 }
 
@@ -1115,8 +1119,9 @@ function simulationApiContract() {
     modelContract: "bare_rules_only",
     watchOnly: true,
     limits: {
-      maxContestants: 8,
-      maxRounds: 12,
+      maxContestants: LEAGUE_MAX_CONTESTANTS,
+      maxRounds: LEAGUE_MAX_MATCHES,
+      maxMatches: LEAGUE_MAX_MATCHES,
       maxCommandLength: Sim.CONFIG.maxCommandLength
     },
     rankFormula: {
@@ -1124,7 +1129,7 @@ function simulationApiContract() {
       loss: -22,
       draw: -4
     },
-    responseShape: ["rounds", "contestants", "leaderboard", "matches", "api"]
+    responseShape: ["rounds", "contestants", "leaderboard", "matches", "trace", "api"]
   };
 }
 
@@ -1188,7 +1193,8 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
     return {
       command,
       providerLabel: `${contestant.label} / local`,
-      decision: localDecisionFromRules(rulesPayload)
+      decision: localDecisionFromRules(rulesPayload),
+      rawText: ""
     };
   }
   const result = await executeProviderDecision(
@@ -1199,35 +1205,141 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
       candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
       stateSummary: summarizeState(state),
       rulesPayload,
-      model: contestant.model
+      model: contestant.model,
+      reasoning: contestant.reasoning || undefined,
+      strictDecisionSchema: contestant.strictDecisionSchema
     },
     { env, fetch: fetchFn }
   );
   return {
     command,
     providerLabel: `${contestant.label} / ${contestant.model || provider.defaultModel}`,
-    decision: result.decision
+    decision: result.decision,
+    rawText: result.rawText || "",
+    reasoningText: result.reasoningText || "",
+    reasoningDetails: result.reasoningDetails || null
   };
 }
 
-async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
+function contestantFailureDecision(contestant, state, unitId, err, failures) {
+  const unit = (state.units || []).find((item) => item.id === unitId) || Sim.getActiveUnit(state);
+  const team = unit ? unit.team : getActiveTeam(state);
+  const rulesPayload = Contract.buildRulesPayload(state, unit ? unit.id : team, contestant.command || "");
+  const failure = {
+    turn: state.turn,
+    team,
+    unitId: unit ? unit.id : unitId || null,
+    contestantId: contestant.id,
+    model: contestant.model || "",
+    error: err && err.message ? err.message : "provider_error",
+    status: err && err.status ? err.status : null,
+    body: err && err.body ? String(err.body).slice(0, 1200) : ""
+  };
+  if (Array.isArray(failures)) failures.push(failure);
+  return {
+    command: contestant.command || "",
+    providerLabel: `${contestant.label} / provider_error`,
+    decision: localDecisionFromRules(rulesPayload),
+    rawText: err && err.rawText ? String(err.rawText) : "",
+    reasoningText: err && err.reasoningText ? String(err.reasoningText) : "",
+    reasoningDetails: err && err.reasoningDetails ? clonePublic(err.reasoningDetails) : null,
+    failure
+  };
+}
+
+function publicLeagueTrace(state) {
+  return {
+    seed: state.seed,
+    turn: state.turn,
+    mapMeta: clonePublic(state.mapMeta || null),
+    obstacles: clonePublic(state.obstacles || []),
+    bonusPoints: clonePublic(state.bonusPoints || []),
+    units: clonePublic(state.units || []),
+    events: (state.events || []).map(publicEventSummary),
+    paths: clonePublic(state.paths || []),
+    hands: clonePublic(state.hands || null),
+    winner: state.winner || null,
+    reason: state.reason || null,
+    score: clonePublic(state.score || null)
+  };
+}
+
+function publicLeagueAction(state, action, beforeEventCount) {
+  const event = state.events[beforeEventCount] || state.events[state.events.length - 1] || null;
+  return {
+    index: action.index,
+    turn: action.turn,
+    team: action.team,
+    unitId: action.unitId,
+    contestantId: action.contestantId,
+    contestantLabel: action.contestantLabel,
+    model: action.model,
+    provider: action.provider,
+    action: action.action,
+    candidateId: action.candidateId || null,
+    publicReason: action.publicReason || "",
+    modelOutput: action.modelOutput || "",
+    reasoning: action.reasoning || "",
+    reasoningDetails: action.reasoningDetails || null,
+    failure: action.failure || null,
+    swapsUsed: Number.isFinite(Number(action.swapsUsed)) ? Number(action.swapsUsed) : null,
+    swapsRemaining: Number.isFinite(Number(action.swapsRemaining)) ? Number(action.swapsRemaining) : null,
+    event: event ? publicEventSummary(event) : null
+  };
+}
+
+async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
+  const opts = options || {};
   const state = Sim.createInitialState({ seed });
   let guard = 0;
-  const maxActions = Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
+  const actions = [];
+  const failures = [];
+  const configuredMaxActions = Number(opts.maxActions);
+  const maxActions = Number.isFinite(configuredMaxActions) && configuredMaxActions > 0
+    ? Math.max(1, Math.floor(configuredMaxActions))
+    : Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
   while (!state.winner && guard < maxActions) {
     guard += 1;
     const unitId = getActiveUnitId(state);
     const team = getActiveTeam(state);
     const contestant = team === "A" ? teamA : teamB;
-    const resolved = await contestantDecision(contestant, state, unitId, env, fetchFn);
+    let resolved;
+    try {
+      resolved = await contestantDecision(contestant, state, unitId, env, fetchFn);
+    } catch (err) {
+      if (opts.continueOnProviderError === false) throw err;
+      resolved = contestantFailureDecision(contestant, state, unitId, err, failures);
+    }
+    const actionBase = {
+      index: actions.length,
+      turn: state.turn,
+      team,
+      unitId,
+      contestantId: contestant.id,
+      contestantLabel: contestant.label,
+      model: contestant.model || "",
+      provider: resolved.providerLabel,
+      modelOutput: resolved.rawText || "",
+      reasoning: resolved.reasoningText || "",
+      reasoningDetails: resolved.reasoningDetails || null,
+      failure: resolved.failure || null,
+      publicReason: resolved.decision.publicReason || ""
+    };
     if (isSwapAction(resolved.decision.action)) {
-      Sim.applyTurn(state, {}, {
+      const rerollResult = Sim.applyTurn(state, {}, {
         action: "swap_hand",
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
       });
+      actions.push(publicLeagueAction(state, {
+        ...actionBase,
+        action: "swap_hand",
+        swapsUsed: rerollResult.swapsUsed,
+        swapsRemaining: rerollResult.swapsRemaining
+      }, state.events.length));
       continue;
     }
+    const beforeEventCount = state.events.length;
     Sim.applyTurn(
       state,
       { [unitId || team]: resolved.command },
@@ -1237,12 +1349,55 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn) {
         providerReason: resolved.decision.publicReason
       }
     );
+    actions.push(publicLeagueAction(state, {
+      ...actionBase,
+      action: "shot",
+      candidateId: resolved.decision.candidateId || null
+    }, beforeEventCount));
   }
-  if (!state.winner) await advanceMatchToResolution({ state, status: "active" }, { env, fetchFn });
   if (!state.winner) {
     Sim.forceResolveByHp(state, "resolution_guard");
   }
-  return state;
+  return { state, actions, failures };
+}
+
+function buildLeagueSchedule(contestants, body) {
+  const source = body || {};
+  const seedBase = Number.isFinite(Number(source.seedBase)) ? Number(source.seedBase) : 12000 + contestants.length * 17;
+  if (source.schedule === "round_robin" || Number(source.gamesPerPair) > 0) {
+    const gamesPerPair = Math.max(1, Math.min(8, Number(source.gamesPerPair) || 2));
+    const schedule = [];
+    let index = 0;
+    for (let left = 0; left < contestants.length; left += 1) {
+      for (let right = left + 1; right < contestants.length; right += 1) {
+        for (let game = 0; game < gamesPerPair; game += 1) {
+          const flipped = game % 2 === 1;
+          const teamA = flipped ? contestants[right] : contestants[left];
+          const teamB = flipped ? contestants[left] : contestants[right];
+          schedule.push({
+            index,
+            pair: `${contestants[left].id}:${contestants[right].id}`,
+            game: game + 1,
+            teamA,
+            teamB,
+            seed: seedBase + index * 73 + left * 997 + right * 37 + game * 11
+          });
+          index += 1;
+        }
+      }
+    }
+    return schedule.slice(0, LEAGUE_MAX_MATCHES).map((entry, entryIndex) => ({ ...entry, index: entryIndex }));
+  }
+
+  const rounds = Math.max(1, Math.min(LEAGUE_MAX_MATCHES, Number(source.rounds) || 3));
+  return Array.from({ length: rounds }, (_unused, index) => ({
+    index,
+    pair: `${contestants[index % contestants.length].id}:${contestants[(index + 1) % contestants.length].id}`,
+    game: 1,
+    teamA: contestants[index % contestants.length],
+    teamB: contestants[(index + 1) % contestants.length],
+    seed: seedBase + index * 73
+  }));
 }
 
 async function runLeagueSimulation(body, env, fetchFn) {
@@ -1252,30 +1407,43 @@ async function runLeagueSimulation(body, env, fetchFn) {
     err.status = 400;
     throw err;
   }
-  const rounds = Math.max(1, Math.min(12, Number(body.rounds) || 3));
+  const includeTraces = body.includeTraces === true;
+  const schedule = buildLeagueSchedule(contestants, body);
   const rows = createLeagueRows(contestants);
   const matchesOut = [];
-  for (let round = 0; round < rounds; round += 1) {
-    const teamA = contestants[round % contestants.length];
-    const teamB = contestants[(round + 1) % contestants.length];
-    const seed = 12000 + round * 73 + contestants.length * 17;
-    const state = await runLeagueBattle(seed, teamA, teamB, env, fetchFn);
+  for (const entry of schedule) {
+    const teamA = entry.teamA;
+    const teamB = entry.teamB;
+    const seed = entry.seed;
+    const battle = await runLeagueBattle(seed, teamA, teamB, env, fetchFn, {
+      continueOnProviderError: body.continueOnProviderError !== false,
+      maxActions: body.maxActions
+    });
+    const state = battle.state;
     applyLeagueScore(rows, teamA, teamB, state.winner);
-    matchesOut.push({
-      id: `sim-${round + 1}`,
+    const matchOut = {
+      id: `sim-${entry.index + 1}`,
+      round: entry.index + 1,
+      pair: entry.pair,
+      game: entry.game,
       seed,
       teamA: publicContestant(teamA),
       teamB: publicContestant(teamB),
       winner: state.winner,
       reason: state.reason,
       events: state.events.length,
+      actions: battle.actions,
+      failures: battle.failures,
       score: state.score
         ? { value: state.score.value, rank: state.score.rank, failures: state.score.failures, enemyHits: state.score.enemyHits }
         : null
-    });
+    };
+    if (includeTraces) matchOut.trace = publicLeagueTrace(state);
+    matchesOut.push(matchOut);
   }
   return {
-    rounds,
+    rounds: schedule.length,
+    schedule: body.schedule === "round_robin" ? "round_robin" : "rotating",
     contestants: contestants.map(publicContestant),
     leaderboard: Array.from(rows.values()).sort((a, b) => b.rating - a.rating || b.wins - a.wins),
     matches: matchesOut,
@@ -1593,5 +1761,8 @@ if (require.main === module) {
 }
 
 module.exports = {
-  createServer
+  createServer,
+  buildLeagueSchedule,
+  runLeagueBattle,
+  runLeagueSimulation
 };

@@ -10,7 +10,8 @@
     "prebuild": "npm run sync:public-sim",
     "build": "vite build",
     "start": "node server/index.js",
-    "test": "node test/sim-core.test.js && node test/agent-contract.test.js && node test/provider-catalog.test.js && node test/server.test.js && node test/ui-source.test.js",
+    "benchmark:openrouter:raw": "node scripts/openrouter-raw-benchmark.js --games-per-pair=2 --max-actions=24 --concurrency=8 --timeout-ms=300000 --write-store=.data/graphwar-store.json",
+    "test": "node test/sim-core.test.js && node test/agent-contract.test.js && node test/provider-catalog.test.js && node test/server.test.js && node test/openrouter-benchmark.test.js && node test/ui-source.test.js",
     "test:real:deepseek": "node test/real-deepseek-smoke.js",
     "test:real:openrouter": "node test/real-openrouter-smoke.js"
   },

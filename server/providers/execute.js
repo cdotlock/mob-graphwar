@@ -3,7 +3,7 @@
 const { validateAgentDecision } = require("../../src/agents/contract.js");
 const { buildAnthropicRequest } = require("./anthropic.js");
 const { buildOpenAICompatibleRequest } = require("./openai-compatible.js");
-const { normalizeProviderDecision } = require("./normalize.js");
+const { normalizeProviderDecision, stripReasoning } = require("./normalize.js");
 
 function resolveApiKey(provider, body, env) {
   const byok = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
@@ -30,6 +30,12 @@ function extractOpenAIText(json) {
   return content || "";
 }
 
+function extractOpenAIMessage(json) {
+  return json && json.choices && json.choices[0] && json.choices[0].message
+    ? json.choices[0].message
+    : {};
+}
+
 function extractAnthropicText(json) {
   const content = json && json.content;
   if (Array.isArray(content)) {
@@ -45,13 +51,32 @@ function extractProviderText(provider, json) {
   return provider.adapter === "anthropic" ? extractAnthropicText(json) : extractOpenAIText(json);
 }
 
+function extractReasoningText(provider, json) {
+  if (provider.adapter === "anthropic") return "";
+  const message = extractOpenAIMessage(json);
+  const reasoning = message.reasoning || message.reasoning_content || "";
+  if (Array.isArray(reasoning)) {
+    return reasoning
+      .map((item) => (typeof item === "string" ? item : item && (item.text || item.content) ? item.text || item.content : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return typeof reasoning === "string" ? reasoning : "";
+}
+
+function extractReasoningDetails(provider, json) {
+  if (provider.adapter === "anthropic") return null;
+  const message = extractOpenAIMessage(json);
+  return Array.isArray(message.reasoning_details) ? message.reasoning_details : null;
+}
+
 function providerTimeoutMs(options) {
   const opts = options || {};
   const source = opts.env || process.env;
   const raw = opts.timeoutMs ?? source.GRAPHWAR_REQUEST_TIMEOUT_MS;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 20_000;
-  return Math.min(parsed, 120_000);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 300_000;
+  return Math.min(parsed, 300_000);
 }
 
 async function fetchWithTimeout(fetchFn, url, request, timeoutMs) {
@@ -118,11 +143,29 @@ async function executeProviderDecision(provider, payload, options) {
     if (!response || !response.ok) {
       const err = new Error("provider_http_error");
       err.status = response && response.status;
+      if (response && typeof response.text === "function") {
+        try {
+          err.body = String(await response.text()).slice(0, 4000);
+        } catch {
+          err.body = "";
+        }
+      }
       throw err;
     }
 
     const json = await response.json();
-    const decision = normalizeProviderDecision(extractProviderText(provider, json));
+    const rawText = extractProviderText(provider, json);
+    const reasoningText = extractReasoningText(provider, json);
+    const reasoningDetails = extractReasoningDetails(provider, json);
+    let decision;
+    try {
+      decision = normalizeProviderDecision(rawText);
+    } catch (err) {
+      err.rawText = stripReasoning(rawText);
+      err.reasoningText = reasoningText;
+      err.reasoningDetails = reasoningDetails;
+      throw err;
+    }
     const validation = validateAgentDecision(
       decision,
       payload.rulesPayload && payload.rulesPayload.legalActions ? payload.rulesPayload.legalActions : payload.candidates
@@ -130,6 +173,9 @@ async function executeProviderDecision(provider, payload, options) {
     if (!validation.ok) {
       const err = new Error(validation.reason);
       err.validation = validation;
+      err.rawText = stripReasoning(rawText);
+      err.reasoningText = reasoningText;
+      err.reasoningDetails = reasoningDetails;
       throw err;
     }
     if (validation.action === "swap_hand") {
@@ -138,7 +184,10 @@ async function executeProviderDecision(provider, payload, options) {
           action: "swap_hand",
           publicReason: validation.publicReason
         },
-        candidate: null
+        candidate: null,
+        rawText: stripReasoning(rawText),
+        reasoningText,
+        reasoningDetails
       };
     }
     return {
@@ -147,7 +196,10 @@ async function executeProviderDecision(provider, payload, options) {
         candidateId: validation.candidate.candidateId,
         publicReason: validation.publicReason
       },
-      candidate: validation.candidate
+      candidate: validation.candidate,
+      rawText: stripReasoning(rawText),
+      reasoningText,
+      reasoningDetails
     };
   }, timeoutMs);
 }
@@ -155,6 +207,8 @@ async function executeProviderDecision(provider, payload, options) {
 module.exports = {
   buildProviderRequest,
   executeProviderDecision,
+  extractReasoningDetails,
+  extractReasoningText,
   extractProviderText,
   fetchWithTimeout,
   runWithProviderTimeout,

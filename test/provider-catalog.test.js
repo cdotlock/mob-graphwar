@@ -3,7 +3,7 @@ const { listProviders, listProviderCatalog, getProvider } = require("../server/p
 const { normalizeProviderDecision } = require("../server/providers/normalize.js");
 const { buildOpenAICompatibleRequest } = require("../server/providers/openai-compatible.js");
 const { buildAnthropicRequest } = require("../server/providers/anthropic.js");
-const { executeProviderDecision } = require("../server/providers/execute.js");
+const { executeProviderDecision, providerTimeoutMs } = require("../server/providers/execute.js");
 const Sim = require("../src/sim-core.js");
 const Contract = require("../src/agents/contract.js");
 const fs = require("fs");
@@ -441,6 +441,59 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
   assert.ok(userPayload.legalActions.some((action) => action.action === "shot"));
 }
 
+function testOpenRouterCanEnableReasoningForBenchmark() {
+  const openrouter = getProvider("openrouter");
+  const request = buildOpenAICompatibleRequest(
+    openrouter,
+    {
+      command: "",
+      candidates: [{ candidateId: "B-0-0-A2-bend", targetId: "A2" }],
+      stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
+      model: "google/gemini-3.5-flash",
+      reasoning: {
+        enabled: true,
+        effort: "high",
+        exclude: false
+      }
+    },
+    "sk-router"
+  );
+
+  assert.strictEqual(request.body.include_reasoning, true);
+  assert.deepStrictEqual(request.body.reasoning, { enabled: true, effort: "high", exclude: false });
+  assert.strictEqual(request.body.reasoning_effort, undefined);
+  assert.ok(request.body.max_tokens >= 6000, "reasoning-enabled benchmark calls need enough output budget for high thinking plus JSON");
+  assert.ok(request.body.max_completion_tokens >= 6000, "OpenRouter reasoning calls should also send max_completion_tokens for reasoning model routes");
+}
+
+function testOpenRouterBenchmarkCanRequireStrictDecisionJson() {
+  const openrouter = getProvider("openrouter");
+  const request = buildOpenAICompatibleRequest(
+    openrouter,
+    {
+      command: "",
+      candidates: [{ candidateId: "B-0-0-A2-bend", targetId: "A2" }],
+      stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
+      model: "google/gemini-3.5-flash",
+      reasoning: {
+        enabled: true,
+        effort: "high",
+        exclude: false
+      },
+      strictDecisionSchema: true
+    },
+    "sk-router"
+  );
+
+  assert.strictEqual(request.body.response_format.type, "json_schema");
+  assert.strictEqual(request.body.response_format.json_schema.name, "graphwar_agent_decision");
+  assert.strictEqual(request.body.response_format.json_schema.strict, true);
+  assert.deepStrictEqual(request.body.response_format.json_schema.schema.required, ["action", "candidateId", "publicReason"]);
+  assert.deepStrictEqual(request.body.reasoning, { enabled: true, effort: "high", exclude: false });
+  assert.deepStrictEqual(request.body.plugins, [{ id: "response-healing" }]);
+  assert.strictEqual(request.body.provider, undefined);
+}
+
 function testMiMoUsesApiKeyHeaderForOpenAICompatibleChat() {
   const mimo = getProvider("mimo");
   const request = buildOpenAICompatibleRequest(
@@ -534,6 +587,136 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
   assert.strictEqual(sawAbortSignal, true, "provider fetch should receive an AbortSignal");
 }
 
+function testProviderRequestTimeoutDefaultsToThinkingBudget() {
+  assert.ok(providerTimeoutMs({ env: {} }) >= 300_000, "default provider timeout should allow reasoning models enough time");
+  assert.strictEqual(providerTimeoutMs({ env: { GRAPHWAR_REQUEST_TIMEOUT_MS: "300000" } }), 300_000);
+}
+
+async function testExecuteProviderDecisionReturnsReasoningTrace() {
+  const openrouter = getProvider("openrouter");
+  const state = Sim.createInitialState({ seed: 7351 });
+  const rulesPayload = Contract.buildRulesPayload(state, "A1", "");
+  const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
+  assert.ok(candidates.length > 0, "test needs at least one legal shot candidate");
+  const fetchMock = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [
+        {
+          message: {
+            reasoning: "I compare the legal function candidates before selecting the first shot.",
+            reasoning_details: [{ type: "reasoning.text", text: "Detailed model thought trace." }],
+            content: JSON.stringify({
+              candidateId: candidates[0].candidateId,
+              publicReason: "The first candidate is legal."
+            })
+          }
+        }
+      ]
+    })
+  });
+
+  const result = await executeProviderDecision(
+    openrouter,
+    {
+      apiKey: "sk-redacted",
+      command: "",
+      candidates,
+      stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
+      rulesPayload,
+      model: "google/gemini-3.5-flash",
+      reasoning: { enabled: true, effort: "medium", exclude: false }
+    },
+    { env: {}, fetch: fetchMock }
+  );
+
+  assert.strictEqual(result.decision.action, "shot");
+  assert.ok(result.reasoningText.includes("compare the legal function candidates"), "reasoning text should be preserved for benchmark traces");
+  assert.deepStrictEqual(result.reasoningDetails, [{ type: "reasoning.text", text: "Detailed model thought trace." }]);
+  assert.ok(result.rawText.includes(candidates[0].candidateId), "raw JSON model output should be preserved separately");
+}
+
+async function testExecuteProviderDecisionAttachesFailedRawOutput() {
+  const openrouter = getProvider("openrouter");
+  const state = Sim.createInitialState({ seed: 7351 });
+  const rulesPayload = Contract.buildRulesPayload(state, "A1", "");
+  const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
+  const fetchMock = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [
+        {
+          message: {
+            reasoning: "I thought about the legal candidates but failed the response contract.",
+            content: "I would shoot through the top lane, but here is not JSON."
+          }
+        }
+      ]
+    })
+  });
+
+  await assert.rejects(
+    async () =>
+      executeProviderDecision(
+        openrouter,
+        {
+          apiKey: "sk-redacted",
+          command: "",
+          candidates,
+          stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
+          rulesPayload,
+          model: "anthropic/claude-opus-4.8",
+          reasoning: { enabled: true, effort: "medium", exclude: false }
+        },
+        { env: {}, fetch: fetchMock }
+      ),
+    (err) => {
+      assert.strictEqual(err.message, "invalid_provider_json");
+      assert.ok(err.rawText.includes("not JSON"), "failed raw output should be attached for benchmark traces");
+      assert.ok(err.reasoningText.includes("failed the response contract"), "failed reasoning should be attached for benchmark traces");
+      return true;
+    }
+  );
+}
+
+async function testExecuteProviderDecisionAttachesHttpErrorBody() {
+  const openrouter = getProvider("openrouter");
+  const state = Sim.createInitialState({ seed: 7351 });
+  const rulesPayload = Contract.buildRulesPayload(state, "A1", "");
+  const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
+  const fetchMock = async () => ({
+    ok: false,
+    status: 400,
+    text: async () => JSON.stringify({ error: { message: "response_format json_schema is not supported with this route" } })
+  });
+
+  await assert.rejects(
+    async () =>
+      executeProviderDecision(
+        openrouter,
+        {
+          apiKey: "sk-redacted",
+          command: "",
+          candidates,
+          stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
+          rulesPayload,
+          model: "openai/gpt-5.5",
+          reasoning: { enabled: true, effort: "medium", exclude: false },
+          strictDecisionSchema: true
+        },
+        { env: {}, fetch: fetchMock }
+      ),
+    (err) => {
+      assert.strictEqual(err.message, "provider_http_error");
+      assert.strictEqual(err.status, 400);
+      assert.ok(err.body.includes("json_schema"), "HTTP error body should be attached for benchmark diagnostics");
+      return true;
+    }
+  );
+}
+
 (async () => {
   testProviderCatalogRedactsKeys();
   testFallbackCatalogUsesCurrentMainstreamModels();
@@ -543,10 +726,16 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
   testNormalizeDecision();
   testDeepSeekUsesCurrentJsonModeDefaults();
   testOpenRouterUsesFreeJsonModeDefaults();
+  testOpenRouterCanEnableReasoningForBenchmark();
+  testOpenRouterBenchmarkCanRequireStrictDecisionJson();
   testMiMoUsesApiKeyHeaderForOpenAICompatibleChat();
   testAnthropicUsesSameBareRulesPayload();
   testRealDeepSeekSmokeScriptIsDiscoverable();
   await testProviderRequestTimeoutUsesEnvLimit();
+  testProviderRequestTimeoutDefaultsToThinkingBudget();
+  await testExecuteProviderDecisionReturnsReasoningTrace();
+  await testExecuteProviderDecisionAttachesFailedRawOutput();
+  await testExecuteProviderDecisionAttachesHttpErrorBody();
   console.log("provider-catalog tests passed");
 })().catch((err) => {
   console.error(err);

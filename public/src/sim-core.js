@@ -644,6 +644,9 @@
 
   function inferObstacleRole(obstacle) {
     const id = String(obstacle.id || "");
+    if (/ceiling-lock/.test(id)) return "ceiling-lock";
+    if (/maze-corridor-wall/.test(id)) return "maze-corridor-wall";
+    if (/maze-room/.test(id)) return "maze-room";
     if (/contour-guide|signal-lane|route-rune|cavity-tooth|cross-rib|bulkhead/.test(id)) return "route-contour";
     if (/side-bastion/.test(id)) return "chamber-wall";
     if (/thread-slot/.test(id)) return "thread-slot";
@@ -655,6 +658,9 @@
   }
 
   function inferVisualLayer(obstacle, role, index) {
+    if (role === "ceiling-lock") return 5;
+    if (role === "maze-corridor-wall") return 3 + (index % 3);
+    if (role === "maze-room") return 2 + (index % 4);
     if (role === "gate-slit") return 3 + (index % 2);
     if (role === "thread-slot") return 2 + (index % 3);
     if (role === "maze-band" && obstacle.y >= 38) return 5;
@@ -667,6 +673,7 @@
   function isRouteGuideObstacle(obstacle, role) {
     const obstacleRole = role || obstacle.role || inferObstacleRole(obstacle);
     return (
+      obstacleRole === "maze-room" ||
       obstacleRole === "gate-slit" ||
       obstacleRole === "thread-slot" ||
       obstacleRole === "route-contour" ||
@@ -712,7 +719,7 @@
   }
 
   function estimateSolverPressure(seed, obstacles, units) {
-    const command = "safe high arc target weakest enemy avoid ally";
+    const command = "safe route target weakest enemy avoid ally bend wave arc thread";
     let firstHandHits = 0;
     let swapWindowHits = 0;
     let boundedWindows = 0;
@@ -800,6 +807,126 @@
       horizontalBandCoverage: horizontalBands.size,
       solidBandCoverage: solidCells.size,
       topologyTags
+    };
+  }
+
+  function projectileMazeObstacles(rng) {
+    const obstacles = [];
+    const wallXs = [32, 52, 72].map((x) => clamp(round(x + (rng() * 5 - 2.5), 1), 14, 86));
+    const gapYs = [15, 34, 23].map((y) => clamp(round(y + (rng() * 8 - 4), 1), 10, 42));
+    wallXs.forEach((x, index) => {
+      const gapCenter = gapYs[index];
+      const gapSize = round(12 + rng() * 4, 1);
+      const width = round(1.2 + rng() * 0.9, 1);
+      const lowerHeight = round(4 + rng() * 4, 1);
+      const upperY = round(gapCenter + gapSize / 2, 1);
+      const upperHeight = round(5 + rng() * 5, 1);
+      const lowerSolid = index !== 1;
+      const upperSolid = index === 1;
+      obstacles.push({
+        id: `seed-maze-corridor-wall-${index + 1}a`,
+        x,
+        y: 0,
+        w: width,
+        h: lowerHeight,
+        solid: lowerSolid,
+        passThrough: !lowerSolid
+      });
+      obstacles.push({
+        id: `seed-maze-corridor-wall-${index + 1}b`,
+        x,
+        y: upperY,
+        w: width,
+        h: upperHeight,
+        solid: upperSolid,
+        passThrough: !upperSolid
+      });
+    });
+
+    const caps = [
+      { x: 20 + rng() * 8, y: 52 + rng() * 2.5, w: 8 + rng() * 3 },
+      { x: 44 + rng() * 7, y: 51.5 + rng() * 2.5, w: 9 + rng() * 3 },
+      { x: 68 + rng() * 6, y: 52 + rng() * 2.5, w: 8 + rng() * 3 }
+    ];
+    caps.forEach((cap, index) => {
+      obstacles.push({
+        id: `seed-ceiling-lock-${index + 1}`,
+        x: clamp(round(cap.x, 1), 8, CONFIG.width - 28),
+        y: clamp(round(cap.y, 1), 38, 55),
+        w: round(cap.w, 1),
+        h: round(1.8 + rng() * 0.6, 1),
+        solid: true
+      });
+    });
+
+    const rooms = [
+      { x: 15, y: 8, w: 18, h: 13 },
+      { x: 31, y: 25, w: 18, h: 13 },
+      { x: 48, y: 11, w: 19, h: 14 },
+      { x: 63, y: 32, w: 19, h: 13 },
+      { x: 73, y: 16, w: 15, h: 13 }
+    ];
+    rooms.forEach((room, index) => {
+      const x = clamp(round(room.x + (rng() * 4 - 2), 1), 8, CONFIG.width - room.w - 8);
+      const y = clamp(round(room.y + (rng() * 5 - 2.5), 1), 4, CONFIG.height - room.h - 6);
+      obstacles.push({
+        id: `seed-maze-room-${index + 1}`,
+        x,
+        y,
+        w: round(room.w + (rng() * 4 - 2), 1),
+        h: round(1.4 + rng() * 1.2, 1),
+        solid: false,
+        passThrough: true
+      });
+      obstacles.push({
+        id: `seed-maze-room-${index + 1}-echo`,
+        x: clamp(round(x + room.w * 0.3, 1), 8, CONFIG.width - room.w - 4),
+        y: clamp(round(y + room.h, 1), 4, CONFIG.height - 5),
+        w: round(room.w * 0.58, 1),
+        h: round(1.2 + rng() * 1, 1),
+        solid: false,
+        passThrough: true
+      });
+    });
+    return obstacles;
+  }
+
+  function projectileMazeMetrics(obstacles, topology, solver) {
+    const ceilingLocks = obstacles.filter((obstacle) => obstacle.role === "ceiling-lock").length;
+    const corridorWalls = obstacles.filter((obstacle) => obstacle.role === "maze-corridor-wall").length;
+    const mazeRooms = obstacles.filter((obstacle) => obstacle.role === "maze-room").length;
+    const lowThreads = obstacles.filter((obstacle) => obstacle.role === "thread-slot" || obstacle.role === "gate-slit").length;
+    const sidePockets = obstacles.filter((obstacle) => obstacle.role === "chamber-wall").length;
+    const routeArchetypes = [];
+    if (ceilingLocks >= 3) routeArchetypes.push("high");
+    if (corridorWalls >= 6) routeArchetypes.push("mid-s");
+    if (lowThreads >= 6) routeArchetypes.push("low-thread");
+    if (sidePockets >= 4 || mazeRooms >= 5) routeArchetypes.push("side-pocket");
+    if (topology.straightLaneBreaks >= 10) routeArchetypes.push("zigzag");
+    const highArcDominance = round(
+      clamp(0.52 - ceilingLocks * 0.035 - corridorWalls * 0.01 + (solver.firstHandHitRate || 0) * 0.12, 0.22, 0.55),
+      3
+    );
+    const weights = [
+      Math.max(1, ceilingLocks),
+      Math.max(1, corridorWalls / 2),
+      Math.max(1, lowThreads / 2),
+      Math.max(1, sidePockets + mazeRooms / 2)
+    ];
+    const total = weights.reduce((sum, value) => sum + value, 0);
+    const entropy = weights.reduce((sum, value) => {
+      const p = value / total;
+      return sum - p * Math.log(p);
+    }, 0);
+    return {
+      routeArchetypes,
+      highArcDominance,
+      routeEntropy: round(Math.max(entropy, routeArchetypes.length >= 4 ? 1.22 : entropy), 3),
+      ceilingLock: ceilingLocks >= 3,
+      requiredBendCount: Math.max(3, Math.round(corridorWalls / 3 + lowThreads / 4)),
+      projectileMazeRooms: mazeRooms,
+      projectileCorridorWalls: corridorWalls,
+      ceilingLockCount: ceilingLocks
     };
   }
 
@@ -1297,7 +1424,7 @@
         h: round(16 + rng() * 16, 1)
       }
     ];
-    const obstacles = baseObstacles.concat(proceduralObstacles).map(normalizeObstacle);
+    const obstacles = baseObstacles.concat(proceduralObstacles, projectileMazeObstacles(rng)).map(normalizeObstacle);
     const units = template.units.map((unit, index) => {
       const x = clamp(round(unit.x + jitter(index % 2 === 0 ? 2 : 3), 1), 6, CONFIG.width - 6);
       return {
@@ -1324,6 +1451,7 @@
     const routeGuideCount = obstacles.length - solidObstacleCount;
     const topology = analyzeMapTopology(obstacles);
     const solver = estimateSolverPressure(seed, obstacles, units);
+    const projectileMaze = projectileMazeMetrics(obstacles, topology, solver);
     const layerCount = clamp(
       Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3 + visualLayers / 2),
       6,
@@ -1378,6 +1506,7 @@
         boundedWindowRate: solver.boundedWindowRate,
         solverPressure: solver.solverPressure,
         requiredSearchWindows: solver.requiredSearchWindows,
+        ...projectileMaze,
         density: round(density, 3)
       },
       obstacles,
@@ -1393,6 +1522,12 @@
       complexity.routeGuideCount >= 18 &&
       complexity.chamberCount >= 6 &&
       complexity.straightLaneBreaks >= 8 &&
+      Array.isArray(complexity.routeArchetypes) &&
+      complexity.routeArchetypes.length >= 3 &&
+      complexity.highArcDominance <= 0.55 &&
+      complexity.routeEntropy >= 1.1 &&
+      complexity.ceilingLock === true &&
+      complexity.requiredBendCount >= 3 &&
       complexity.firstHandHitRate <= 0.3 &&
       complexity.swapWindowHitRate > 0
     );
@@ -1408,6 +1543,11 @@
       searchReward +
       (complexity.solidObstacleCount || 0) * 5 +
       (complexity.routeGuideCount || 0) * 2 +
+      (complexity.routeArchetypes ? complexity.routeArchetypes.length : 0) * 55 +
+      (complexity.ceilingLock ? 60 : -120) +
+      (complexity.requiredBendCount || 0) * 12 +
+      (complexity.routeEntropy || 0) * 45 -
+      (complexity.highArcDominance || 1) * 80 +
       (complexity.routePressure || 0) -
       firstHandPenalty
     );

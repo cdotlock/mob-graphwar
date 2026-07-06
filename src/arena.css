@@ -1675,13 +1675,15 @@ label {
 }
 
 .map-topology-scanner {
-  grid-template-columns: minmax(220px, 1.25fr) minmax(0, 1.6fr) minmax(220px, 0.9fr) minmax(180px, 0.8fr);
+  grid-template-columns: minmax(220px, 1.2fr) minmax(0, 1.35fr) minmax(220px, 1fr);
   align-items: stretch;
 }
 
 .topology-prime,
 .topology-lane-grid,
 .topology-pressure-strip,
+.route-diversity-strip,
+.route-archetype-strip,
 .topology-tags,
 .rules-contract-pill {
   min-width: 0;
@@ -1703,6 +1705,8 @@ label {
 .topology-prime small,
 .topology-lane-grid span,
 .topology-pressure-strip span,
+.route-diversity-strip span,
+.route-archetype-strip span,
 .topology-tags span,
 .rules-contract-pill span,
 .rules-contract-pill small {
@@ -1736,7 +1740,8 @@ label {
 }
 
 .topology-lane-grid span,
-.topology-pressure-strip span {
+.topology-pressure-strip span,
+.route-diversity-strip span {
   display: grid;
   gap: 3px;
   place-items: center;
@@ -1746,7 +1751,8 @@ label {
 }
 
 .topology-lane-grid b,
-.topology-pressure-strip b {
+.topology-pressure-strip b,
+.route-diversity-strip b {
   display: block;
   color: var(--acid);
   font-family: "Russo One", sans-serif;
@@ -1755,10 +1761,39 @@ label {
 
 .topology-pressure-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   background: rgba(217, 255, 71, 0.12);
+}
+
+.route-diversity-strip {
+  grid-column: 1 / span 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: rgba(255, 94, 104, 0.12);
+}
+
+.route-diversity-strip b {
+  color: var(--gold);
+}
+
+.route-archetype-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: center;
+  padding: 8px;
+}
+
+.route-archetype-strip span {
+  border: 1px solid rgba(88, 212, 255, 0.22);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--cyan);
+  background: rgba(88, 212, 255, 0.08);
 }
 
 .topology-tags {
@@ -2533,6 +2568,22 @@ label {
 }
 
 .map-intel-strip .route-pressure {
+  color: var(--gold);
+}
+
+.map-intel-strip .route-archetypes {
+  color: var(--acid);
+}
+
+.map-intel-strip .high-arc-dominance {
+  color: var(--red);
+}
+
+.map-intel-strip .ceiling-lock {
+  color: var(--cyan);
+}
+
+.map-intel-strip .route-entropy {
   color: var(--gold);
 }
 
@@ -3804,7 +3855,9 @@ code {
   }
 
   .topology-lane-grid,
-  .topology-pressure-strip {
+  .topology-pressure-strip,
+  .route-diversity-strip {
+    grid-column: auto;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -3962,7 +4015,8 @@ code {
     .broadcast-shot-card,
   .broadcast-lanes,
   .topology-lane-grid,
-  .topology-pressure-strip {
+  .topology-pressure-strip,
+  .route-diversity-strip {
     grid-template-columns: 1fr;
   }
 

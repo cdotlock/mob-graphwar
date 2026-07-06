@@ -22,12 +22,13 @@ const Sim = window.GraphwarSim;
 
 const DEFAULT_ROSTER = [
   { unitId: "A1", team: "A", control: "human", displayName: "You", provider: "local" },
-  { unitId: "A2", team: "A", control: "ai", displayName: "Auto Ally", provider: "local" },
-  { unitId: "B1", team: "B", control: "ai", displayName: "AI Rival 1", provider: "local" },
-  { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "local" }
+  { unitId: "A2", team: "A", control: "ai", displayName: "Auto Ally", provider: "openrouter", model: "openrouter/free" },
+  { unitId: "B1", team: "B", control: "ai", displayName: "AI Rival 1", provider: "openrouter", model: "openrouter/free" },
+  { unitId: "B2", team: "B", control: "ai", displayName: "AI Rival 2", provider: "openrouter", model: "openrouter/free" }
 ];
 
 const MODEL_PROVIDERS = [
+  { id: "openrouter", label: "OpenRouter", model: "openrouter/free" },
   { id: "deepseek", label: "DeepSeek", model: "deepseek-v4-flash" },
   { id: "openai", label: "OpenAI", model: "gpt-4.1-mini" },
   { id: "minimax", label: "MiniMax", model: "MiniMax-M1" },
@@ -286,8 +287,8 @@ function App() {
     handle: "clock",
     displayName: "Clock",
     password: "",
-    provider: "deepseek",
-    model: "deepseek-v4-flash",
+    provider: "openrouter",
+    model: "openrouter/free",
     apiKey: "",
     standingOrder: ""
   });
@@ -548,6 +549,7 @@ function App() {
   async function runLeague() {
     setLeagueBusy(true);
     try {
+      const userProvider = login.apiKey.trim() || login.provider === "openrouter" ? login.provider : "local";
       const response = await fetch("/api/simulations/league", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -556,22 +558,24 @@ function App() {
           contestants: [
             {
               id: "your-model",
-              label: login.apiKey.trim() ? `${login.provider} ${login.model}` : "Your Local Baseline",
-              provider: login.apiKey.trim() ? login.provider : "local",
+              label: userProvider === "local" ? "Your Local Baseline" : `${login.provider} ${login.model}`,
+              provider: userProvider,
               model: login.model,
               apiKey: login.apiKey,
               command: login.standingOrder || "safe high arc target weakest enemy avoid ally"
             },
             {
-              id: "pressure-local",
-              label: "Pressure Local",
-              provider: "local",
+              id: "router-pressure",
+              label: "OpenRouter Free Pressure",
+              provider: "openrouter",
+              model: "openrouter/free",
               command: "bend through center target weakest enemy"
             },
             {
-              id: "control-local",
-              label: "Control Local",
-              provider: "local",
+              id: "router-control",
+              label: "OpenRouter Free Control",
+              provider: "openrouter",
+              model: "openrouter/free",
               command: "thread high shelf avoid ally"
             }
           ]
@@ -1155,6 +1159,7 @@ function LoginCard({ login, setLogin, profile, sessionToken, busy, onSubmit, onR
       ) : null}
       <label>Password<input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} placeholder="8+ characters" /></label>
       <label>Provider<select value={login.provider} onChange={(e) => setLogin({ ...login, provider: e.target.value })}>
+        <option value="openrouter">OpenRouter</option>
         <option value="deepseek">DeepSeek</option>
         <option value="openai">OpenAI</option>
         <option value="minimax">MiniMax</option>
@@ -1538,6 +1543,10 @@ function ArenaDirectorHud({ state, match, profile, activeTeam, activeUnitId, lat
 function MapTopologyScanner({ state }) {
   const complexity = state.mapMeta?.complexity || {};
   const topologyTags = Array.isArray(complexity.topologyTags) ? complexity.topologyTags : [];
+  const routeArchetypes = Array.isArray(complexity.routeArchetypes) ? complexity.routeArchetypes : [];
+  const highArcDominance = Math.round((complexity.highArcDominance || 0) * 100);
+  const routeEntropy = Number.isFinite(Number(complexity.routeEntropy)) ? Number(complexity.routeEntropy).toFixed(2) : "0.00";
+  const ceilingLock = complexity.ceilingLock ? "locked sky" : "open sky";
   const coverage = [
     { label: "chambers", value: complexity.chamberCount || 0 },
     { label: "lane breaks", value: complexity.straightLaneBreaks || 0 },
@@ -1564,6 +1573,16 @@ function MapTopologyScanner({ state }) {
         <span><b>{complexity.routePressure || 0}</b> route pressure</span>
         <span><b>{firstHand}%</b> first hand</span>
         <span><b>{swapWindow}%</b> swap window</span>
+        <span><b>{highArcDominance}%</b> high arc</span>
+      </div>
+      <div className="route-diversity-strip">
+        <span><b>{routeArchetypes.length}</b> routeArchetypes</span>
+        <span><b>{routeEntropy}</b> routeEntropy</span>
+        <span><b>{ceilingLock}</b> ceilingLock</span>
+        <span><b>{complexity.requiredBendCount || 0}</b> bends</span>
+      </div>
+      <div className="route-archetype-strip" aria-label="routeArchetypes">
+        {routeArchetypes.length ? routeArchetypes.map((route) => <span key={route}>{route}</span>) : <span>route archetypes pending</span>}
       </div>
       <div className="topology-tags" aria-label="topologyTags">
         {topologyTags.length ? topologyTags.map((tag) => <span key={tag}>{tag}</span>) : <span>topology pending</span>}
@@ -1985,12 +2004,19 @@ function renderObstacleFacets(obstacle, index) {
 
 function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, playback, lastDecision }) {
   const complexity = state.mapMeta?.complexity || {};
+  const routeArchetypes = Array.isArray(complexity.routeArchetypes) ? complexity.routeArchetypes : [];
+  const highArcDominance = Math.round((complexity.highArcDominance || 0) * 100);
+  const routeEntropy = Number.isFinite(Number(complexity.routeEntropy)) ? Number(complexity.routeEntropy).toFixed(2) : "0.00";
   const latestPath = state.paths[state.paths.length - 1];
   const impactPoint = latestEvent?.collisionPoint || latestPath?.collisionPoint || null;
   return (
     <div className="battlefield-frame" data-testid="battlefield-frame">
       <div className="map-intel-strip" data-testid="map-intel-strip">
         <span><b>{state.mapMeta.name}</b> difficulty {state.mapMeta.difficulty}</span>
+        <span className="route-archetypes">{routeArchetypes.length} routes</span>
+        <span className="high-arc-dominance">{highArcDominance}% high</span>
+        <span className="ceiling-lock">{complexity.ceilingLock ? "ceiling lock" : "open sky"}</span>
+        <span className="route-entropy">{routeEntropy} entropy</span>
         <span>{complexity.obstacleCount || 0} blockers</span>
         <span className="solid-blockers">{complexity.solidObstacleCount || 0} solid</span>
         <span className="route-guides">{complexity.routeGuideCount || 0} guides</span>
@@ -2326,7 +2352,7 @@ function LeagueLab({ result, busy, onRun }) {
 function SimulationApiPanel() {
   const curl = `curl -X POST /api/simulations/league \\
   -H "content-type: application/json" \\
-  -d '{"rounds":4,"contestants":[{"id":"model-a","provider":"local","command":"safe high arc"},{"id":"model-b","provider":"local","command":"bend center"}]}'`;
+  -d '{"rounds":4,"contestants":[{"id":"router-a","provider":"openrouter","model":"openrouter/free","command":"thread the maze"},{"id":"router-b","provider":"openrouter","model":"openrouter/free","command":"bend center"}]}'`;
   return (
     <div className="simulation-api-panel" data-testid="simulation-api-panel">
       <div className="panel-title"><RadioTower size={18} /> Simulation API</div>

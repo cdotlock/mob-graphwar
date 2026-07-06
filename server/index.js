@@ -18,6 +18,13 @@ const matchmakingQueue = [];
 let nextPlayerId = 1;
 let nextMatchId = 1;
 let loadedStoreFile = null;
+const DEFAULT_AI_PROVIDER = "openrouter";
+const DEFAULT_AI_MODEL = "openrouter/free";
+const DEFAULT_AI_ORDERS = {
+  A2: "protect A1; bend through mid maze; swap weak hands; avoid ally fire",
+  B1: "pressure weakest enemy; mix low thread and side pocket; swap no-lane hands",
+  B2: "hold patient route; use ceiling locks to punish arcs; swap for precision"
+};
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -430,7 +437,10 @@ function createHumanSeat(player, preferredProvider, unitId, team, standingOrder)
 }
 
 function createAiSeat(unitId, team, displayName) {
-  return attachStandingOrder({ unitId, team, control: "ai", displayName, provider: "local", model: "local-baseline" }, "");
+  return attachStandingOrder(
+    { unitId, team, control: "ai", displayName, provider: DEFAULT_AI_PROVIDER, model: DEFAULT_AI_MODEL },
+    DEFAULT_AI_ORDERS[unitId] || "play the maze; swap weak hands; avoid ally fire"
+  );
 }
 
 function createRankedMatchFromRoster(roster, options) {
@@ -653,17 +663,35 @@ function localAutoProviderLabel(team) {
   return team === "A" ? "Auto Resolve A" : "Auto Resolve B";
 }
 
+function providerEnvKey(provider, env) {
+  const source = env || process.env;
+  if (!provider) return "";
+  return source[provider.keyEnv] || (provider.alternateKeyEnv ? source[provider.alternateKeyEnv] : "") || "";
+}
+
 function configuredSeatProvider(seat, env) {
-  if (!seat || seat.control !== "human" || !seat.playerId) return null;
-  const player = players.get(seat.playerId);
-  if (!player) return null;
-  const providerId = String(seat.provider || preferredPlayerProvider(player)).slice(0, 40);
+  if (!seat) return null;
+  const source = env || process.env;
+  const player = seat.control === "human" && seat.playerId ? players.get(seat.playerId) : null;
+  const providerId = String(seat.provider || (player ? preferredPlayerProvider(player) : DEFAULT_AI_PROVIDER)).slice(0, 40);
   const provider = getProvider(providerId);
   const allowedProviders = listProviders(env).map((item) => item.id);
-  const providerConfig = player.providers && player.providers[providerId] ? player.providers[providerId] : {};
+  const providerConfig = player && player.providers && player.providers[providerId] ? player.providers[providerId] : {};
   const apiKey = typeof providerConfig.apiKey === "string" ? providerConfig.apiKey.trim() : "";
-  if (!provider || provider.id === "local" || !allowedProviders.includes(provider.id) || !apiKey) return null;
-  const model = providerConfig.model || seat.model || provider.defaultModel;
+  const envKey = providerEnvKey(provider, source);
+  if (!provider || provider.id === "local" || !allowedProviders.includes(provider.id)) return null;
+  if (seat.control === "ai") {
+    if (!envKey) return null;
+    return {
+      player: null,
+      provider,
+      providerConfig: {},
+      apiKey: "",
+      model: seat.model || source[provider.modelEnv] || provider.defaultModel
+    };
+  }
+  if (!player || !apiKey) return null;
+  const model = providerConfig.model || seat.model || source[provider.modelEnv] || provider.defaultModel;
   return { player, provider, providerConfig, apiKey, model };
 }
 
@@ -681,7 +709,7 @@ async function autoResolveDecisionForTurn(match, turn, options) {
     };
   }
 
-  const providerLabel = `${turn.seat.displayName || configured.player.displayName} / ${configured.model}`;
+  const providerLabel = `${turn.seat.displayName || configured.player?.displayName || configured.provider.label} / ${configured.model}`;
   try {
     const result = await executeProviderDecision(
       configured.provider,
@@ -936,8 +964,20 @@ function normalizeContestants(rawContestants) {
   const source = Array.isArray(rawContestants) && rawContestants.length
     ? rawContestants
     : [
-        { id: "local-arc", label: "Local Arc", provider: "local", command: "safe high arc target weakest enemy" },
-        { id: "local-bend", label: "Local Bend", provider: "local", command: "bend through center avoid ally" }
+        {
+          id: "router-thread",
+          label: "OpenRouter Thread",
+          provider: DEFAULT_AI_PROVIDER,
+          model: DEFAULT_AI_MODEL,
+          command: "thread the maze; swap no-lane hands; avoid ally fire"
+        },
+        {
+          id: "router-pressure",
+          label: "OpenRouter Pressure",
+          provider: DEFAULT_AI_PROVIDER,
+          model: DEFAULT_AI_MODEL,
+          command: "pressure weakest enemy; bend low when ceiling locks high arcs"
+        }
       ];
   return source.slice(0, 8).map((item, index) => ({
     id: String(item.id || `model-${index + 1}`).slice(0, 48),
@@ -1069,7 +1109,8 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
   const rulesPayload = Contract.buildRulesPayload(state, unit ? unit.id : team, command);
   const provider = getProvider(contestant.provider);
   const allowedProviders = listProviders(env).map((item) => item.id);
-  if (!provider || contestant.provider === "local" || !allowedProviders.includes(provider.id) || !contestant.apiKey.trim()) {
+  const apiKey = contestant.apiKey.trim();
+  if (!provider || contestant.provider === "local" || !allowedProviders.includes(provider.id) || (!apiKey && !providerEnvKey(provider, env))) {
     return {
       command,
       providerLabel: `${contestant.label} / local`,
@@ -1079,7 +1120,7 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
   const result = await executeProviderDecision(
     provider,
     {
-      apiKey: contestant.apiKey,
+      apiKey,
       command,
       candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
       stateSummary: summarizeState(state),
@@ -1188,7 +1229,7 @@ function createServer(options) {
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/providers") {
-        sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || "deepseek", providers: listProviders(env) });
+        sendJson(res, 200, { defaultProvider: env.GRAPHWAR_DEFAULT_PROVIDER || DEFAULT_AI_PROVIDER, providers: listProviders(env) });
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/session/me") {

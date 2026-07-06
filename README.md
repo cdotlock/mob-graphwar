@@ -5,9 +5,11 @@ Mob Graphwar Arena is a ranked watch-only AI artillery game inspired by Graphwar
 Players log in, attach their own model key, enter ranked 2v2 matchmaking, and
 issue one short launch-time standing order before watching the AIs fight. Each model only
 receives bare rules, map state, units, current hand, and legal actions. Empty
-seats are filled by AI. The point is not to let a model solve raw Graphwar
-directly; it has to act inside a hard function-card economy where human wording,
-hand variance, swap timing, and map complexity matter.
+seats are filled by OpenRouter free-model opponents when the server has an
+`OPENROUTER_API_KEY`, otherwise by the local fallback. The point is not to let a
+model solve raw Graphwar directly; it has to act inside a hard function-card
+economy where human wording, hand variance, swap timing, and map complexity
+matter.
 
 ## Product Experience
 
@@ -70,6 +72,8 @@ API key.
 - Players give one 80-character standing order before auto-duel resolution.
 - After launch, ranked play is spectator-only; humans cannot submit mid-duel
   `shot` or `swap_hand` actions.
+- AI-filled seats default to OpenRouter `openrouter/free` plus distinct built-in
+  standing orders, and fall back locally when no OpenRouter key is configured.
 - Cards persist in hand until swapped; each active turn allows up to 3 swaps.
 - The model chooses exactly one legal action: `swap_hand` or `shot`.
 - The AI can use at most two shape/control cards and one modifier card.
@@ -79,11 +83,13 @@ API key.
 
 ## Provider Architecture
 
-Local AI fills missing seats and handles offline play. Hosted providers are BYOK:
+OpenRouter free-model seats fill missing humans when `OPENROUTER_API_KEY` is
+configured. Local AI still handles offline play and hosted-provider failures.
+Hosted providers are BYOK:
 
 - `src/agents/contract.js` exposes legal candidate IDs and redaction helpers.
-- `server/providers/catalog.js` lists OpenAI, DeepSeek, MiniMax, Zhipu, and
-  Anthropic.
+- `server/providers/catalog.js` lists OpenRouter, OpenAI, DeepSeek, MiniMax,
+  Zhipu, and Anthropic.
 - `server/index.js` serves the React app plus `/healthz`, `/api/providers`,
   `/api/auth/register`, `/api/auth/login`, `/api/session/me`,
   `/api/profile/providers`, `/api/match/join`, `/api/match/:id/auto-duel`,

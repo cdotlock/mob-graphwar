@@ -54,9 +54,13 @@ JSON, validates the selected legal action, then returns the verified action to
 the auto-duel resolver. The browser only watches the resulting frame stream and
 rank settlement.
 
-OpenAI-compatible providers use JSON mode. DeepSeek defaults to
-`deepseek-v4-flash`, caps output tokens for the candidate-selection response,
-and disables thinking mode for this narrow JSON selection task.
+OpenAI-compatible providers use JSON mode. OpenRouter defaults to
+`openrouter/free` and is the default model for AI-filled ally/rival seats when
+`OPENROUTER_API_KEY` is available on the server. If that key is missing or a
+provider call fails, those seats fall back to the local baseline so demos still
+resolve offline. DeepSeek defaults to `deepseek-v4-flash`, caps output tokens
+for the candidate-selection response, and disables thinking mode for this
+narrow JSON selection task.
 
 The UI lets the player choose provider and model during session creation. A
 user-supplied key is sent only with the provider request and is never returned
@@ -69,9 +73,13 @@ The server listens on `HOST` and `PORT`. Railway deployments should use
 
 ## Providers
 
-The catalog includes OpenAI, DeepSeek, MiniMax, Zhipu, and Anthropic. OpenAI,
-DeepSeek, MiniMax, and Zhipu use the OpenAI-compatible adapter shape.
-Anthropic uses the Messages adapter shape.
+The catalog includes OpenRouter, OpenAI, DeepSeek, MiniMax, Zhipu, and
+Anthropic. OpenRouter, OpenAI, DeepSeek, MiniMax, and Zhipu use the
+OpenAI-compatible adapter shape. Anthropic uses the Messages adapter shape.
+
+AI-filled seats use short default standing orders so simulated opponents have
+different tendencies: ally protection, weakest-target pressure, side-pocket
+threading, and patient ceiling-lock play.
 
 ## Real Provider Smoke
 

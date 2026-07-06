@@ -39,11 +39,16 @@ async function testHealthAndProviders() {
   assert.strictEqual(health.status, 200);
   assert.strictEqual(health.json.ok, true);
 
-  const providers = await request(createServer({ env: { OPENAI_API_KEY: "sk-test" } }), "/api/providers");
+  const providers = await request(createServer({ env: { OPENAI_API_KEY: "sk-test", OPENROUTER_API_KEY: "sk-router" } }), "/api/providers");
   assert.strictEqual(providers.status, 200);
   assert.ok(providers.json.providers.some((provider) => provider.id === "openai" && provider.available));
-  assert.strictEqual(providers.json.defaultProvider, "deepseek");
+  assert.ok(
+    providers.json.providers.some((provider) => provider.id === "openrouter" && provider.available && provider.model === "openrouter/free"),
+    "OpenRouter free should be exposed as a configured provider"
+  );
+  assert.strictEqual(providers.json.defaultProvider, "openrouter");
   assert.ok(!JSON.stringify(providers.json).includes("sk-test"), "response should redact keys");
+  assert.ok(!JSON.stringify(providers.json).includes("sk-router"), "response should redact OpenRouter keys");
 }
 
 async function testStaticServerOnlyServesMainEntrypoint() {
@@ -107,6 +112,33 @@ async function testLoginMatchmakingAndRankLoop() {
   assert.strictEqual(result.status, 200);
   assert.ok(result.json.rankDelta !== 0, "resolved ranked match should award or remove rank points");
   assert.ok(Number.isFinite(result.json.player.rank.rating), "resolved ranked match should return updated rank");
+}
+
+async function testAiFallbackSeatsDefaultToOpenRouterFreePrompts() {
+  const session = await request(createServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "OpenRouter Fill",
+      providers: {
+        openrouter: { apiKey: "", model: "openrouter/free" }
+      }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const match = await request(createServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "openrouter", allowAiFill: true })
+  });
+  assert.strictEqual(match.status, 200);
+  const aiSeats = match.json.match.roster.filter((seat) => seat.control === "ai");
+  assert.strictEqual(aiSeats.length, 3);
+  assert.ok(aiSeats.every((seat) => seat.provider === "openrouter"), "AI-filled seats should default to OpenRouter");
+  assert.ok(aiSeats.every((seat) => seat.model === "openrouter/free"), "AI-filled seats should default to the free model router");
+  assert.ok(aiSeats.every((seat) => seat.standingOrderConfigured), "AI-filled seats should carry default prompts");
+  assert.ok(aiSeats.every((seat) => seat.standingOrderLength > 20), "default AI prompts should be meaningful without being exposed");
 }
 
 function freshCreateServer() {
@@ -845,6 +877,77 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   assert.ok(!autoDuel.text.includes("auto-provider-secret"), "auto duel should not leak stored API keys");
 }
 
+async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
+  const captured = [];
+  const fetchMock = async (url, options) => {
+    const requestBody = JSON.parse(options.body);
+    const prompt = providerRulesPayload(requestBody);
+    const candidates = prompt.legalActions.filter((action) => action.action === "shot");
+    captured.push({ url, options, requestBody, prompt });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(candidates[0]
+                ? {
+                    action: "shot",
+                    candidateId: candidates[0].candidateId,
+                    publicReason: "OpenRouter free opponent picked a listed legal shot."
+                  }
+                : {
+                    action: "swap_hand",
+                    publicReason: "OpenRouter free opponent searched another hand."
+                  })
+            }
+          }
+        ]
+      })
+    };
+  };
+
+  const session = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" } }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Router Opponent",
+      providers: { openrouter: { apiKey: "", model: "openrouter/free" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const joined = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" } }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "openrouter", allowAiFill: true })
+  });
+  assert.strictEqual(joined.status, 200);
+
+  const autoDuel = await request(
+    createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: fetchMock }),
+    `/api/match/${joined.json.match.id}/auto-duel`,
+    {
+      method: "POST",
+      headers: authHeaders(session, { "content-type": "application/json" }),
+      body: JSON.stringify({ command: "support ally, swap if the hand cannot thread the maze" })
+    }
+  );
+
+  assert.strictEqual(autoDuel.status, 200);
+  assert.ok(captured.length > 0, "auto-duel should call OpenRouter for AI-filled seats when an env key exists");
+  assert.ok(captured.every((call) => call.url === "https://openrouter.ai/api/v1/chat/completions"));
+  assert.ok(captured.every((call) => call.options.headers.authorization === "Bearer sk-router-env"));
+  assert.ok(captured.every((call) => call.requestBody.model === "openrouter/free"));
+  assert.ok(captured.some((call) => ["B1", "B2", "A2"].includes(call.prompt.activeUnitId)), "captured prompts should come from AI-filled seats");
+  assert.ok(
+    autoDuel.json.autoBattle.providers.some((provider) => provider.includes("openrouter/free")),
+    "auto duel summary should show OpenRouter free model opponents"
+  );
+  assert.ok(!autoDuel.text.includes("sk-router-env"), "auto duel should not leak OpenRouter env key");
+}
+
 async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
   const result = await request(createServer({ env: {} }), "/api/simulations/league", {
     method: "POST",
@@ -1033,6 +1136,7 @@ async function testProviderShotRequiresKey() {
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
+  await testAiFallbackSeatsDefaultToOpenRouterFreePrompts();
   await testProfileRankAndLeaderboardPersistAcrossRestart();
   await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
   await testSessionTokenProtectsRankedAndProviderRoutes();
@@ -1045,6 +1149,7 @@ async function testProviderShotRequiresKey() {
   await testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel();
   testLocalFallbackSwapPolicyUsesSolverPressure();
   await testAutoDuelUsesConfiguredProviderWithoutLeakingKeys();
+  await testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testProviderShotUsesByokAndValidatesCandidate();
   await testProviderShotUsesCurrentTurnOrder();

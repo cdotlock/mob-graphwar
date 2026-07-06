@@ -2,6 +2,16 @@
 
 const PROVIDERS = [
   {
+    id: "openrouter",
+    label: "OpenRouter",
+    adapter: "openai-compatible",
+    keyEnv: "OPENROUTER_API_KEY",
+    baseUrlEnv: "OPENROUTER_BASE_URL",
+    modelEnv: "OPENROUTER_MODEL",
+    defaultBaseUrl: "https://openrouter.ai/api/v1",
+    defaultModel: "openrouter/free"
+  },
+  {
     id: "openai",
     label: "OpenAI",
     adapter: "openai-compatible",

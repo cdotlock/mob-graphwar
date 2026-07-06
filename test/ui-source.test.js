@@ -199,6 +199,9 @@ function testGameShowsRankedOnboardingAndProviderReadiness() {
   assert.ok(main.includes("ProviderReadinessGrid"), "account setup should expose a named provider readiness grid");
   assert.ok(main.includes('data-testid="provider-readiness-grid"'), "provider grid should be selectable for browser verification");
   assert.ok(main.includes("API key armed"), "provider setup should visibly distinguish keyed models from local fallback");
+  assert.ok(main.includes('id: "openrouter"'), "provider setup should include OpenRouter");
+  assert.ok(main.includes("openrouter/free"), "provider setup should default to OpenRouter's free model router");
+  assert.ok(main.includes('provider: "openrouter"'), "new sessions should prefer OpenRouter for default model play");
   assert.ok(main.includes("Quick AI Fill"), "matchmaking should expose AI fallback when humans are unavailable");
   assert.ok(css.includes(".ranked-flow-panel"), "CSS should style ranked onboarding as game chrome");
   assert.ok(css.includes(".provider-readiness-grid"), "CSS should style provider readiness");
@@ -274,13 +277,20 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes("route-guides"), "battlefield should show pass-through route guide complexity");
   assert.ok(main.includes("solver-pressure"), "battlefield should show solver pressure for spectators");
   assert.ok(main.includes("swap-window"), "battlefield should show retained-hand swap-window solvability");
+  assert.ok(main.includes("route-archetypes"), "battlefield should show projectile route archetype count");
+  assert.ok(main.includes("high-arc-dominance"), "battlefield should show high-arc dominance");
+  assert.ok(main.includes("ceiling-lock"), "battlefield should show ceiling-lock status");
   assert.ok(main.includes("complexity.solverPressure"), "battlefield should read solver pressure from real map metadata");
   assert.ok(main.includes("complexity.swapWindowHitRate"), "battlefield should read swap-window hit rate from real map metadata");
+  assert.ok(main.includes("complexity.highArcDominance"), "battlefield should read high-arc dominance from real map metadata");
   assert.ok(main.includes("impact-burst"), "battlefield should mark the latest shot impact");
   assert.ok(css.includes(".battlefield-frame"), "CSS should frame the battlefield as a game viewport");
   assert.ok(css.includes(".battle-priority-layout"), "CSS should include battle-priority layout rules");
   assert.ok(css.includes(".map-intel-strip"), "CSS should style map difficulty intel");
   assert.ok(css.includes(".route-pressure"), "CSS should style route pressure metadata");
+  assert.ok(css.includes(".route-archetypes"), "CSS should style route archetype metadata");
+  assert.ok(css.includes(".high-arc-dominance"), "CSS should style high-arc dominance metadata");
+  assert.ok(css.includes(".ceiling-lock"), "CSS should style ceiling-lock metadata");
   assert.ok(css.includes(".battlefield-depth"), "CSS should style battlefield depth metadata");
   assert.ok(css.includes(".route-maze-layer"), "CSS should style the route maze overlay layer");
   assert.ok(css.includes(".maze-band"), "CSS should style horizontal maze bands");
@@ -300,6 +310,10 @@ function testCommercialSpectatorPanelsExposeTopologyAndBareRules() {
   assert.ok(main.includes("MapTopologyScanner"), "battle stage should include a named commercial map topology scanner");
   assert.ok(main.includes('data-testid="map-topology-scanner"'), "map topology scanner should be selectable for browser verification");
   assert.ok(main.includes("topologyTags"), "topology scanner should read multi-chamber topology metadata");
+  assert.ok(main.includes("routeArchetypes"), "topology scanner should read projectile route archetypes");
+  assert.ok(main.includes("highArcDominance"), "topology scanner should read high-arc dominance");
+  assert.ok(main.includes("routeEntropy"), "topology scanner should expose route diversity entropy");
+  assert.ok(main.includes("ceilingLock"), "topology scanner should expose ceiling-lock status");
   assert.ok(main.includes("straightLaneBreaks"), "topology scanner should expose direct-lane break pressure");
   assert.ok(main.includes("solidBandCoverage"), "topology scanner should expose distributed solid blocker coverage");
   assert.ok(main.includes("ModelRulesTicker"), "battle stage should include a named model rules ticker");
@@ -310,6 +324,8 @@ function testCommercialSpectatorPanelsExposeTopologyAndBareRules() {
   assert.ok(main.includes("handRetained"), "rules ticker should expose retained-hand state from the model rules packet");
   assert.ok(css.includes(".map-topology-scanner"), "CSS should style the topology scanner as game chrome");
   assert.ok(css.includes(".topology-lane-grid"), "CSS should style topology coverage metrics");
+  assert.ok(css.includes(".route-archetype-strip"), "CSS should style projectile route archetypes");
+  assert.ok(css.includes(".route-diversity-strip"), "CSS should style route diversity metrics");
   assert.ok(css.includes(".model-rules-ticker"), "CSS should style the model rules ticker");
   assert.ok(css.includes(".rules-contract-pill"), "CSS should style bare-rules contract pills");
 }

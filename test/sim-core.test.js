@@ -444,6 +444,31 @@ function testCommercialMapsExposeTopologyNotJustBlockCount() {
   }
 }
 
+function testProjectileMazeMapsDoNotCollapseToHighArcOnly() {
+  for (let seed = 1; seed <= 24; seed += 1) {
+    const state = Sim.createInitialState({ seed });
+    const complexity = state.mapMeta.complexity;
+    const roles = new Set(state.obstacles.map((obstacle) => obstacle.role).filter(Boolean));
+    assert.ok(Array.isArray(complexity.routeArchetypes), `seed ${seed} should expose projectile route archetypes`);
+    assert.ok(complexity.routeArchetypes.length >= 3, `seed ${seed} should support at least three projectile route archetypes`);
+    assert.ok(complexity.routeArchetypes.includes("high"), `seed ${seed} may still allow high routes`);
+    assert.ok(complexity.routeArchetypes.includes("mid-s"), `seed ${seed} should include mid-board S routes`);
+    assert.ok(complexity.routeArchetypes.includes("low-thread"), `seed ${seed} should include low thread routes`);
+    assert.ok(complexity.routeArchetypes.includes("side-pocket"), `seed ${seed} should include side-pocket routes`);
+    assert.ok(Number.isFinite(complexity.highArcDominance), `seed ${seed} should quantify high-arc dominance`);
+    assert.ok(complexity.highArcDominance <= 0.55, `seed ${seed} should not be mostly solved by high arcs`);
+    assert.ok(Number.isFinite(complexity.routeEntropy), `seed ${seed} should quantify route diversity`);
+    assert.ok(complexity.routeEntropy >= 1.1, `seed ${seed} should have route diversity instead of one dominant lane`);
+    assert.strictEqual(complexity.ceilingLock, true, `seed ${seed} should include ceiling locks that cap pure high artillery`);
+    assert.ok(complexity.requiredBendCount >= 3, `seed ${seed} should require multiple bend/thread decisions`);
+    assert.ok(roles.has("maze-room"), `seed ${seed} should include room-shaped projectile maze chambers`);
+    assert.ok(roles.has("maze-corridor-wall"), `seed ${seed} should include corridor walls, not only random towers`);
+    assert.ok(roles.has("ceiling-lock"), `seed ${seed} should include solid ceiling locks`);
+    assert.ok(roles.has("route-contour"), `seed ${seed} should still expose pass-through contour guides`);
+    assert.strictEqual(state.mapMeta.windows, undefined, "projectile maze maps should not revive route windows");
+  }
+}
+
 function testTraceShapeIncludesMapAndScore() {
   const state = Sim.runBattle({ seed: 7107, commands: commands() });
   const trace = Sim.exportTrace(state);
@@ -476,8 +501,9 @@ testUnavailableHardTargetIsReportedAsFallback();
   testHandsPersistAndCanBeRerolledThreeTimes();
   testSeededHardMapGeneration();
   testHardMapsRemainSolvableByFiniteCardCombos();
-  testHardMapsExposeSolverPressureWithoutBecomingImpossible();
-  testCommercialMapsExposeTopologyNotJustBlockCount();
-  testTraceShapeIncludesMapAndScore();
+testHardMapsExposeSolverPressureWithoutBecomingImpossible();
+testCommercialMapsExposeTopologyNotJustBlockCount();
+testProjectileMazeMapsDoNotCollapseToHighArcOnly();
+testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

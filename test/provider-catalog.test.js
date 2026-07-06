@@ -9,11 +9,15 @@ const fs = require("fs");
 const path = require("path");
 
 function testProviderCatalogRedactsKeys() {
-  const providers = listProviders({ OPENAI_API_KEY: "sk-test", DEEPSEEK_API_KEY: "" });
+  const providers = listProviders({ OPENAI_API_KEY: "sk-test", DEEPSEEK_API_KEY: "", OPENROUTER_API_KEY: "sk-router" });
   const openai = providers.find((provider) => provider.id === "openai");
+  const openrouter = providers.find((provider) => provider.id === "openrouter");
   assert.ok(openai.available, "OpenAI should be marked available when env key exists");
+  assert.ok(openrouter.available, "OpenRouter should be marked available when env key exists");
+  assert.strictEqual(openrouter.model, "openrouter/free", "OpenRouter should default to the free model router");
   assert.strictEqual(openai.apiKey, undefined, "catalog should never expose key");
   assert.ok(getProvider("deepseek"), "DeepSeek should be known");
+  assert.ok(getProvider("openrouter"), "OpenRouter should be known");
   assert.strictEqual(getProvider("unknown"), null);
 }
 
@@ -64,6 +68,31 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
   assert.ok(!JSON.stringify(userPayload).includes("hitEnemy"), "provider payload should not expose simulated hit outcomes");
 }
 
+function testOpenRouterUsesFreeJsonModeDefaults() {
+  const openrouter = getProvider("openrouter");
+  assert.strictEqual(openrouter.defaultModel, "openrouter/free");
+  assert.strictEqual(openrouter.defaultBaseUrl, "https://openrouter.ai/api/v1");
+
+  const request = buildOpenAICompatibleRequest(
+    openrouter,
+    {
+      command: "thread the maze, swap if hand is weak",
+      candidates: [{ candidateId: "B-0-0-A2-bend", targetId: "A2" }],
+      stateSummary: { seed: 7351, turn: 0, map: { name: "Basalt Gate" } }
+    },
+    "sk-router"
+  );
+
+  assert.strictEqual(request.url, "https://openrouter.ai/api/v1/chat/completions");
+  assert.strictEqual(request.headers.authorization, "Bearer sk-router");
+  assert.strictEqual(request.body.model, "openrouter/free");
+  assert.deepStrictEqual(request.body.response_format, { type: "json_object" });
+  assert.strictEqual(request.body.messages.length, 1, "OpenRouter should receive only the public rules payload");
+  const userPayload = JSON.parse(request.body.messages[0].content);
+  assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"));
+  assert.ok(userPayload.legalActions.some((action) => action.action === "shot"));
+}
+
 function testAnthropicUsesSameBareRulesPayload() {
   const anthropic = getProvider("anthropic");
   const state = Sim.createInitialState({ seed: 7351 });
@@ -103,6 +132,7 @@ function testRealDeepSeekSmokeScriptIsDiscoverable() {
 testProviderCatalogRedactsKeys();
 testNormalizeDecision();
 testDeepSeekUsesCurrentJsonModeDefaults();
+testOpenRouterUsesFreeJsonModeDefaults();
 testAnthropicUsesSameBareRulesPayload();
 testRealDeepSeekSmokeScriptIsDiscoverable();
 

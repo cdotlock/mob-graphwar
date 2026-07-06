@@ -23,29 +23,31 @@ function testDeterministicBattle() {
   assert.ok(["S", "A", "B", "C", "D"].includes(first.score.rank), "battle should include a rank");
 }
 
-function testBattleOrdersCanChangeEveryTurn() {
-  const state = Sim.createInitialState({ seed: 7351 });
-  const firstOrders = {
+function testStandingOrdersStayLockedDuringAutoBattle() {
+  const lockedOrders = {
     A: "must target B2, high safe arc",
     B: "must target A2, high safe arc",
     A1: "must target B2, high safe arc",
     B1: "must target A2, high safe arc"
   };
-  const editedOrders = {
+  const midDuelEdit = {
     A: "ignore B2, use volatile",
     B: "must target A1, low risky direct shot",
     A1: "ignore B2, use volatile",
     B1: "must target A1, low risky direct shot"
   };
+  const state = Sim.createInitialState({ seed: 7351, lockedOrders });
 
-  Sim.applyTurn(state, firstOrders);
+  Sim.applyTurn(state, midDuelEdit);
+  assert.strictEqual(state.events[0].team, "A");
+  assert.strictEqual(state.events[0].command, lockedOrders.A1, "locked opening order should drive the first model turn");
 
-  Sim.applyTurn(state, editedOrders);
+  Sim.applyTurn(state, midDuelEdit);
   assert.strictEqual(state.events[1].team, "B");
-  assert.strictEqual(state.events[1].command, editedOrders.B, "each turn should use the newest command for the active team");
+  assert.strictEqual(state.events[1].command, lockedOrders.B1, "mid-duel human edits should not replace the standing order");
 
   const trace = Sim.exportTrace(state);
-  assert.strictEqual(trace.lockedOrders, null, "trace should not freeze per-turn human prompts");
+  assert.deepStrictEqual(trace.lockedOrders, lockedOrders, "trace should preserve the launch-time standing orders");
 }
 
 function testTurnsRotateAcrossFourUnitSeats() {
@@ -408,7 +410,7 @@ function testTraceShapeIncludesMapAndScore() {
 }
 
 testDeterministicBattle();
-testBattleOrdersCanChangeEveryTurn();
+testStandingOrdersStayLockedDuringAutoBattle();
 testTurnsRotateAcrossFourUnitSeats();
 testInvalidProviderCandidateDoesNotAdvanceTurn();
 testNoInvalidState();

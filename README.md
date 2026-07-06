@@ -1,9 +1,9 @@
 # Mob Graphwar Arena
 
-Mob Graphwar Arena is a ranked AI-command artillery game inspired by Graphwar.
+Mob Graphwar Arena is a ranked watch-only AI artillery game inspired by Graphwar.
 
 Players log in, attach their own model key, enter ranked 2v2 matchmaking, and
-issue one short standing order before watching the AIs fight. Each model only
+issue one short launch-time standing order before watching the AIs fight. Each model only
 receives bare rules, map state, units, current hand, and legal actions. Empty
 seats are filled by AI. The point is not to let a model solve raw Graphwar
 directly; it has to act inside a hard function-card economy where human wording,

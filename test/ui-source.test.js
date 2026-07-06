@@ -49,6 +49,26 @@ function testGameGradeHudStylesExist() {
   assert.ok(css.includes("grid-template-areas"), "responsive layout should prioritize the battlefield with grid areas");
 }
 
+function testGameModeShellMakesProductFeelLikeGame() {
+  assert.ok(main.includes("GameModeNav"), "app should expose a named spectator game navigation shell");
+  assert.ok(main.includes('data-testid="game-mode-nav"'), "spectator nav should be selectable for browser verification");
+  assert.ok(main.includes('data-testid="mobile-mode-nav"'), "mobile spectator nav should be selectable for browser verification");
+  assert.ok(main.includes("Spectator deck"), "mode nav should frame the game as watch-only after launch");
+  assert.ok(main.includes("Launch"), "mode nav should include the ranked launch entry");
+  assert.ok(main.includes("Watch"), "mode nav should include the battle watch view");
+  assert.ok(main.includes("Intel"), "mode nav should include the model/card intel view");
+  assert.ok(main.includes("Ladder"), "mode nav should include rank progression");
+  assert.ok(main.includes("data-game-section=\"launch\""), "ranked login/matchmaking should be addressable as the launch section");
+  assert.ok(main.includes("data-game-section=\"watch\""), "battlefield should be addressable as the watch section");
+  assert.ok(main.includes("data-game-section=\"intel\""), "hand/rules should be addressable as the intel section");
+  assert.ok(main.includes("data-game-section=\"ladder\""), "leaderboard should be addressable as the ladder section");
+  assert.ok(main.includes('useState("watch")'), "the battle watch view should be the default active mode");
+  assert.ok(css.includes(".game-mode-nav"), "CSS should style the top game mode navigation");
+  assert.ok(css.includes(".mode-tab"), "CSS should style game mode tabs");
+  assert.ok(css.includes(".mobile-mode-nav"), "CSS should style mobile mode navigation");
+  assert.ok(css.includes("padding-bottom: 142px"), "mobile layout should reserve room for stacked game docks");
+}
+
 function testArenaDirectorHudMakesBattleReadAsLiveGame() {
   assert.ok(packageJson.includes('"framer-motion"'), "the React game shell should use a motion framework for game-grade state transitions");
   assert.ok(main.includes('from "framer-motion"'), "main UI should import framer-motion primitives");
@@ -171,7 +191,7 @@ function testMobileHasGameDockForWatchOnlyLoop() {
   assert.ok(main.includes("ranked: profile ?"), "mobile dock should summarize ranked account state");
   assert.ok(main.includes("queue: queueState"), "mobile dock should summarize queue state");
   assert.ok(css.includes(".mobile-spectator-dock"), "CSS should style the fixed mobile spectator dock");
-  assert.ok(css.includes("padding-bottom: 86px"), "mobile layout should reserve room for the fixed game dock");
+  assert.ok(css.includes("padding-bottom: 142px"), "mobile layout should reserve room for the fixed game dock");
 }
 
 function testUiPollsQueuedMatchmakingRooms() {
@@ -313,6 +333,7 @@ testCommanderBoardIsAFirstClassSurface();
 testModelWarFeedIsVisibleInSource();
 testFourSeatAgentBattleMatrixExists();
 testGameGradeHudStylesExist();
+testGameModeShellMakesProductFeelLikeGame();
 testArenaDirectorHudMakesBattleReadAsLiveGame();
 testStaticEntrypointLoadsSimBeforeReactBundle();
 testUiKeepsRankedDuelSpectatorOnly();

@@ -247,6 +247,7 @@ function App() {
   const [leagueResult, setLeagueResult] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [autoBattle, setAutoBattle] = useState(null);
+  const [activeMode, setActiveMode] = useState("watch");
   const playbackToken = useRef(0);
   const playbackFramesRef = useRef([]);
   const playbackPausedRef = useRef(false);
@@ -633,6 +634,15 @@ function App() {
     playbackSpeedRef.current = nextSpeed;
   }
 
+  function selectGameMode(mode) {
+    const id = typeof mode === "string" ? mode : mode.id;
+    const target = typeof mode === "string" ? mode : mode.target;
+    setActiveMode(id);
+    window.requestAnimationFrame(() => {
+      document.querySelector(`[data-game-section="${target}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   async function autoStartRankedDuel(room = match, playerId = profile?.id) {
     if (!room || !playerId || room.status === "resolved" || room.state?.winner) return room;
     const lockKey = `${room.id}:${playerId}`;
@@ -687,8 +697,17 @@ function App() {
         </div>
       </section>
 
+      <GameModeNav
+        activeMode={activeMode}
+        profile={profile}
+        match={match}
+        queueState={queueState}
+        autoBattle={autoBattle}
+        onSelect={selectGameMode}
+      />
+
       <section className="game-grid">
-        <aside className="lobby-panel game-panel">
+        <aside className="lobby-panel game-panel" data-game-section="launch">
           <LaunchBay
             login={login}
             setLogin={setLogin}
@@ -707,7 +726,7 @@ function App() {
           <LeaderboardPanel players={leaderboard} profile={profile} onRefresh={loadLeaderboard} />
         </aside>
 
-        <section className="battle-panel game-panel">
+        <section className="battle-panel game-panel" data-game-section="watch">
           <BattleHeader state={battleState} activeTeam={activeTeam} activeUnitId={activeUnitId} message={message} />
           <SpectatorHud state={battleState} activeTeam={activeTeam} match={match} />
           <BattlePlaybackHud
@@ -754,7 +773,7 @@ function App() {
           </section>
         </section>
 
-        <aside className="tactical-panel game-panel">
+        <aside className="tactical-panel game-panel" data-game-section="intel">
           <HandRack hand={activeHand} activeTeam={displayTeam} activeUnitId={displayUnitId} />
           <Timeline state={battleState} />
           <AutoDuelPanel autoBattle={autoBattle} state={battleState} />
@@ -774,6 +793,71 @@ function App() {
         autoBattle={autoBattle}
       />
     </main>
+  );
+}
+
+function GameModeNav({ activeMode, profile, match, queueState, autoBattle, onSelect }) {
+  const modes = [
+    {
+      id: "launch",
+      target: "launch",
+      label: "Launch",
+      status: profile ? (queueState ? "queue live" : match ? "room armed" : "one order") : "login",
+      icon: PlayCircle
+    },
+    {
+      id: "watch",
+      target: "watch",
+      label: "Watch",
+      status: autoBattle ? `${autoBattle.resolvedTurns} turns` : match ? "auto duel" : "exhibition",
+      icon: Swords
+    },
+    {
+      id: "intel",
+      target: "intel",
+      label: "Intel",
+      status: "cards + rules",
+      icon: KeyRound
+    },
+    {
+      id: "ladder",
+      target: "ladder",
+      label: "Ladder",
+      status: profile ? `${profile.rank.tier} ${profile.rank.rating}` : "unrated",
+      icon: Trophy
+    }
+  ];
+  const renderMode = (mode, compact = false) => {
+    const Icon = mode.icon;
+    return (
+      <button
+        type="button"
+        className={`mode-tab ${activeMode === mode.id ? "active" : ""}`}
+        aria-current={activeMode === mode.id ? "page" : undefined}
+        onClick={() => onSelect(mode)}
+        key={mode.id}
+      >
+        <Icon size={compact ? 17 : 19} />
+        <span>{mode.label}</span>
+        <small>{mode.status}</small>
+      </button>
+    );
+  };
+  return (
+    <>
+      <nav className="game-mode-nav" data-testid="game-mode-nav" aria-label="Spectator mode navigation">
+        <div>
+          <span>Spectator deck</span>
+          <strong>{profile ? profile.displayName : "Guest viewer"}</strong>
+        </div>
+        <div className="mode-tab-strip">
+          {modes.map((mode) => renderMode(mode))}
+        </div>
+      </nav>
+      <nav className="mobile-mode-nav" data-testid="mobile-mode-nav" aria-label="Mobile spectator mode navigation">
+        {modes.map((mode) => renderMode(mode, true))}
+      </nav>
+    </>
   );
 }
 
@@ -1095,7 +1179,7 @@ function RosterCard({ match }) {
 
 function LeaderboardPanel({ players, profile, onRefresh }) {
   return (
-    <div className="leaderboard-panel" data-testid="leaderboard-panel">
+    <div className="leaderboard-panel" data-testid="leaderboard-panel" data-game-section="ladder">
       <div className="panel-title"><ListOrdered size={18} /> Ranked Ladder</div>
       <div className="leaderboard-list">
         {players.length ? players.map((player, index) => (
@@ -1737,7 +1821,7 @@ function ModelWarFeed({ state, lastDecision }) {
       ) : (
         <div className="feed-prime idle">
           <span>Pre-match</span>
-          <strong>awaiting command</strong>
+          <strong>awaiting launch order</strong>
           <p>No model decision yet.</p>
         </div>
       )}

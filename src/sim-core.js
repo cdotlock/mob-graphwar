@@ -1013,6 +1013,7 @@
     const opts = options || {};
     const seed = Number.isFinite(Number(opts.seed)) ? Number(opts.seed) : 7351;
     const map = generateMap(seed);
+    const lockedOrders = opts.lockedOrders ? normalizeBattleOrders(opts.lockedOrders) : null;
     return {
       seed,
       turn: 0,
@@ -1033,7 +1034,7 @@
         A2: createHandState(seed, "A2", 0),
         B2: createHandState(seed, "B2", 0)
       },
-      lockedOrders: null,
+      lockedOrders,
       events: [],
       paths: [],
       score: null,
@@ -1913,7 +1914,7 @@
     if (opts.action === "swap_hand" || opts.action === "reroll") {
       return rerollHand(state, unitId);
     }
-    const orders = normalizeBattleOrders(commands);
+    const orders = state.lockedOrders ? normalizeBattleOrders(state.lockedOrders) : normalizeBattleOrders(commands);
     const command = orders[unitId] || orders[team] || "";
     const decision = chooseShot(state, unitId, command, opts);
 
@@ -1999,8 +2000,8 @@
 
   function runBattle(options) {
     const opts = options || {};
-    const state = createInitialState({ seed: opts.seed });
     const commands = opts.commands || {};
+    const state = createInitialState({ seed: opts.seed, lockedOrders: commands });
     while (!state.winner && state.turn < CONFIG.maxTurns) {
       applyTurn(state, commands);
     }

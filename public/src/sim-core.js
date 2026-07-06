@@ -1161,37 +1161,69 @@
       if (distance(point, unit) < CONFIG.unitRadius + point.radius + 5) return false;
     }
     for (const obstacle of obstacles) {
-      if (distance(point, { x: obstacle.cx, y: obstacle.cy }) < obstacle.r + point.radius + 1.6) return false;
+      if (distance(point, { x: obstacle.cx, y: obstacle.cy }) < obstacle.r + point.radius + 2) return false;
     }
     return true;
   }
 
+  function bonusPointClearance(point, obstacles) {
+    if (!obstacles.length) return 99;
+    return obstacles.reduce((best, obstacle) => {
+      const clearance = distance(point, { x: obstacle.cx, y: obstacle.cy }) - obstacle.r - point.radius;
+      return Math.min(best, clearance);
+    }, 99);
+  }
+
   function buildBonusPoints(rng, units, obstacles) {
     const anchors = [
-      { x: 28, y: 17, value: 8 },
-      { x: 39, y: 43, value: 12 },
-      { x: 52, y: 26, value: 10 },
-      { x: 64, y: 39, value: 12 },
-      { x: 76, y: 18, value: 8 }
+      { x: 34, y: 43, value: 12 },
+      { x: 51, y: 28, value: 10 },
+      { x: 68, y: 43, value: 12 }
     ];
     return anchors.map((anchor, index) => {
-      const radius = index === 2 ? 3.4 : 3.1;
-      for (let attempt = 0; attempt < 28; attempt += 1) {
+      const radius = index === 1 ? 1.7 : 1.9;
+      const candidates = [];
+      for (let attempt = 0; attempt < 90; attempt += 1) {
         const point = {
           id: `route-bonus-${index + 1}`,
-          x: round(clamp(anchor.x + (rng() * 2 - 1) * (5 + attempt * 0.15), 9, 91), 1),
-          y: round(clamp(anchor.y + (rng() * 2 - 1) * (7 + attempt * 0.2), 8, 53), 1),
+          x: round(clamp(anchor.x + (rng() * 2 - 1) * (4 + attempt * 0.06), 12, 88), 1),
+          y: round(clamp(anchor.y + (rng() * 2 - 1) * (5 + attempt * 0.08), 10, 52), 1),
           radius,
           value: anchor.value
         };
-        if (bonusPointClear(point, units, obstacles)) return point;
+        if (bonusPointClear(point, units, obstacles)) candidates.push(point);
       }
+      for (let x = 14; x <= 86; x += 4) {
+        for (let y = 12; y <= 52; y += 4) {
+          const point = {
+            id: `route-bonus-${index + 1}`,
+            x: round(clamp(x + (rng() * 2 - 1) * 1.2, 12, 88), 1),
+            y: round(clamp(y + (rng() * 2 - 1) * 1.2, 10, 52), 1),
+            radius,
+            value: anchor.value
+          };
+          if (bonusPointClear(point, units, obstacles)) candidates.push(point);
+        }
+      }
+      if (!candidates.length) {
+        return {
+          id: `route-bonus-${index + 1}`,
+          x: round(clamp(anchor.x, 12, 88), 1),
+          y: round(clamp(CONFIG.height - 7 - index * 4, 10, 52), 1),
+          radius,
+          value: anchor.value
+        };
+      }
+      candidates.sort((a, b) => {
+        const aAnchor = Math.abs(a.x - anchor.x) + Math.abs(a.y - anchor.y);
+        const bAnchor = Math.abs(b.x - anchor.x) + Math.abs(b.y - anchor.y);
+        return (b.value + bonusPointClearance(b, obstacles) * 1.2 - bAnchor * 0.12) -
+          (a.value + bonusPointClearance(a, obstacles) * 1.2 - aAnchor * 0.12);
+      });
       return {
-        id: `route-bonus-${index + 1}`,
-        x: anchor.x,
-        y: clamp(Math.max(anchor.y, groundY(anchor.x) + radius + 5), 8, 53),
-        radius,
-        value: anchor.value
+        ...candidates[0],
+        x: round(candidates[0].x, 1),
+        y: round(candidates[0].y, 1)
       };
     });
   }
@@ -1204,7 +1236,7 @@
     const routeArchetypes = ["high"];
     if (midBlobs >= 4) routeArchetypes.push("mid-pocket");
     if (lowBlobs >= 2) routeArchetypes.push("low-skim");
-    if ((bonusPoints || []).length >= 5) routeArchetypes.push("bonus-thread");
+    if ((bonusPoints || []).length >= 3) routeArchetypes.push("bonus-thread");
     if (clusterCount >= 5) routeArchetypes.push("side-pocket");
     const weights = [
       Math.max(1, upperBlobs),
@@ -1334,7 +1366,7 @@
       complexity.blobCount >= 16 &&
       complexity.clusterCount >= 4 &&
       complexity.openLaneCount >= 3 &&
-      complexity.bonusPointCount === 5 &&
+      complexity.bonusPointCount === 3 &&
       Array.isArray(complexity.routeArchetypes) &&
       complexity.routeArchetypes.length >= 3 &&
       complexity.highArcDominance <= 0.55 &&

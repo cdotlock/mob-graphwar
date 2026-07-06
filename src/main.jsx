@@ -2151,48 +2151,41 @@ function BattlePlaybackHud({ playback, paused, speed, canControl, onToggle, onSt
 function BattlefieldBackdrop({ state }) {
   return (
     <g className="battlefield-backdrop" aria-hidden="true">
-      <rect x="0" y="0" width="1000" height="600" fill="url(#skyField)" />
-      <rect className="map-playable-ground" x="24" y="26" width="952" height="548" rx="18" />
-      {Array.from({ length: 9 }, (_, i) => <line key={`x-${i}`} className="grid-line" x1={80 + i * 105} y1="44" x2={80 + i * 105} y2="560" />)}
-      {Array.from({ length: 5 }, (_, i) => <line key={`y-${i}`} className="grid-line" x1="44" y1={88 + i * 96} x2="956" y2={88 + i * 96} />)}
+      <rect className="map-playable-ground" x="0" y="0" width="1000" height="600" />
+      <line className="axis-line" x1="500" y1="0" x2="500" y2="600" />
+      <line className="axis-line" x1="0" y1="300" x2="1000" y2="300" />
     </g>
   );
 }
 
-function FlatMapObstacleLayer({ state }) {
+function BlobObstacleLayer({ state }) {
   const solids = (state.obstacles || []).filter((obstacle) => obstacle.solid !== false);
   return (
-    <g className="flat-map-obstacle-layer" aria-hidden="true">
+    <g className="blob-obstacle-layer" aria-hidden="true">
       {solids.map((obstacle) => (
-        <rect
+        <circle
           key={obstacle.id}
-          className="map-obstacle solid-blocker"
-          x={sx(obstacle.x)}
-          y={sy(obstacle.y + obstacle.h)}
-          width={obstacle.w * 10}
-          height={Math.max(5, obstacle.h * 10)}
-          rx="4"
+          className="map-obstacle blob-blocker"
+          cx={sx(obstacle.cx ?? obstacle.x + obstacle.w / 2)}
+          cy={sy(obstacle.cy ?? obstacle.y + obstacle.h / 2)}
+          r={Math.max(3, (obstacle.r ?? Math.max(obstacle.w, obstacle.h) / 2) * 10)}
         />
       ))}
     </g>
   );
 }
 
-function MapLegend() {
-  const items = [
-    { label: "passable ground", className: "ground" },
-    { label: "solid blockers", className: "blocker" },
-    { label: "current shot", className: "shot" }
-  ];
+function BonusPointLayer({ state }) {
+  const points = state.bonusPoints || [];
   return (
-    <div className="map-legend" data-testid="map-legend" aria-label="Map legend">
-      {items.map((item) => (
-        <span className={item.className} key={item.label}>
-          <i />
-          <b>{item.label}</b>
-        </span>
+    <g className="bonus-point-layer" aria-label="Route bonus points">
+      {points.map((point) => (
+        <g className="bonus-point" key={point.id}>
+          <circle cx={sx(point.x)} cy={sy(point.y)} r={point.radius * 10} />
+          <circle cx={sx(point.x)} cy={sy(point.y)} r="3.5" />
+        </g>
       ))}
-    </div>
+    </g>
   );
 }
 
@@ -2209,7 +2202,6 @@ function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, play
         <span>{activeLabel}</span>
         <span>{resultLabel}</span>
       </div>
-      <MapLegend />
       <svg className="battlefield simple-map" viewBox="0 0 1000 600" role="img" aria-label="Mob Graphwar ranked battlefield">
         <defs>
           <linearGradient id="arenaGround" x1="0" x2="1">
@@ -2236,8 +2228,8 @@ function Battlefield({ state, match, activeTeam, activeUnitId, latestEvent, play
           </filter>
         </defs>
         <BattlefieldBackdrop state={state} />
-        <path className="terrain" d={terrainPath()} />
-        <FlatMapObstacleLayer state={state} />
+        <BlobObstacleLayer state={state} />
+        <BonusPointLayer state={state} />
         {state.paths.map((path, index) => (
           <polyline key={`${path.turn}-${index}`} className={`shot-path team-${path.team.toLowerCase()} ${index === state.paths.length - 1 ? "latest" : ""}`} points={pointList(path.points)} />
         ))}

@@ -346,46 +346,36 @@ function testSeededHardMapGeneration() {
   const first = Sim.createInitialState({ seed: 9001 });
   const second = Sim.createInitialState({ seed: 9001 });
   const different = Sim.createInitialState({ seed: 9002 });
-  const roles = new Set(first.obstacles.map((obstacle) => obstacle.role).filter(Boolean));
   assert.deepStrictEqual(first.obstacles, second.obstacles, "same seed should produce same map");
   assert.notDeepStrictEqual(first.obstacles, different.obstacles, "different seeds should produce different maps");
   assert.ok(first.mapMeta && first.mapMeta.difficulty >= 90, "map should include high difficulty metadata");
   assert.strictEqual(first.mapMeta.windows, undefined, "map should not expose route windows");
   assert.ok(first.mapMeta.complexity, "map should expose a bare complexity summary for the UI");
-  assert.ok(first.obstacles.length >= 40, "map should have dense Graphwar-level terrain complexity");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.h >= 24).length >= 7, "map should include multiple tall obstructions");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.y > 0).length >= 12, "map should include elevated blockers");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.y >= 38).length >= 3, "map should include ceiling pressure");
-  assert.ok(first.obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length >= 5, "map should include long suspended shelves");
-  assert.ok(roles.has("maze-band"), "map should include horizontal maze bands, not only block towers");
-  assert.ok(roles.has("gate-slit"), "map should include narrow gate slits for threadable lanes");
-  assert.ok(roles.has("thread-slot"), "map should include explicit thread slots");
-  assert.ok(roles.has("ground-rib"), "map should include low ground ribs");
-  assert.ok(first.mapMeta.complexity.chokePoints >= 5, "complexity summary should count route choke points");
-  assert.ok(first.mapMeta.complexity.routePressure >= 80, "complexity summary should expose route pressure");
-  assert.ok(first.mapMeta.complexity.layerCount >= 6, "complexity summary should expose battlefield depth layers");
-  assert.ok(first.mapMeta.complexity.mazeBands >= 5, "complexity summary should count maze bands");
-  assert.ok(first.mapMeta.complexity.gateSlits >= 4, "complexity summary should count gate slits");
-  assert.ok(first.mapMeta.complexity.threadSlots >= 4, "complexity summary should count thread slots");
-  assert.ok(first.mapMeta.complexity.groundRibs >= 4, "complexity summary should count ground ribs");
-  assert.ok(first.mapMeta.complexity.visualLayers >= 4, "complexity summary should expose visible maze layers");
+  assert.strictEqual(first.mapMeta.complexity.generator, "poisson-blob-search", "map should use the Poisson blob search generator");
+  assert.ok(first.mapMeta.complexity.poissonAnchorCount >= 6, "map should expose enough Poisson-distributed blob anchors");
+  assert.ok(Number.isFinite(first.mapMeta.complexity.candidateFitness), "map should expose the accepted generator fitness");
+  assert.ok(first.obstacles.length >= 16 && first.obstacles.length <= 34, "map should use readable blob terrain instead of a wall of blocks");
+  assert.ok(first.obstacles.every((obstacle) => obstacle.shape === "circle"), "all blockers should be continuous circular blobs");
+  assert.ok(first.obstacles.every((obstacle) => obstacle.solid === true), "all visible blockers should be real solid terrain");
+  assert.ok(first.obstacles.every((obstacle) => Number.isFinite(obstacle.cx) && Number.isFinite(obstacle.cy) && obstacle.r > 0), "blob blockers should expose circle geometry");
+  assert.ok(first.mapMeta.complexity.blobCount >= 16, "complexity summary should count blob blockers");
+  assert.ok(first.mapMeta.complexity.clusterCount >= 4, "complexity summary should count terrain clusters");
+  assert.ok(first.mapMeta.complexity.openLaneCount >= 3, "complexity summary should keep multiple open firing lanes");
+  assert.strictEqual(first.mapMeta.complexity.routeGuideCount, 0, "maps should not reintroduce pass-through route-guide clutter");
+  assert.ok(Array.isArray(first.bonusPoints) && first.bonusPoints.length === 5, "map should expose route bonus points");
+  assert.ok(first.mapMeta.complexity.bonusPointCount === first.bonusPoints.length, "map summary should count route bonus points");
   assert.ok(first.units.every((unit) => unit.y > Sim.groundY(unit.x)), "units should spawn above ground");
 }
 
 function testHardMapsRemainSolvableByFiniteCardCombos() {
   for (let seed = 1; seed <= 40; seed += 1) {
     const state = Sim.createInitialState({ seed });
-    assert.ok(state.mapMeta.complexity.obstacleCount >= 40, `seed ${seed} should keep dense obstacle count`);
-    assert.ok(state.mapMeta.complexity.tallCount >= 7, `seed ${seed} should keep at least seven tall blockers`);
-    assert.ok(state.mapMeta.complexity.elevatedCount >= 12, `seed ${seed} should keep elevated blockers`);
-    assert.ok(state.mapMeta.complexity.ceilingCount >= 3, `seed ${seed} should keep ceiling pressure`);
+    assert.ok(state.mapMeta.complexity.blobCount >= 16, `seed ${seed} should keep enough continuous blockers`);
+    assert.ok(state.mapMeta.complexity.clusterCount >= 4, `seed ${seed} should keep multiple terrain clusters`);
+    assert.ok(state.mapMeta.complexity.openLaneCount >= 3, `seed ${seed} should keep readable open lanes`);
     assert.ok(state.mapMeta.complexity.routePressure >= 80, `seed ${seed} should keep route pressure high`);
-    assert.ok(state.mapMeta.complexity.layerCount >= 6, `seed ${seed} should keep layered route depth`);
-    assert.ok(state.mapMeta.complexity.mazeBands >= 5, `seed ${seed} should keep maze-band route pressure`);
-    assert.ok(state.mapMeta.complexity.gateSlits >= 4, `seed ${seed} should keep narrow gate slits`);
-    assert.ok(state.mapMeta.complexity.threadSlots >= 4, `seed ${seed} should keep thread slots`);
-    assert.ok(state.mapMeta.complexity.groundRibs >= 4, `seed ${seed} should keep low ground ribs`);
-    assert.ok(state.mapMeta.complexity.visualLayers >= 4, `seed ${seed} should keep visible maze depth layers`);
+    assert.ok(state.obstacles.every((obstacle) => obstacle.shape === "circle"), `seed ${seed} should not generate rectangular blockers`);
+    assert.ok(state.bonusPoints.length === 5, `seed ${seed} should keep five scoring route points`);
     for (const unitId of state.turnOrder) {
       const shots = Sim.listLegalShots(state, unitId, "");
       assert.ok(shots.length > 0, `seed ${seed} unit ${unitId} should have legal shots`);
@@ -405,13 +395,12 @@ function testHardMapsExposeSolverPressureWithoutBecomingImpossible() {
     const state = Sim.createInitialState({ seed });
     const complexity = state.mapMeta.complexity;
     assert.ok(Number.isFinite(complexity.solidObstacleCount), `seed ${seed} should count solid blockers`);
-    assert.ok(Number.isFinite(complexity.routeGuideCount), `seed ${seed} should count pass-through route guides`);
     assert.ok(Number.isFinite(complexity.firstHandHitRate), `seed ${seed} should expose first-hand hit rate`);
     assert.ok(Number.isFinite(complexity.swapWindowHitRate), `seed ${seed} should expose swap-window hit rate`);
     assert.ok(Number.isFinite(complexity.solverPressure), `seed ${seed} should expose solver pressure`);
     assert.ok(Number.isFinite(complexity.requiredSearchWindows), `seed ${seed} should estimate required search windows`);
     assert.ok(complexity.solidObstacleCount >= 16, `seed ${seed} should still keep many real blockers`);
-    assert.ok(complexity.routeGuideCount >= 12, `seed ${seed} should keep visible route-guide complexity`);
+    assert.strictEqual(complexity.routeGuideCount, 0, `seed ${seed} should not count route-guide overlays`);
     assert.ok(complexity.firstHandHitRate <= 0.5, `seed ${seed} should not be solved too often by the first hand`);
     assert.ok(complexity.swapWindowHitRate >= complexity.firstHandHitRate, `seed ${seed} should reward model-led swap search`);
     assert.ok(complexity.swapWindowHitRate > 0, `seed ${seed} should remain solvable within retained-hand swap windows`);
@@ -428,45 +417,55 @@ function testCommercialMapsExposeTopologyNotJustBlockCount() {
   for (let seed = 1; seed <= 16; seed += 1) {
     const state = Sim.createInitialState({ seed });
     const complexity = state.mapMeta.complexity;
-    assert.ok(complexity.obstacleCount >= 56, `seed ${seed} should feel like a dense Graphwar arena, not a few blocks`);
-    assert.ok(complexity.solidObstacleCount >= 28, `seed ${seed} should include many real blockers`);
-    assert.ok(complexity.routeGuideCount >= 18, `seed ${seed} should include many visible route guides`);
-    assert.ok(complexity.chamberCount >= 6, `seed ${seed} should expose multiple route chambers`);
-    assert.ok(complexity.straightLaneBreaks >= 8, `seed ${seed} should break simple direct lanes repeatedly`);
-    assert.ok(complexity.verticalBandCoverage >= 5, `seed ${seed} should cover most vertical map bands`);
-    assert.ok(complexity.horizontalBandCoverage >= 5, `seed ${seed} should cover most horizontal map bands`);
-    assert.ok(complexity.solidBandCoverage >= 12, `seed ${seed} should distribute solid blockers across the arena`);
+    assert.ok(complexity.obstacleCount >= 16, `seed ${seed} should feel like a Graphwar arena, not an empty board`);
+    assert.ok(complexity.obstacleCount <= 34, `seed ${seed} should stay readable instead of piling on block clutter`);
+    assert.ok(complexity.solidObstacleCount === complexity.obstacleCount, `seed ${seed} should only expose real solid blockers`);
+    assert.ok(complexity.clusterCount >= 4, `seed ${seed} should expose multiple blob clusters`);
+    assert.ok(complexity.openLaneCount >= 3, `seed ${seed} should preserve multiple path choices`);
+    assert.ok(complexity.blobCoverage >= 0.16, `seed ${seed} should distribute blob terrain across the arena`);
     assert.ok(complexity.routePressure >= 95, `seed ${seed} should preserve high route pressure`);
     assert.ok(
-      Array.isArray(complexity.topologyTags) && complexity.topologyTags.includes("multi-chamber"),
-      `seed ${seed} should label its multi-chamber topology`
+      Array.isArray(complexity.topologyTags) && complexity.topologyTags.includes("continuous-blobs"),
+      `seed ${seed} should label its continuous blob topology`
     );
   }
 }
 
-function testProjectileMazeMapsDoNotCollapseToHighArcOnly() {
+function testBlobMapsDoNotCollapseToHighArcOnly() {
   for (let seed = 1; seed <= 24; seed += 1) {
     const state = Sim.createInitialState({ seed });
     const complexity = state.mapMeta.complexity;
-    const roles = new Set(state.obstacles.map((obstacle) => obstacle.role).filter(Boolean));
     assert.ok(Array.isArray(complexity.routeArchetypes), `seed ${seed} should expose projectile route archetypes`);
     assert.ok(complexity.routeArchetypes.length >= 3, `seed ${seed} should support at least three projectile route archetypes`);
     assert.ok(complexity.routeArchetypes.includes("high"), `seed ${seed} may still allow high routes`);
-    assert.ok(complexity.routeArchetypes.includes("mid-s"), `seed ${seed} should include mid-board S routes`);
-    assert.ok(complexity.routeArchetypes.includes("low-thread"), `seed ${seed} should include low thread routes`);
-    assert.ok(complexity.routeArchetypes.includes("side-pocket"), `seed ${seed} should include side-pocket routes`);
+    assert.ok(complexity.routeArchetypes.includes("mid-pocket"), `seed ${seed} should include mid-board pocket routes`);
+    assert.ok(complexity.routeArchetypes.includes("low-skim"), `seed ${seed} should include low skim routes`);
+    assert.ok(complexity.routeArchetypes.includes("bonus-thread"), `seed ${seed} should include reward-point thread routes`);
     assert.ok(Number.isFinite(complexity.highArcDominance), `seed ${seed} should quantify high-arc dominance`);
     assert.ok(complexity.highArcDominance <= 0.55, `seed ${seed} should not be mostly solved by high arcs`);
     assert.ok(Number.isFinite(complexity.routeEntropy), `seed ${seed} should quantify route diversity`);
     assert.ok(complexity.routeEntropy >= 1.1, `seed ${seed} should have route diversity instead of one dominant lane`);
-    assert.strictEqual(complexity.ceilingLock, true, `seed ${seed} should include ceiling locks that cap pure high artillery`);
-    assert.ok(complexity.requiredBendCount >= 3, `seed ${seed} should require multiple bend/thread decisions`);
-    assert.ok(roles.has("maze-room"), `seed ${seed} should include room-shaped projectile maze chambers`);
-    assert.ok(roles.has("maze-corridor-wall"), `seed ${seed} should include corridor walls, not only random towers`);
-    assert.ok(roles.has("ceiling-lock"), `seed ${seed} should include solid ceiling locks`);
-    assert.ok(roles.has("route-contour"), `seed ${seed} should still expose pass-through contour guides`);
+    assert.ok(complexity.requiredBendCount >= 2, `seed ${seed} should require bend/thread decisions`);
+    assert.ok(complexity.bonusPointCount === 5, `seed ${seed} should keep route scoring points`);
     assert.strictEqual(state.mapMeta.windows, undefined, "projectile maze maps should not revive route windows");
   }
+}
+
+function testRouteBonusPointsAffectShotScoring() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const forcedPoint = {
+    id: "forced-route-bonus",
+    x: state.units.find((unit) => unit.id === "A1").x + 1.1,
+    y: state.units.find((unit) => unit.id === "A1").y,
+    radius: 4,
+    value: 18
+  };
+  state.bonusPoints = [forcedPoint];
+  Sim.applyTurn(state, { A: "low direct bonus point route", B: "" });
+  const event = state.events[0];
+  assert.ok(event.routeBonus && event.routeBonus.value >= forcedPoint.value, "shot event should score route bonus points it passes through");
+  assert.ok(event.routeBonus.pointIds.includes(forcedPoint.id), "shot event should identify scored route bonus points");
+  assert.ok(state.paths[0].routeBonus.value === event.routeBonus.value, "replay path should preserve route bonus scoring");
 }
 
 function testTraceShapeIncludesMapAndScore() {
@@ -503,7 +502,8 @@ testUnavailableHardTargetIsReportedAsFallback();
   testHardMapsRemainSolvableByFiniteCardCombos();
 testHardMapsExposeSolverPressureWithoutBecomingImpossible();
 testCommercialMapsExposeTopologyNotJustBlockCount();
-testProjectileMazeMapsDoNotCollapseToHighArcOnly();
+testBlobMapsDoNotCollapseToHighArcOnly();
+testRouteBonusPointsAffectShotScoring();
 testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

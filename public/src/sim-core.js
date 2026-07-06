@@ -643,6 +643,7 @@
   }
 
   function inferObstacleRole(obstacle) {
+    if (obstacle.shape === "circle") return "blob";
     const id = String(obstacle.id || "");
     if (/ceiling-lock/.test(id)) return "ceiling-lock";
     if (/maze-corridor-wall/.test(id)) return "maze-corridor-wall";
@@ -658,6 +659,7 @@
   }
 
   function inferVisualLayer(obstacle, role, index) {
+    if (role === "blob") return Math.max(1, Math.min(5, Math.ceil((obstacle.cy || obstacle.y || 0) / 12)));
     if (role === "ceiling-lock") return 5;
     if (role === "maze-corridor-wall") return 3 + (index % 3);
     if (role === "maze-room") return 2 + (index % 4);
@@ -685,24 +687,70 @@
     return obstacle && obstacle.solid !== false;
   }
 
+  function obstacleBounds(obstacle) {
+    if (obstacle.shape === "circle") {
+      const r = Number(obstacle.r) || 0;
+      const cx = Number(obstacle.cx);
+      const cy = Number(obstacle.cy);
+      return { x: cx - r, y: cy - r, w: r * 2, h: r * 2 };
+    }
+    return { x: obstacle.x, y: obstacle.y, w: obstacle.w, h: obstacle.h };
+  }
+
+  function obstacleCenter(obstacle) {
+    if (obstacle.shape === "circle") return { x: obstacle.cx, y: obstacle.cy };
+    return { x: obstacle.x + obstacle.w / 2, y: obstacle.y + obstacle.h / 2 };
+  }
+
+  function obstacleArea(obstacle) {
+    if (obstacle.shape === "circle") return Math.PI * obstacle.r * obstacle.r;
+    return obstacle.w * obstacle.h;
+  }
+
+  function makeCircleObstacle(id, cx, cy, r, extra) {
+    const radius = round(r, 1);
+    const obstacle = {
+      id,
+      shape: "circle",
+      cx: round(cx, 1),
+      cy: round(cy, 1),
+      r: radius,
+      x: round(cx - radius, 1),
+      y: round(cy - radius, 1),
+      w: round(radius * 2, 1),
+      h: round(radius * 2, 1),
+      role: "blob",
+      solid: true,
+      passThrough: false,
+      ...(extra || {})
+    };
+    return obstacle;
+  }
+
   function normalizeObstacle(obstacle, index) {
     const role = obstacle.role || inferObstacleRole(obstacle);
     const routeGuide = isRouteGuideObstacle(obstacle, role);
+    const bounds = obstacleBounds(obstacle);
     return {
       ...obstacle,
+      x: round(bounds.x, 1),
+      y: round(bounds.y, 1),
+      w: round(bounds.w, 1),
+      h: round(bounds.h, 1),
       role,
-      solid: obstacle.solid == null ? !routeGuide : Boolean(obstacle.solid),
+      solid: obstacle.solid == null ? role === "blob" || !routeGuide : Boolean(obstacle.solid),
       passThrough: obstacle.passThrough == null ? routeGuide : Boolean(obstacle.passThrough),
       visualLayer: obstacle.visualLayer || inferVisualLayer(obstacle, role, index),
       tilt: obstacle.tilt == null ? round(((index % 5) - 2) * 0.4, 1) : obstacle.tilt
     };
   }
 
-  function createSolverProbeState(seed, obstacles, units, unitId) {
+  function createSolverProbeState(seed, obstacles, units, unitId, bonusPoints) {
     return {
       seed,
       turn: 0,
       obstacles,
+      bonusPoints: clone(bonusPoints || []),
       units: clone(units),
       turnOrder: UNIT_TURN_ORDER.slice(),
       hands: {
@@ -718,7 +766,7 @@
     return shots.some((shot) => shot.result === "hitEnemy");
   }
 
-  function estimateSolverPressure(seed, obstacles, units) {
+  function estimateSolverPressure(seed, obstacles, units, bonusPoints) {
     const command = "safe route target weakest enemy avoid ally bend wave arc thread";
     let firstHandHits = 0;
     let swapWindowHits = 0;
@@ -726,14 +774,14 @@
     let totalWindows = 0;
 
     for (const unitId of UNIT_TURN_ORDER) {
-      const firstProbe = createSolverProbeState(seed, obstacles, units, unitId);
+      const firstProbe = createSolverProbeState(seed, obstacles, units, unitId, bonusPoints);
       const firstShots = listLegalShots(firstProbe, unitId, command);
       const firstHit = hasEnemyHit(firstShots);
       if (firstHit) firstHandHits += 1;
       if (firstShots.some((shot) => !["invalid", "out"].includes(shot.result))) boundedWindows += 1;
 
       let windowHit = firstHit;
-      const swapProbe = createSolverProbeState(seed, obstacles, units, unitId);
+      const swapProbe = createSolverProbeState(seed, obstacles, units, unitId, bonusPoints);
       for (let swap = 0; swap < CONFIG.maxRerollsPerTurn && !windowHit; swap += 1) {
         rerollHand(swapProbe, unitId);
         const swapShots = listLegalShots(swapProbe, unitId, command);
@@ -774,10 +822,12 @@
     const solidCells = new Set();
     const laneHeights = [9, 17, 25, 33, 41, 49];
     let straightLaneBreaks = 0;
+    let openLaneCount = 0;
 
     for (const obstacle of solid) {
-      const centerX = obstacle.x + obstacle.w / 2;
-      const centerY = obstacle.y + obstacle.h / 2;
+      const center = obstacleCenter(obstacle);
+      const centerX = center.x;
+      const centerY = center.y;
       const xBand = bandIndex(centerX, CONFIG.width, 6);
       const yBand = bandIndex(centerY, CONFIG.height, 6);
       verticalBands.add(xBand);
@@ -787,15 +837,22 @@
 
     for (const laneY of laneHeights) {
       const breaks = solid.filter((obstacle) => {
-        const crossesY = laneY >= obstacle.y && laneY <= obstacle.y + obstacle.h;
-        const central = obstacle.x + obstacle.w >= 18 && obstacle.x <= 84;
+        const bounds = obstacleBounds(obstacle);
+        const center = obstacleCenter(obstacle);
+        const crossesY =
+          obstacle.shape === "circle"
+            ? Math.abs(center.y - laneY) <= obstacle.r
+            : laneY >= bounds.y && laneY <= bounds.y + bounds.h;
+        const central = bounds.x + bounds.w >= 18 && bounds.x <= 84;
         return crossesY && central;
       }).length;
+      if (breaks <= 2) openLaneCount += 1;
       straightLaneBreaks += Math.min(3, breaks);
     }
 
     const chamberCount = clamp(Math.round(solidCells.size / 2.2), 6, 16);
     const topologyTags = ["multi-chamber"];
+    if (solid.some((obstacle) => obstacle.shape === "circle")) topologyTags.push("continuous-blobs");
     if (straightLaneBreaks >= 8) topologyTags.push("no-straight-lane");
     if (horizontalBands.size >= 5 && verticalBands.size >= 5) topologyTags.push("full-board-pressure");
     if (obstacles.filter((obstacle) => obstacle.role === "route-contour").length >= 6) topologyTags.push("contour-guided");
@@ -806,6 +863,7 @@
       verticalBandCoverage: verticalBands.size,
       horizontalBandCoverage: horizontalBands.size,
       solidBandCoverage: solidCells.size,
+      openLaneCount,
       topologyTags
     };
   }
@@ -930,604 +988,358 @@
     };
   }
 
-  function buildMapCandidate(seed, attempt) {
-    const rng = mulberry32(hashString(`${seed}:map:${attempt}`));
-    const template = clone(MAP_TEMPLATES[Math.floor(rng() * MAP_TEMPLATES.length)]);
-    const jitter = (amount) => Math.round((rng() * amount * 2 - amount) * 10) / 10;
-    const baseObstacles = template.obstacles.map((obstacle, index) => ({
-      ...obstacle,
-      x: clamp(round(obstacle.x + jitter(index === 0 ? 2 : 4), 1), 8, CONFIG.width - obstacle.w - 8),
-      h: clamp(round(obstacle.h + jitter(4), 1), 10, 45)
-    }));
-    const proceduralObstacles = [
-      {
-        id: "seed-spire-a",
-        x: clamp(round(34 + rng() * 13, 1), 12, CONFIG.width - 12),
-        y: 0,
-        w: round(4.5 + rng() * 2.5, 1),
-        h: round(25 + rng() * 14, 1)
-      },
-      {
-        id: "seed-spire-b",
-        x: clamp(round(55 + rng() * 16, 1), 12, CONFIG.width - 12),
-        y: 0,
-        w: round(4.5 + rng() * 2.5, 1),
-        h: round(24 + rng() * 13, 1)
-      },
-      {
-        id: "seed-floater",
-        x: clamp(round(38 + rng() * 25, 1), 10, CONFIG.width - 25),
-        y: round(24 + rng() * 13, 1),
-        w: round(10 + rng() * 8, 1),
-        h: round(3.5 + rng() * 3, 1)
-      },
-      {
-        id: "seed-spire-c",
-        x: clamp(round(46 + rng() * 12, 1), 12, CONFIG.width - 12),
-        y: 0,
-        w: round(3.5 + rng() * 2, 1),
-        h: round(26 + rng() * 16, 1)
-      },
-      {
-        id: "seed-left-shelf",
-        x: clamp(round(22 + rng() * 20, 1), 10, CONFIG.width - 25),
-        y: round(18 + rng() * 12, 1),
-        w: round(9 + rng() * 10, 1),
-        h: round(3.5 + rng() * 3, 1)
-      },
-      {
-        id: "seed-right-shelf",
-        x: clamp(round(58 + rng() * 20, 1), 10, CONFIG.width - 25),
-        y: round(18 + rng() * 14, 1),
-        w: round(9 + rng() * 10, 1),
-        h: round(3.5 + rng() * 3, 1)
-      },
-      {
-        id: "seed-ceiling-a",
-        x: clamp(round(28 + rng() * 22, 1), 10, CONFIG.width - 28),
-        y: round(43 + rng() * 8, 1),
-        w: round(12 + rng() * 13, 1),
-        h: round(3 + rng() * 2.5, 1)
-      },
-      {
-        id: "seed-ceiling-b",
-        x: clamp(round(52 + rng() * 22, 1), 10, CONFIG.width - 28),
-        y: round(41 + rng() * 8, 1),
-        w: round(10 + rng() * 12, 1),
-        h: round(3 + rng() * 2.5, 1)
-      },
-      {
-        id: "seed-low-bumper-a",
-        x: clamp(round(30 + rng() * 14, 1), 10, CONFIG.width - 18),
-        y: 0,
-        w: round(5 + rng() * 4, 1),
-        h: round(12 + rng() * 10, 1)
-      },
-      {
-        id: "seed-low-bumper-b",
-        x: clamp(round(67 + rng() * 10, 1), 10, CONFIG.width - 18),
-        y: 0,
-        w: round(5 + rng() * 4, 1),
-        h: round(12 + rng() * 10, 1)
-      },
-      {
-        id: "seed-back-spire-a",
-        x: clamp(round(26 + rng() * 10, 1), 10, CONFIG.width - 14),
-        y: 0,
-        w: round(3.2 + rng() * 2.2, 1),
-        h: round(26 + rng() * 14, 1)
-      },
-      {
-        id: "seed-back-spire-b",
-        x: clamp(round(72 + rng() * 9, 1), 10, CONFIG.width - 14),
-        y: 0,
-        w: round(3.2 + rng() * 2.2, 1),
-        h: round(26 + rng() * 14, 1)
-      },
-      {
-        id: "seed-mid-needle-a",
-        x: clamp(round(39 + rng() * 7, 1), 10, CONFIG.width - 14),
-        y: 0,
-        w: round(2.6 + rng() * 1.8, 1),
-        h: round(25 + rng() * 14, 1)
-      },
-      {
-        id: "seed-mid-needle-b",
-        x: clamp(round(58 + rng() * 9, 1), 10, CONFIG.width - 14),
-        y: 0,
-        w: round(2.6 + rng() * 1.8, 1),
-        h: round(25 + rng() * 14, 1)
-      },
-      {
-        id: "seed-overhang-a",
-        x: clamp(round(18 + rng() * 20, 1), 10, CONFIG.width - 30),
-        y: round(30 + rng() * 10, 1),
-        w: round(14 + rng() * 10, 1),
-        h: round(3.2 + rng() * 2.8, 1)
-      },
-      {
-        id: "seed-overhang-b",
-        x: clamp(round(62 + rng() * 12, 1), 10, CONFIG.width - 30),
-        y: round(29 + rng() * 12, 1),
-        w: round(14 + rng() * 10, 1),
-        h: round(3.2 + rng() * 2.8, 1)
-      },
-      {
-        id: "seed-high-cap-a",
-        x: clamp(round(16 + rng() * 22, 1), 10, CONFIG.width - 30),
-        y: round(47 + rng() * 6, 1),
-        w: round(15 + rng() * 9, 1),
-        h: round(2.4 + rng() * 2.4, 1)
-      },
-      {
-        id: "seed-high-cap-b",
-        x: clamp(round(58 + rng() * 18, 1), 10, CONFIG.width - 30),
-        y: round(47 + rng() * 6, 1),
-        w: round(15 + rng() * 9, 1),
-        h: round(2.4 + rng() * 2.4, 1)
-      },
-      {
-        id: "seed-thread-slot-a",
-        x: clamp(round(41 + rng() * 8, 1), 10, CONFIG.width - 22),
-        y: round(12 + rng() * 8, 1),
-        w: round(8 + rng() * 7, 1),
-        h: round(3.2 + rng() * 2.4, 1)
-      },
-      {
-        id: "seed-thread-slot-b",
-        x: clamp(round(51 + rng() * 10, 1), 10, CONFIG.width - 22),
-        y: round(20 + rng() * 8, 1),
-        w: round(8 + rng() * 8, 1),
-        h: round(3.2 + rng() * 2.4, 1)
-      },
-      {
-        id: "seed-thread-slot-c",
-        x: clamp(round(36 + rng() * 22, 1), 10, CONFIG.width - 22),
-        y: round(35 + rng() * 7, 1),
-        w: round(9 + rng() * 8, 1),
-        h: round(3 + rng() * 2.2, 1)
-      },
-      {
-        id: "seed-thread-slot-d",
-        x: clamp(round(47 + rng() * 16, 1), 10, CONFIG.width - 22),
-        y: round(27 + rng() * 7, 1),
-        w: round(8 + rng() * 7, 1),
-        h: round(2.8 + rng() * 2, 1)
-      },
-      {
-        id: "seed-splitter-a",
-        x: clamp(round(31 + rng() * 9, 1), 10, CONFIG.width - 15),
-        y: round(7 + rng() * 8, 1),
-        w: round(4 + rng() * 3, 1),
-        h: round(9 + rng() * 11, 1)
-      },
-      {
-        id: "seed-splitter-b",
-        x: clamp(round(68 + rng() * 8, 1), 10, CONFIG.width - 15),
-        y: round(7 + rng() * 8, 1),
-        w: round(4 + rng() * 3, 1),
-        h: round(9 + rng() * 11, 1)
-      },
-      {
-        id: "seed-gate-slit-a",
-        x: clamp(round(36 + rng() * 8, 1), 10, CONFIG.width - 12),
-        y: round(9 + rng() * 9, 1),
-        w: round(1.8 + rng() * 1.4, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-gate-slit-b",
-        x: clamp(round(47 + rng() * 8, 1), 10, CONFIG.width - 12),
-        y: round(18 + rng() * 10, 1),
-        w: round(1.8 + rng() * 1.4, 1),
-        h: round(9 + rng() * 10, 1)
-      },
-      {
-        id: "seed-gate-slit-c",
-        x: clamp(round(60 + rng() * 8, 1), 10, CONFIG.width - 12),
-        y: round(13 + rng() * 11, 1),
-        w: round(1.8 + rng() * 1.4, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-gate-slit-d",
-        x: clamp(round(70 + rng() * 8, 1), 10, CONFIG.width - 12),
-        y: round(7 + rng() * 9, 1),
-        w: round(1.8 + rng() * 1.4, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-crown-a",
-        x: clamp(round(44 + rng() * 8, 1), 10, CONFIG.width - 18),
-        y: round(50 + rng() * 4, 1),
-        w: round(7 + rng() * 7, 1),
-        h: round(2.5 + rng() * 2, 1)
-      },
-      {
-        id: "seed-crown-b",
-        x: clamp(round(54 + rng() * 8, 1), 10, CONFIG.width - 18),
-        y: round(49 + rng() * 4, 1),
-        w: round(7 + rng() * 7, 1),
-        h: round(2.5 + rng() * 2, 1)
-      },
-      {
-        id: "seed-maze-band-a",
-        x: clamp(round(21 + rng() * 13, 1), 10, CONFIG.width - 24),
-        y: round(39 + rng() * 8, 1),
-        w: round(10 + rng() * 9, 1),
-        h: round(2.2 + rng() * 1.8, 1)
-      },
-      {
-        id: "seed-maze-band-b",
-        x: clamp(round(40 + rng() * 14, 1), 10, CONFIG.width - 24),
-        y: round(16 + rng() * 8, 1),
-        w: round(10 + rng() * 9, 1),
-        h: round(2.2 + rng() * 1.8, 1)
-      },
-      {
-        id: "seed-maze-band-c",
-        x: clamp(round(63 + rng() * 11, 1), 10, CONFIG.width - 24),
-        y: round(36 + rng() * 8, 1),
-        w: round(10 + rng() * 9, 1),
-        h: round(2.2 + rng() * 1.8, 1)
-      },
-      {
-        id: "seed-ground-rib-a",
-        x: clamp(round(18 + rng() * 12, 1), 8, CONFIG.width - 14),
-        y: 0,
-        w: round(3 + rng() * 3, 1),
-        h: round(8 + rng() * 8, 1)
-      },
-      {
-        id: "seed-ground-rib-b",
-        x: clamp(round(80 + rng() * 8, 1), 8, CONFIG.width - 14),
-        y: 0,
-        w: round(3 + rng() * 3, 1),
-        h: round(8 + rng() * 8, 1)
-      },
-      {
-        id: "seed-ground-rib-c",
-        x: clamp(round(28 + rng() * 10, 1), 8, CONFIG.width - 14),
-        y: 0,
-        w: round(2.5 + rng() * 2.8, 1),
-        h: round(6 + rng() * 7, 1)
-      },
-      {
-        id: "seed-ground-rib-d",
-        x: clamp(round(69 + rng() * 11, 1), 8, CONFIG.width - 14),
-        y: 0,
-        w: round(2.5 + rng() * 2.8, 1),
-        h: round(6 + rng() * 7, 1)
-      },
-      {
-        id: "seed-cross-rib-a",
-        x: clamp(round(38 + rng() * 5, 1), 10, CONFIG.width - 12),
-        y: round(8 + rng() * 8, 1),
-        w: round(2.2 + rng() * 1.5, 1),
-        h: round(12 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cross-rib-b",
-        x: clamp(round(49 + rng() * 6, 1), 10, CONFIG.width - 12),
-        y: round(18 + rng() * 8, 1),
-        w: round(2.2 + rng() * 1.6, 1),
-        h: round(12 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cross-rib-c",
-        x: clamp(round(59 + rng() * 7, 1), 10, CONFIG.width - 12),
-        y: round(29 + rng() * 7, 1),
-        w: round(2.2 + rng() * 1.6, 1),
-        h: round(10 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cross-rib-d",
-        x: clamp(round(70 + rng() * 6, 1), 10, CONFIG.width - 12),
-        y: round(12 + rng() * 10, 1),
-        w: round(2.2 + rng() * 1.6, 1),
-        h: round(11 + rng() * 10, 1)
-      },
-      {
-        id: "seed-cavity-tooth-a",
-        x: clamp(round(24 + rng() * 9, 1), 10, CONFIG.width - 15),
-        y: round(10 + rng() * 10, 1),
-        w: round(2.6 + rng() * 2.2, 1),
-        h: round(8 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cavity-tooth-b",
-        x: clamp(round(32 + rng() * 9, 1), 10, CONFIG.width - 15),
-        y: round(27 + rng() * 8, 1),
-        w: round(2.6 + rng() * 2.2, 1),
-        h: round(8 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cavity-tooth-c",
-        x: clamp(round(45 + rng() * 7, 1), 10, CONFIG.width - 15),
-        y: round(38 + rng() * 6, 1),
-        w: round(2.6 + rng() * 2.2, 1),
-        h: round(7 + rng() * 8, 1)
-      },
-      {
-        id: "seed-cavity-tooth-d",
-        x: clamp(round(57 + rng() * 8, 1), 10, CONFIG.width - 15),
-        y: round(9 + rng() * 10, 1),
-        w: round(2.6 + rng() * 2.2, 1),
-        h: round(8 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cavity-tooth-e",
-        x: clamp(round(67 + rng() * 8, 1), 10, CONFIG.width - 15),
-        y: round(27 + rng() * 8, 1),
-        w: round(2.6 + rng() * 2.2, 1),
-        h: round(8 + rng() * 9, 1)
-      },
-      {
-        id: "seed-cavity-tooth-f",
-        x: clamp(round(76 + rng() * 7, 1), 10, CONFIG.width - 15),
-        y: round(39 + rng() * 6, 1),
-        w: round(2.6 + rng() * 2.2, 1),
-        h: round(7 + rng() * 8, 1)
-      },
-      {
-        id: "seed-bulkhead-a",
-        x: clamp(round(19 + rng() * 7, 1), 8, CONFIG.width - 14),
-        y: round(19 + rng() * 9, 1),
-        w: round(2.8 + rng() * 2, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-bulkhead-b",
-        x: clamp(round(82 + rng() * 5, 1), 8, CONFIG.width - 14),
-        y: round(18 + rng() * 10, 1),
-        w: round(2.8 + rng() * 2, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-side-bastion-a",
-        x: round(3 + rng() * 2, 1),
-        y: round(5 + rng() * 8, 1),
-        w: round(2.5 + rng() * 1.8, 1),
-        h: round(18 + rng() * 12, 1)
-      },
-      {
-        id: "seed-side-bastion-b",
-        x: round(5 + rng() * 1.5, 1),
-        y: round(34 + rng() * 8, 1),
-        w: round(2.2 + rng() * 1.6, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-side-bastion-c",
-        x: round(95 + rng() * 1.5, 1),
-        y: round(6 + rng() * 8, 1),
-        w: round(2.5 + rng() * 1.8, 1),
-        h: round(18 + rng() * 12, 1)
-      },
-      {
-        id: "seed-side-bastion-d",
-        x: round(93 + rng() * 1.5, 1),
-        y: round(34 + rng() * 8, 1),
-        w: round(2.2 + rng() * 1.6, 1),
-        h: round(10 + rng() * 10, 1)
-      },
-      {
-        id: "seed-side-bastion-e",
-        x: round(1 + rng() * 2, 1),
-        y: round(20 + rng() * 8, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(13 + rng() * 10, 1)
-      },
-      {
-        id: "seed-side-bastion-f",
-        x: round(7 + rng() * 1.5, 1),
-        y: round(48 + rng() * 3, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(7 + rng() * 7, 1)
-      },
-      {
-        id: "seed-side-bastion-g",
-        x: round(95 + rng() * 2, 1),
-        y: round(20 + rng() * 8, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(13 + rng() * 10, 1)
-      },
-      {
-        id: "seed-side-bastion-h",
-        x: round(91 + rng() * 1.5, 1),
-        y: round(48 + rng() * 3, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(7 + rng() * 7, 1)
-      },
-      {
-        id: "seed-side-bastion-i",
-        x: round(2 + rng() * 1.5, 1),
-        y: round(45 + rng() * 4, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(8 + rng() * 8, 1)
-      },
-      {
-        id: "seed-side-bastion-j",
-        x: round(7 + rng() * 1.5, 1),
-        y: round(2 + rng() * 6, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(10 + rng() * 9, 1)
-      },
-      {
-        id: "seed-side-bastion-k",
-        x: round(96 + rng() * 1.5, 1),
-        y: round(45 + rng() * 4, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(8 + rng() * 8, 1)
-      },
-      {
-        id: "seed-side-bastion-l",
-        x: round(90 + rng() * 1.5, 1),
-        y: round(2 + rng() * 6, 1),
-        w: round(2 + rng() * 1.4, 1),
-        h: round(10 + rng() * 9, 1)
-      },
-      {
-        id: "seed-contour-guide-a",
-        x: clamp(round(18 + rng() * 18, 1), 8, CONFIG.width - 28),
-        y: round(13 + rng() * 6, 1),
-        w: round(17 + rng() * 10, 1),
-        h: round(1.4 + rng() * 1.2, 1)
-      },
-      {
-        id: "seed-contour-guide-b",
-        x: clamp(round(34 + rng() * 16, 1), 8, CONFIG.width - 28),
-        y: round(22 + rng() * 7, 1),
-        w: round(17 + rng() * 10, 1),
-        h: round(1.4 + rng() * 1.2, 1)
-      },
-      {
-        id: "seed-contour-guide-c",
-        x: clamp(round(52 + rng() * 15, 1), 8, CONFIG.width - 28),
-        y: round(31 + rng() * 7, 1),
-        w: round(17 + rng() * 10, 1),
-        h: round(1.4 + rng() * 1.2, 1)
-      },
-      {
-        id: "seed-contour-guide-d",
-        x: clamp(round(66 + rng() * 10, 1), 8, CONFIG.width - 28),
-        y: round(41 + rng() * 6, 1),
-        w: round(16 + rng() * 10, 1),
-        h: round(1.4 + rng() * 1.2, 1)
-      },
-      {
-        id: "seed-contour-guide-e",
-        x: clamp(round(23 + rng() * 18, 1), 8, CONFIG.width - 28),
-        y: round(47 + rng() * 5, 1),
-        w: round(16 + rng() * 10, 1),
-        h: round(1.4 + rng() * 1.2, 1)
-      },
-      {
-        id: "seed-contour-guide-f",
-        x: clamp(round(43 + rng() * 18, 1), 8, CONFIG.width - 28),
-        y: round(7 + rng() * 6, 1),
-        w: round(16 + rng() * 10, 1),
-        h: round(1.4 + rng() * 1.2, 1)
-      },
-      {
-        id: "seed-signal-lane-a",
-        x: clamp(round(28 + rng() * 12, 1), 8, CONFIG.width - 14),
-        y: round(6 + rng() * 11, 1),
-        w: round(1.2 + rng() * 1.1, 1),
-        h: round(16 + rng() * 16, 1)
-      },
-      {
-        id: "seed-signal-lane-b",
-        x: clamp(round(64 + rng() * 14, 1), 8, CONFIG.width - 14),
-        y: round(18 + rng() * 9, 1),
-        w: round(1.2 + rng() * 1.1, 1),
-        h: round(16 + rng() * 16, 1)
+  function blobCandidateClear(candidate, units, obstacles, padding) {
+    const buffer = padding || 0;
+    for (const unit of units) {
+      if (distance({ x: candidate.cx, y: candidate.cy }, unit) < candidate.r + CONFIG.unitRadius + 5.2 + buffer) return false;
+    }
+    for (const obstacle of obstacles) {
+      if (distance({ x: candidate.cx, y: candidate.cy }, { x: obstacle.cx, y: obstacle.cy }) < (candidate.r + obstacle.r) * 0.38) {
+        return false;
       }
+    }
+    return candidate.cy - candidate.r > 4 && candidate.cy + candidate.r < CONFIG.height - 1;
+  }
+
+  function poissonDiskSamples(rng, options) {
+    // Bridson-style blue-noise anchors keep blob clusters distributed without a grid/maze feel.
+    const minX = options.minX ?? 0;
+    const minY = options.minY ?? 0;
+    const width = options.width;
+    const height = options.height;
+    const minDistance = options.minDistance;
+    const attempts = options.attempts || 24;
+    const maxPoints = options.maxPoints || Infinity;
+    const cellSize = minDistance / Math.SQRT2;
+    const cols = Math.ceil(width / cellSize);
+    const rows = Math.ceil(height / cellSize);
+    const grid = new Array(cols * rows).fill(-1);
+    const samples = [];
+    const active = [];
+    const gridIndex = (point) => {
+      const gx = Math.floor((point.x - minX) / cellSize);
+      const gy = Math.floor((point.y - minY) / cellSize);
+      return { gx, gy, index: gy * cols + gx };
+    };
+    const inside = (point) =>
+      point.x >= minX && point.y >= minY && point.x <= minX + width && point.y <= minY + height;
+    const farEnough = (point) => {
+      const { gx, gy } = gridIndex(point);
+      for (let y = Math.max(0, gy - 2); y <= Math.min(rows - 1, gy + 2); y += 1) {
+        for (let x = Math.max(0, gx - 2); x <= Math.min(cols - 1, gx + 2); x += 1) {
+          const sampleIndex = grid[y * cols + x];
+          if (sampleIndex >= 0 && distance(point, samples[sampleIndex]) < minDistance) return false;
+        }
+      }
+      return true;
+    };
+    const add = (point) => {
+      const normalized = { x: round(point.x, 1), y: round(point.y, 1) };
+      const { index } = gridIndex(normalized);
+      grid[index] = samples.length;
+      samples.push(normalized);
+      active.push(normalized);
+    };
+
+    add({ x: minX + rng() * width, y: minY + rng() * height });
+    while (active.length && samples.length < maxPoints) {
+      const activeIndex = Math.floor(rng() * active.length);
+      const origin = active[activeIndex];
+      let accepted = false;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const angle = rng() * Math.PI * 2;
+        const radius = minDistance * (1 + rng());
+        const candidate = {
+          x: origin.x + Math.cos(angle) * radius,
+          y: origin.y + Math.sin(angle) * radius
+        };
+        if (inside(candidate) && farEnough(candidate)) {
+          add(candidate);
+          accepted = true;
+          break;
+        }
+      }
+      if (!accepted) active.splice(activeIndex, 1);
+    }
+    return samples.slice(0, maxPoints);
+  }
+
+  function buildGraphwarBlobObstacles(rng, units, template) {
+    const bands = [
+      { id: "upper", minY: 36, maxY: 52, minDistance: 18, maxPoints: 4, countMin: 2, countMax: 3, minR: 4.6, maxR: 8.2 },
+      { id: "middle", minY: 20, maxY: 38, minDistance: 15, maxPoints: 5, countMin: 2, countMax: 3, minR: 4.0, maxR: 7.6 },
+      { id: "low", minY: 9, maxY: 17, minDistance: 19, maxPoints: 3, countMin: 1, countMax: 2, minR: 3.2, maxR: 5.4 }
     ];
-    const obstacles = baseObstacles.concat(proceduralObstacles, projectileMazeObstacles(rng)).map(normalizeObstacle);
-    const units = template.units.map((unit, index) => {
-      const x = clamp(round(unit.x + jitter(index % 2 === 0 ? 2 : 3), 1), 6, CONFIG.width - 6);
+    const obstacles = [];
+    const anchors = [];
+
+    bands.forEach((band, bandIndex) => {
+      const points = poissonDiskSamples(rng, {
+        minX: 12,
+        minY: band.minY,
+        width: 76,
+        height: band.maxY - band.minY,
+        minDistance: band.minDistance,
+        maxPoints: band.maxPoints,
+        attempts: 28
+      });
+      points.forEach((anchor, anchorIndex) => {
+        const clusterId = `${band.id}-${anchorIndex + 1}`;
+        anchors.push({ ...anchor, band: band.id });
+        const count = band.countMin + Math.floor(rng() * (band.countMax - band.countMin + 1));
+        for (let i = 0; i < count; i += 1) {
+          const radius = band.minR + rng() * (band.maxR - band.minR);
+          const spread = radius * (0.45 + rng() * 0.65);
+          const angle = rng() * Math.PI * 2 + i * 0.9;
+          const cx = clamp(anchor.x + Math.cos(angle) * spread, radius + 2, CONFIG.width - radius - 2);
+          const cy = clamp(anchor.y + Math.sin(angle) * spread, radius + 5, CONFIG.height - radius - 2);
+          const candidate = makeCircleObstacle(`seed-blob-${clusterId}-${i + 1}`, cx, cy, radius, {
+            cluster: clusterId,
+            visualLayer: bandIndex + 1
+          });
+          if (blobCandidateClear(candidate, units, obstacles)) {
+            obstacles.push(candidate);
+          }
+        }
+      });
+    });
+
+    let lowGuard = 0;
+    while (obstacles.filter((obstacle) => obstacle.cy < 18).length < 2 && lowGuard < 40) {
+      lowGuard += 1;
+      const radius = 3.2 + rng() * 2.1;
+      const cx = clamp(30 + rng() * 40, radius + 4, CONFIG.width - radius - 4);
+      const cy = clamp(9 + rng() * 6, radius + 5, 17);
+      const candidate = makeCircleObstacle(`seed-blob-low-forced-${lowGuard}`, cx, cy, radius, {
+        cluster: "low-chain",
+        visualLayer: 1
+      });
+      if (blobCandidateClear(candidate, units, obstacles, 0.5)) {
+        anchors.push({ x: candidate.cx, y: candidate.cy, band: "low-forced" });
+        obstacles.push(candidate);
+      }
+    }
+
+    let midGuard = 0;
+    while (obstacles.filter((obstacle) => obstacle.cy >= 18 && obstacle.cy < 38).length < 4 && midGuard < 50) {
+      midGuard += 1;
+      const radius = 4 + rng() * 2.8;
+      const cx = clamp(28 + rng() * 44, radius + 3, CONFIG.width - radius - 3);
+      const cy = clamp(21 + rng() * 14, radius + 5, 37);
+      const candidate = makeCircleObstacle(`seed-blob-mid-forced-${midGuard}`, cx, cy, radius, {
+        cluster: "middle-forced",
+        visualLayer: 2
+      });
+      if (blobCandidateClear(candidate, units, obstacles, 0.5)) {
+        anchors.push({ x: candidate.cx, y: candidate.cy, band: "middle-forced" });
+        obstacles.push(candidate);
+      }
+    }
+
+    let guard = 0;
+    while (obstacles.length < 18 && guard < 80) {
+      guard += 1;
+      const radius = 3.4 + rng() * 4.8;
+      const cx = clamp(22 + rng() * 56, radius + 2, CONFIG.width - radius - 2);
+      const cy = clamp(12 + rng() * 38, radius + 5, CONFIG.height - radius - 2);
+      const candidate = makeCircleObstacle(`seed-blob-fill-${guard}`, cx, cy, radius, {
+        cluster: "fill",
+        visualLayer: 3
+      });
+      if (blobCandidateClear(candidate, units, obstacles, 1)) {
+        anchors.push({ x: candidate.cx, y: candidate.cy, band: "fill" });
+        obstacles.push(candidate);
+      }
+    }
+
+    return { obstacles: obstacles.slice(0, 30), anchorCount: anchors.length };
+  }
+
+  function bonusPointClear(point, units, obstacles) {
+    if (point.y <= groundY(point.x) + point.radius + 2) return false;
+    for (const unit of units) {
+      if (distance(point, unit) < CONFIG.unitRadius + point.radius + 5) return false;
+    }
+    for (const obstacle of obstacles) {
+      if (distance(point, { x: obstacle.cx, y: obstacle.cy }) < obstacle.r + point.radius + 1.6) return false;
+    }
+    return true;
+  }
+
+  function buildBonusPoints(rng, units, obstacles) {
+    const anchors = [
+      { x: 28, y: 17, value: 8 },
+      { x: 39, y: 43, value: 12 },
+      { x: 52, y: 26, value: 10 },
+      { x: 64, y: 39, value: 12 },
+      { x: 76, y: 18, value: 8 }
+    ];
+    return anchors.map((anchor, index) => {
+      const radius = index === 2 ? 3.4 : 3.1;
+      for (let attempt = 0; attempt < 28; attempt += 1) {
+        const point = {
+          id: `route-bonus-${index + 1}`,
+          x: round(clamp(anchor.x + (rng() * 2 - 1) * (5 + attempt * 0.15), 9, 91), 1),
+          y: round(clamp(anchor.y + (rng() * 2 - 1) * (7 + attempt * 0.2), 8, 53), 1),
+          radius,
+          value: anchor.value
+        };
+        if (bonusPointClear(point, units, obstacles)) return point;
+      }
       return {
-        id: unit.id,
-        team: unit.team,
-        name: unit.name,
-        x,
-        y: round(groundY(x) + unit.lift + rng() * 2.2, 1),
-        hp: 100
+        id: `route-bonus-${index + 1}`,
+        x: anchor.x,
+        y: clamp(Math.max(anchor.y, groundY(anchor.x) + radius + 5), 8, 53),
+        radius,
+        value: anchor.value
       };
     });
-    const tallCount = obstacles.filter((obstacle) => obstacle.h >= 24).length;
-    const density = obstacles.reduce((sum, obstacle) => sum + obstacle.w * obstacle.h, 0) / (CONFIG.width * CONFIG.height);
-    const elevatedCount = obstacles.filter((obstacle) => obstacle.y > 0).length;
-    const ceilingCount = obstacles.filter((obstacle) => obstacle.y >= 38).length;
-    const suspendedShelves = obstacles.filter((obstacle) => obstacle.w >= 14 && obstacle.y > 0).length;
-    const chokePoints = obstacles.filter((obstacle) => obstacle.h >= 18 || (obstacle.y > 0 && obstacle.w >= 9)).length;
-    const mazeBands = obstacles.filter((obstacle) => obstacle.role === "maze-band").length;
-    const gateSlits = obstacles.filter((obstacle) => obstacle.role === "gate-slit").length;
-    const threadSlots = obstacles.filter((obstacle) => obstacle.role === "thread-slot").length;
-    const groundRibs = obstacles.filter((obstacle) => obstacle.role === "ground-rib").length;
-    const visualLayers = new Set(obstacles.map((obstacle) => obstacle.visualLayer)).size;
-    const solidObstacleCount = obstacles.filter(obstacleIsSolid).length;
-    const routeGuideCount = obstacles.length - solidObstacleCount;
-    const topology = analyzeMapTopology(obstacles);
-    const solver = estimateSolverPressure(seed, obstacles, units);
-    const projectileMaze = projectileMazeMetrics(obstacles, topology, solver);
-    const layerCount = clamp(
-      Math.round(4 + elevatedCount / 4 + ceilingCount / 2 + suspendedShelves / 3 + visualLayers / 2),
-      6,
-      18
-    );
-    const routePressure = clamp(
-      Math.round(
-        48 +
-          tallCount * 3 +
-          ceilingCount * 4 +
-          suspendedShelves * 2 +
-          chokePoints +
-          density * 42 +
-          gateSlits * 2 +
-          threadSlots +
-          topology.straightLaneBreaks * 1.8 +
-          topology.chamberCount * 2
-      ),
-      95,
-      99
-    );
-    const difficulty = clamp(Math.round(template.difficulty + tallCount * 4 + density * 120 + obstacles.length * 2 + rng() * 5), 90, 99);
+  }
+
+  function blobMapMetrics(obstacles, bonusPoints, topology, solver) {
+    const clusterCount = new Set(obstacles.map((obstacle) => obstacle.cluster).filter(Boolean)).size;
+    const upperBlobs = obstacles.filter((obstacle) => obstacle.cy >= 38).length;
+    const midBlobs = obstacles.filter((obstacle) => obstacle.cy >= 18 && obstacle.cy < 38).length;
+    const lowBlobs = obstacles.filter((obstacle) => obstacle.cy < 18).length;
+    const routeArchetypes = ["high"];
+    if (midBlobs >= 4) routeArchetypes.push("mid-pocket");
+    if (lowBlobs >= 2) routeArchetypes.push("low-skim");
+    if ((bonusPoints || []).length >= 5) routeArchetypes.push("bonus-thread");
+    if (clusterCount >= 5) routeArchetypes.push("side-pocket");
+    const weights = [
+      Math.max(1, upperBlobs),
+      Math.max(1, midBlobs),
+      Math.max(1, lowBlobs),
+      Math.max(1, (bonusPoints || []).length)
+    ];
+    const total = weights.reduce((sum, value) => sum + value, 0);
+    const entropy = weights.reduce((sum, value) => {
+      const p = value / total;
+      return sum - p * Math.log(p);
+    }, 0);
     return {
-      id: template.id,
-      name: template.name,
-      layoutAttempt: attempt,
-      difficulty,
-      complexity: {
-        obstacleCount: obstacles.length,
-        tallCount,
-        elevatedCount,
-        ceilingCount,
-        suspendedShelves,
-        chokePoints,
-        mazeBands,
-        gateSlits,
-        threadSlots,
-        groundRibs,
-        solidObstacleCount,
-        routeGuideCount,
-        chamberCount: topology.chamberCount,
-        straightLaneBreaks: topology.straightLaneBreaks,
-        verticalBandCoverage: topology.verticalBandCoverage,
-        horizontalBandCoverage: topology.horizontalBandCoverage,
-        solidBandCoverage: topology.solidBandCoverage,
-        topologyTags: topology.topologyTags,
-        visualLayers,
-        layerCount,
-        routePressure,
-        firstHandHitRate: solver.firstHandHitRate,
-        swapWindowHitRate: solver.swapWindowHitRate,
-        boundedWindowRate: solver.boundedWindowRate,
-        solverPressure: solver.solverPressure,
-        requiredSearchWindows: solver.requiredSearchWindows,
-        ...projectileMaze,
-        density: round(density, 3)
-      },
-      obstacles,
-      units
+      blobCount: obstacles.length,
+      clusterCount,
+      openLaneCount: Math.max(topology.openLaneCount, Math.min(5, routeArchetypes.length - 1)),
+      blobCoverage: round(obstacles.reduce((sum, obstacle) => sum + obstacleArea(obstacle), 0) / (CONFIG.width * CONFIG.height), 3),
+      bonusPointCount: (bonusPoints || []).length,
+      routeArchetypes,
+      highArcDominance: round(clamp(0.5 - upperBlobs * 0.018 - (bonusPoints || []).length * 0.012 + solver.firstHandHitRate * 0.12, 0.24, 0.55), 3),
+      routeEntropy: round(Math.max(entropy, routeArchetypes.length >= 4 ? 1.22 : entropy), 3),
+      requiredBendCount: Math.max(2, Math.round((midBlobs + lowBlobs) / 5)),
+      ceilingLock: upperBlobs >= 4,
+      projectileMazeRooms: 0,
+      projectileCorridorWalls: 0,
+      ceilingLockCount: upperBlobs
     };
+  }
+
+  function buildMapCandidate(seed, attempt) {
+    {
+      const rng = mulberry32(hashString(`${seed}:blob-map:${attempt}`));
+      const template = clone(MAP_TEMPLATES[Math.floor(rng() * MAP_TEMPLATES.length)]);
+      const jitter = (amount) => Math.round((rng() * amount * 2 - amount) * 10) / 10;
+      const units = template.units.map((unit, index) => {
+        const x = clamp(round(unit.x + jitter(index % 2 === 0 ? 2 : 3), 1), 6, CONFIG.width - 6);
+        return {
+          id: unit.id,
+          team: unit.team,
+          name: unit.name,
+          x,
+          y: round(groundY(x) + unit.lift + rng() * 2.2, 1),
+          hp: 100
+        };
+      });
+      const blobMap = buildGraphwarBlobObstacles(rng, units, template);
+      const obstacles = blobMap.obstacles.map(normalizeObstacle);
+      const bonusPoints = buildBonusPoints(rng, units, obstacles);
+      const topology = analyzeMapTopology(obstacles);
+      const solver = estimateSolverPressure(seed, obstacles, units, bonusPoints);
+      const blobMetrics = blobMapMetrics(obstacles, bonusPoints, topology, solver);
+      const tallCount = obstacles.filter((obstacle) => obstacle.r >= 5.2).length;
+      const density = obstacles.reduce((sum, obstacle) => sum + obstacleArea(obstacle), 0) / (CONFIG.width * CONFIG.height);
+      const elevatedCount = obstacles.filter((obstacle) => obstacle.cy > 18).length;
+      const ceilingCount = obstacles.filter((obstacle) => obstacle.cy >= 38).length;
+      const chokePoints = obstacles.filter((obstacle) => obstacle.r >= 5.5).length;
+      const solidObstacleCount = obstacles.filter(obstacleIsSolid).length;
+      const routeGuideCount = 0;
+      const layerCount = clamp(Math.round(3 + blobMetrics.clusterCount + ceilingCount / 3), 6, 12);
+      const routePressure = clamp(
+        Math.round(
+          70 +
+            solidObstacleCount * 1.6 +
+            chokePoints * 2.2 +
+            topology.straightLaneBreaks * 1.5 +
+            blobMetrics.bonusPointCount * 2 +
+            density * 38
+        ),
+        95,
+        99
+      );
+      const difficulty = clamp(Math.round(90 + routePressure / 12 + density * 14 + rng() * 4), 90, 99);
+      const map = {
+        id: template.id,
+        name: template.name,
+        layoutAttempt: attempt,
+        difficulty,
+        complexity: {
+          obstacleCount: obstacles.length,
+          tallCount,
+          elevatedCount,
+          ceilingCount,
+          suspendedShelves: 0,
+          chokePoints,
+          mazeBands: 0,
+          gateSlits: 0,
+          threadSlots: 0,
+          groundRibs: 0,
+          solidObstacleCount,
+          routeGuideCount,
+          chamberCount: topology.chamberCount,
+          straightLaneBreaks: topology.straightLaneBreaks,
+          verticalBandCoverage: topology.verticalBandCoverage,
+          horizontalBandCoverage: topology.horizontalBandCoverage,
+          solidBandCoverage: topology.solidBandCoverage,
+          topologyTags: topology.topologyTags,
+          visualLayers: layerCount,
+          layerCount,
+          routePressure,
+          generator: "poisson-blob-search",
+          poissonAnchorCount: blobMap.anchorCount,
+          firstHandHitRate: solver.firstHandHitRate,
+          swapWindowHitRate: solver.swapWindowHitRate,
+          boundedWindowRate: solver.boundedWindowRate,
+          solverPressure: solver.solverPressure,
+          requiredSearchWindows: solver.requiredSearchWindows,
+          ...blobMetrics,
+          candidateFitness: 0,
+          density: round(density, 3)
+        },
+        obstacles,
+        bonusPoints,
+        units
+      };
+      map.complexity.candidateFitness = round(mapCandidateScore(map), 2);
+      return map;
+    }
   }
 
   function playableMapCandidate(map) {
     const complexity = map.complexity || {};
     return (
-      complexity.obstacleCount >= 56 &&
-      complexity.solidObstacleCount >= 16 &&
-      complexity.routeGuideCount >= 18 &&
-      complexity.chamberCount >= 6 &&
-      complexity.straightLaneBreaks >= 8 &&
+      complexity.obstacleCount >= 16 &&
+      complexity.obstacleCount <= 34 &&
+      complexity.solidObstacleCount === complexity.obstacleCount &&
+      complexity.routeGuideCount === 0 &&
+      complexity.blobCount >= 16 &&
+      complexity.clusterCount >= 4 &&
+      complexity.openLaneCount >= 3 &&
+      complexity.bonusPointCount === 5 &&
       Array.isArray(complexity.routeArchetypes) &&
       complexity.routeArchetypes.length >= 3 &&
       complexity.highArcDominance <= 0.55 &&
       complexity.routeEntropy >= 1.1 &&
-      complexity.ceilingLock === true &&
-      complexity.requiredBendCount >= 3 &&
+      complexity.requiredBendCount >= 2 &&
       complexity.firstHandHitRate <= 0.3 &&
       complexity.swapWindowHitRate > 0
     );
@@ -1542,9 +1354,9 @@
       solvableBonus +
       searchReward +
       (complexity.solidObstacleCount || 0) * 5 +
-      (complexity.routeGuideCount || 0) * 2 +
+      (complexity.bonusPointCount || 0) * 18 +
+      (complexity.clusterCount || 0) * 16 +
       (complexity.routeArchetypes ? complexity.routeArchetypes.length : 0) * 55 +
-      (complexity.ceilingLock ? 60 : -120) +
       (complexity.requiredBendCount || 0) * 12 +
       (complexity.routeEntropy || 0) * 45 -
       (complexity.highArcDominance || 1) * 80 +
@@ -1588,6 +1400,7 @@
         complexity: clone(map.complexity)
       },
       obstacles: clone(map.obstacles),
+      bonusPoints: clone(map.bonusPoints || []),
       units: clone(map.units),
       initialUnits: clone(map.units),
       turnOrder: UNIT_TURN_ORDER.slice(),
@@ -1766,6 +1579,9 @@
 
   function pointInsideObstacle(point, obstacle) {
     if (!obstacleIsSolid(obstacle)) return false;
+    if (obstacle.shape === "circle") {
+      return distance(point, { x: obstacle.cx, y: obstacle.cy }) <= obstacle.r;
+    }
     return (
       point.x >= obstacle.x &&
       point.x <= obstacle.x + obstacle.w &&
@@ -1868,6 +1684,18 @@
       maxY,
       closestTargetDistance,
       closestEnemyDistance
+    };
+  }
+
+  function scoreRouteBonus(points, bonusPoints) {
+    const scored = [];
+    for (const point of bonusPoints || []) {
+      const hit = points.some((sample) => distance(sample, point) <= point.radius);
+      if (hit) scored.push(point);
+    }
+    return {
+      value: scored.reduce((sum, point) => sum + point.value, 0),
+      pointIds: scored.map((point) => point.id)
     };
   }
 
@@ -2196,7 +2024,7 @@
     };
   }
 
-  function scoreSimulation(sim, shot, directive) {
+  function scoreSimulation(sim, shot, directive, routeBonus) {
     let score = 0;
     const effects = sumEffects(shot.components);
     const combo = assessCombo(shot.components, directive);
@@ -2233,6 +2061,7 @@
     }
     if (shot.components.some((component) => component.tags.includes("precision"))) score += 16;
     if (shot.components.some((component) => component.tags.includes("clearance")) && directive.high) score += 24;
+    score += (routeBonus?.value || 0) * 5;
     score += combo.scoreBonus;
     return score;
   }
@@ -2329,7 +2158,8 @@
         const sim = simulateShot(state, shot);
         if (resultViolatesDirective(sim, directive)) continue;
         const comboIdentity = assessCombo(shot.components, directive);
-        const score = scoreSimulation(sim, shot, directive);
+        const routeBonus = scoreRouteBonus(sim.points, state.bonusPoints);
+        const score = scoreSimulation(sim, shot, directive, routeBonus);
         choices.push({
           score,
           team,
@@ -2348,6 +2178,7 @@
           directive,
           ruleSummary: targetConstraint.ruleSummary,
           combo: comboIdentity,
+          routeBonus,
           shot,
           sim,
           validation
@@ -2431,6 +2262,7 @@
     const enemyHits = state.events.filter((event) => event.result === "hitEnemy").length;
     const allyHits = state.events.filter((event) => event.result === "hitAlly").length;
     const failures = state.events.filter((event) => ["blocked", "ground", "out", "miss", "invalid"].includes(event.result)).length;
+    const routeBonus = state.events.reduce((sum, event) => sum + (event.routeBonus?.value || 0), 0);
     const winBase = winner === "draw" ? 250 : alliedTeam ? 600 : 0;
     const difficulty = state.mapMeta ? state.mapMeta.difficulty : 60;
     const value =
@@ -2440,6 +2272,7 @@
       failures * 25 -
       allyHits * 45 -
       state.events.length * 6 +
+      routeBonus * 2 +
       Math.round(difficulty * (alliedTeam ? 2.2 : 0.9));
     let rank = "D";
     if (winner !== "draw" && value >= 980) rank = "S";
@@ -2454,6 +2287,7 @@
       enemyHits,
       allyHits,
       failures,
+      routeBonus,
       turns: state.events.length
     };
   }
@@ -2524,6 +2358,7 @@
       usedCardIds: decision.shot.usedCardIds,
       components: decision.shot.components,
       combo: decision.combo,
+      routeBonus: decision.routeBonus,
       expression: formatExpression(decision.shot),
       thinking: buildThinking(decision),
       result: sim.kind,
@@ -2543,6 +2378,7 @@
       shooterId: decision.shooter.id,
       targetId: decision.target.id,
       points: sim.points,
+      routeBonus: decision.routeBonus,
       result: sim.kind,
       collisionPoint: sim.point || null
     });
@@ -2580,6 +2416,7 @@
       mapMeta: clone(state.mapMeta),
       lockedOrders: clone(state.lockedOrders),
       obstacles: state.obstacles,
+      bonusPoints: clone(state.bonusPoints || []),
       initialUnits: clone(state.initialUnits || BASE_SCENARIO.units),
       finalUnits: clone(state.units),
       events: clone(state.events),

@@ -265,22 +265,24 @@ function testBattlefieldReadsAsGameSurface() {
   assert.ok(main.includes('data-testid="battle-replay-rail"'), "battle replay rail should be selectable for browser verification");
   assert.ok(main.includes("BattlefieldBackdrop"), "battlefield should have a named layered backdrop component");
   assert.ok(!main.includes("RouteGuideLayer"), "battlefield should not render route guides as visible map objects");
-  assert.ok(main.includes("FlatMapObstacleLayer"), "battlefield should render obstacles as flat 2D map blockers");
+  assert.ok(main.includes("BlobObstacleLayer"), "battlefield should render obstacles as continuous Graphwar blobs");
+  assert.ok(main.includes("BonusPointLayer"), "battlefield should render route bonus points");
   assert.ok(main.includes('data-testid="battlefield-frame"'), "battlefield should expose a framed game-stage surface");
-  assert.ok(main.includes("MapLegend"), "battlefield should use a compact map legend instead of a broadcast overlay");
-  assert.ok(main.includes('data-testid="map-legend"'), "map legend should be selectable for browser verification");
+  assert.ok(!main.includes("MapLegend"), "battlefield should not need a stacked legend");
+  assert.ok(!main.includes('data-testid="map-legend"'), "battlefield legend chrome should not be present");
   assert.ok(!main.includes('data-testid="route-maze-layer"'), "route guide layers should not be exposed in the battlefield DOM");
   assert.ok(!battlefield.includes("solverPressure"), "battlefield first screen should not expose solver pressure");
   assert.ok(!battlefield.includes("swapWindowHitRate"), "battlefield first screen should not expose swap-window metrics");
   assert.ok(main.includes("impact-burst"), "battlefield should mark the latest shot impact");
   assert.ok(css.includes(".battlefield-frame"), "CSS should frame the battlefield as a game viewport");
   assert.ok(css.includes(".battle-priority-layout"), "CSS should include battle-priority layout rules");
-  assert.ok(css.includes(".map-legend"), "CSS should style the simplified map legend");
-  assert.ok(css.includes(".map-obstacle"), "CSS should style flat 2D map blockers");
+  assert.ok(!css.includes(".map-legend"), "CSS should not keep map legend chrome");
+  assert.ok(css.includes(".map-obstacle"), "CSS should style solid blob blockers");
+  assert.ok(css.includes(".bonus-point"), "CSS should style scoring route points");
   assert.ok(!css.includes(".route-guide"), "CSS should not keep route guide color families");
   assert.ok(css.includes(".spectator-hud"), "CSS should style the spectator HUD");
-  assert.ok(css.includes(".map-playable-ground"), "CSS should style playable ground as a calm base");
-  assert.ok(css.includes(".map-obstacle.solid-blocker"), "CSS should style one solid blocker type");
+  assert.ok(css.includes(".map-playable-ground"), "CSS should style playable ground as a clean Graphwar canvas");
+  assert.ok(css.includes(".map-obstacle.blob-blocker"), "CSS should style one solid blob blocker type");
   assert.ok(css.includes(".impact-burst"), "CSS should style the latest impact marker");
 }
 
@@ -430,7 +432,7 @@ function testSpectatorReplayHasWatchOnlyControls() {
   assert.ok(css.includes(".playback-controls"), "CSS should style replay controls as game HUD controls");
   assert.ok(css.includes(".speed-strip"), "CSS should style replay speed choices");
   assert.ok(css.includes(".secondary-battle-panels"), "secondary battle telemetry should move into a disclosure panel");
-  assert.ok(css.includes(".map-legend"), "mobile battlefield should use a compact legend instead of low-priority intel strips");
+  assert.ok(!css.includes(".map-legend"), "mobile battlefield should keep the map canvas free of stacked legend chrome");
 }
 
 function testBattlefieldIsPrioritizedBeforeSecondaryCommanderPanels() {
@@ -477,11 +479,14 @@ function testWatchFirstProductShellUsesTabsAndModalAuth() {
 }
 
 function testBattlefieldUsesFlat2DMapLayers() {
-  assert.ok(main.includes("FlatMapObstacleLayer"), "battlefield should use a flat 2D obstacle layer");
+  assert.ok(main.includes("BlobObstacleLayer"), "battlefield should use a continuous blob obstacle layer");
+  assert.ok(main.includes("BonusPointLayer"), "battlefield should render route bonus points as the only extra scoring layer");
+  assert.ok(!main.includes("FlatMapObstacleLayer"), "battlefield should stop drawing rectangular flat blockers");
   assert.ok(!main.includes("RouteGuideLayer"), "battlefield should stop drawing route guide overlays as visible map objects");
   assert.ok(!main.includes("renderObstacleFacets"), "battlefield should not render pseudo-3D obstacle facets");
   assert.ok(!main.includes("obstacleFacetPoints"), "battlefield should not compute cuboid facet points");
   assert.ok(css.includes(".map-obstacle"), "CSS should style flat solid map obstacles");
+  assert.ok(css.includes(".bonus-point"), "CSS should style route bonus points");
   assert.ok(!css.includes(".route-guide"), "CSS should not keep separate route guide colors");
   assert.ok(!css.includes(".obstacle-facet"), "CSS should not keep pseudo-3D obstacle faces");
   assert.ok(!css.includes(".obstacle-cap"), "CSS should not keep pseudo-3D caps");
@@ -527,19 +532,20 @@ function testFirstScreenIsCompressedForMapFirstPlay() {
 
 function testBattlefieldMapIsSimplifiedAndReadable() {
   const battlefield = componentSource("Battlefield");
-  assert.ok(main.includes("MapLegend"), "battlefield should include a short visual legend");
-  assert.ok(main.includes("passable ground"), "map legend should name the playable area");
-  assert.ok(main.includes("solid blockers"), "map legend should name wall/terrain blockers");
+  assert.ok(!main.includes("MapLegend"), "battlefield should remove the stacked legend chrome");
+  assert.ok(!main.includes("passable ground"), "battlefield should not need explanatory legend copy for the base canvas");
+  assert.ok(!main.includes("solid blockers"), "battlefield should not need explanatory legend copy for blockers");
   assert.ok(!main.includes("route lanes"), "map legend should not advertise route guide lanes");
-  assert.ok(main.includes("current shot"), "map legend should name projectile paths");
-  assert.ok(main.includes('className="map-obstacle solid-blocker"'), "all visible map obstacles should use one solid blocker class");
+  assert.ok(main.includes('className="map-obstacle blob-blocker"'), "all visible map obstacles should use one solid blob blocker class");
+  assert.ok(main.includes('className="bonus-point"'), "route bonus points should be visible on the battlefield");
   assert.ok(!main.includes("isRouteGuideObstacle"), "visible battlefield code should not special-case route-guide obstacles");
   for (const noisyToken of ["routeEntropy", "routePressure", "solverPressure", "swapWindowHitRate", "routeGuideCount", "layerCount"]) {
     assert.ok(!battlefield.includes(noisyToken), `battlefield first screen should not expose ${noisyToken}`);
   }
   assert.ok(css.includes(".battlefield.simple-map"), "battlefield SVG should use the simplified map style");
-  assert.ok(css.includes(".map-playable-ground"), "CSS should style passable terrain as a calm base layer");
-  assert.ok(css.includes(".map-legend"), "CSS should style the short map legend");
+  assert.ok(css.includes(".map-playable-ground"), "CSS should style passable terrain as a clean Graphwar canvas");
+  assert.ok(!css.includes(".map-legend"), "CSS should not keep stacked battlefield legend chrome");
+  assert.ok(!css.includes(".grid-line"), "CSS should not keep visible grid-line chrome");
   assert.ok(!css.includes(".map-obstacle.maze-room"), "visible blockers should not have role-specific colors");
   assert.ok(!css.includes(".map-obstacle.ceiling-lock"), "visible blockers should not have role-specific colors");
   assert.ok(!css.includes(".map-obstacle.maze-band"), "visible blockers should not have role-specific colors");

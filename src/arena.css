@@ -401,16 +401,16 @@ label,
 
 .play-command-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.34fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.24fr);
+  gap: 8px;
   align-items: stretch;
-  padding: 10px;
+  padding: 8px;
 }
 
 .play-command-row .launch-bay {
   display: grid;
-  grid-template-columns: minmax(180px, 0.32fr) minmax(260px, 0.42fr) minmax(340px, 1fr);
-  gap: 8px;
+  grid-template-columns: minmax(140px, 0.2fr) minmax(240px, 0.38fr) minmax(300px, 1fr);
+  gap: 6px;
   align-items: stretch;
 }
 
@@ -423,54 +423,65 @@ label,
 }
 
 .play-command-row .launch-header {
-  padding: 10px;
+  padding: 8px;
 }
 
 .play-command-row .launch-header strong {
-  font-size: 16px;
+  font-size: 14px;
+}
+
+.play-command-row .launch-header > b {
+  min-width: 54px;
+  min-height: 34px;
+  font-size: 12px;
 }
 
 .play-command-row .compact-launch-summary {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
+  gap: 4px;
 }
 
 .play-command-row .compact-launch-summary span {
-  padding: 7px;
+  padding: 6px;
 }
 
 .play-command-row .match-card {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 5px;
   align-items: stretch;
 }
 
 .play-command-row .match-card .panel-title,
-.play-command-row .spectator-lock-strip,
 .play-command-row .sync-strip,
 .play-command-row .match-actions {
   grid-column: 1 / -1;
 }
 
+.play-command-row .match-card .panel-title {
+  min-height: 0;
+  margin-bottom: 0;
+  font-size: 10px;
+}
+
 .play-command-row .match-status,
 .play-command-row .queue-strip {
-  min-height: 38px;
-  padding: 8px;
+  min-height: 34px;
+  padding: 7px;
 }
 
 .play-command-row .spectator-lock-strip {
-  min-height: 34px;
-  padding: 7px 9px;
+  display: none;
 }
 
 .play-command-row .sync-strip {
-  min-height: 34px;
-  padding: 6px 8px;
+  min-height: 32px;
+  padding: 5px 7px;
 }
 
 .play-command-row .match-actions button {
-  min-height: 40px;
+  min-height: 36px;
+  font-size: 12px;
 }
 
 .play-command-row .locked-play-card {
@@ -484,7 +495,7 @@ label,
 
 .play-command-row .roster-card {
   align-content: start;
-  gap: 7px;
+  gap: 5px;
   overflow: hidden;
 }
 
@@ -3069,30 +3080,37 @@ label {
   position: relative;
   overflow: hidden;
   width: 100%;
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
-  border: 1px solid rgba(142, 209, 220, 0.28);
-  border-radius: 8px;
-  background: #071018;
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+  border: 0;
+  border-radius: 4px;
+  background: #f7f7f1;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 
 .map-status-strip {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 0.8fr));
-  gap: 1px;
-  border-bottom: 1px solid rgba(142, 209, 220, 0.18);
-  background: rgba(142, 209, 220, 0.12);
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  pointer-events: none;
 }
 
 .map-status-strip span {
   min-width: 0;
   overflow: hidden;
-  padding: 8px 10px;
-  color: rgba(244, 247, 251, 0.82);
-  background: rgba(3, 7, 14, 0.86);
+  max-width: 28ch;
+  border: 1px solid rgba(3, 7, 14, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: rgba(12, 15, 18, 0.76);
+  background: rgba(247, 247, 241, 0.78);
   font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -3100,79 +3118,27 @@ label {
 }
 
 .map-status-strip b {
-  color: var(--acid);
-}
-
-.map-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  border-bottom: 1px solid rgba(142, 209, 220, 0.16);
-  padding: 8px 10px;
-  background: rgba(5, 12, 18, 0.9);
-}
-
-.map-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  padding: 3px 8px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.035);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 9px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.map-legend i {
-  width: 18px;
-  height: 7px;
-  border-radius: 999px;
-  background: rgba(31, 67, 55, 0.95);
-}
-
-.map-legend .blocker i {
-  height: 10px;
-  border: 1px solid rgba(214, 222, 220, 0.28);
-  border-radius: 3px;
-  background: #27363a;
-}
-
-.map-legend .shot i {
-  height: 0;
-  border-top: 3px solid var(--cyan);
-  background: transparent;
+  color: #0c0f12;
 }
 
 .battlefield {
   display: block;
   width: 100%;
   aspect-ratio: 5 / 3;
-  background: #071018;
+  background: #f7f7f1;
 }
 
 .battlefield.simple-map {
-  background: #071018;
-}
-
-.grid-line {
-  stroke: rgba(142, 209, 220, 0.075);
-  stroke-width: 1;
-}
-
-.terrain {
-  fill: url("#arenaGround");
+  background: #f7f7f1;
 }
 
 .map-playable-ground {
-  fill: rgba(18, 39, 35, 0.72);
-  stroke: rgba(142, 209, 220, 0.12);
-  stroke-width: 1.2;
+  fill: #f7f7f1;
+}
+
+.axis-line {
+  stroke: rgba(12, 15, 18, 0.2);
+  stroke-width: 1;
 }
 
 .terrain-ridge {
@@ -3196,19 +3162,35 @@ label {
   stroke-width: 2.8;
 }
 
-.flat-map-obstacle-layer {
+.blob-obstacle-layer {
   pointer-events: none;
 }
 
 .map-obstacle {
-  fill: #2f3a3d;
-  stroke: rgba(226, 235, 232, 0.38);
-  stroke-width: 1.4;
+  fill: #050505;
+  stroke: none;
   filter: none;
 }
 
-.map-obstacle.solid-blocker {
-  opacity: 0.98;
+.map-obstacle.blob-blocker {
+  opacity: 1;
+}
+
+.bonus-point-layer {
+  pointer-events: none;
+}
+
+.bonus-point circle:first-child {
+  fill: rgba(255, 201, 70, 0.1);
+  stroke: #ffc946;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+}
+
+.bonus-point circle:last-child {
+  fill: #ffc946;
+  stroke: #080908;
+  stroke-width: 1.2;
 }
 
 .shot-path {
@@ -4422,26 +4404,9 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .map-status-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .map-status-strip span {
-    padding: 6px 7px;
-    font-size: 8px;
-  }
-
-  .map-status-strip span:first-child {
-    grid-column: 1 / -1;
-  }
-
-  .map-legend {
-    gap: 5px;
-    padding: 6px;
-  }
-
-  .map-legend span {
-    padding: 3px 6px;
+    max-width: 20ch;
+    padding: 4px 6px;
     font-size: 8px;
   }
 

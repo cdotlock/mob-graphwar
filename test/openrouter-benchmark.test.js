@@ -94,12 +94,27 @@ function testBenchmarkStoreRegistersRawRowsWithoutSecrets() {
     { id: "openai-gpt-5-5", label: "OpenAI GPT-5.5", provider: "infron", model: "openai/gpt-5.5", rating: 1028, games: 2, wins: 1, losses: 0, draws: 1 },
     { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", provider: "infron", model: "deepseek/deepseek-v4-pro", rating: 978, games: 2, wins: 0, losses: 1, draws: 1 }
   ];
-  const store = buildBenchmarkStore(leaderboard, { nextPlayerId: 7, players: {} });
+  const store = buildBenchmarkStore(leaderboard, {
+    nextPlayerId: 7,
+    players: {
+      "benchmark-openai-gpt-5-5-raw": {
+        id: "benchmark-openai-gpt-5-5-raw",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        providers: { openrouter: { model: "openai/gpt-5.5", configured: true } }
+      },
+      "benchmark-stale-model-raw": {
+        id: "benchmark-stale-model-raw",
+        displayName: "Stale Model (raw)",
+        providers: { openrouter: { model: "stale/model", configured: true } }
+      }
+    }
+  });
   const players = Object.values(store.players);
   assert.strictEqual(players.length, 2);
   assert.ok(players.every((player) => player.displayName.endsWith("(raw)")));
   assert.ok(players.every((player) => player.providers.infron.configured === true));
   assert.ok(players.every((player) => !player.providers.openrouter));
+  assert.ok(!store.players["benchmark-stale-model-raw"], "benchmark store should remove stale raw rows not present in the current run");
   assert.ok(!JSON.stringify(store).includes("sk-"), "benchmark store should not contain provider secrets");
 }
 

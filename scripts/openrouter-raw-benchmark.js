@@ -436,6 +436,12 @@ function buildBenchmarkStore(leaderboard, existingStore) {
     nextPlayerId: Number(existingStore?.nextPlayerId) || 1,
     players: { ...(existingStore?.players || {}) }
   };
+  const currentIds = new Set(leaderboard.map((row) => `benchmark-${slug(row.model)}-raw`));
+  for (const [id, player] of Object.entries(store.players)) {
+    if (id.startsWith("benchmark-") && String(player?.displayName || "").endsWith("(raw)") && !currentIds.has(id)) {
+      delete store.players[id];
+    }
+  }
   const now = new Date().toISOString();
   for (const row of leaderboard) {
     const id = `benchmark-${slug(row.model)}-raw`;
@@ -454,7 +460,6 @@ function buildBenchmarkStore(leaderboard, existingStore) {
         games: row.games
       },
       providers: {
-        ...(store.players[id]?.providers || {}),
         [providerId]: {
           model: row.model,
           configured: true

@@ -241,6 +241,7 @@ function testRankedLaunchSupportsSingleButtonAutoRun() {
   assert.ok(setupPanel.includes("autoRounds"), "setup panel should let players choose how many ranked games to idle-run");
   assert.ok(setupPanel.includes('data-testid="auto-rounds"'), "auto-run count should be selectable for browser verification");
   assert.ok(setupPanel.includes("Random Match"), "setup panel should expose one random match button");
+  assert.ok(setupPanel.includes("OpenRouter free AI"), "setup panel should explain empty online queues are filled by OpenRouter free AI opponents");
   assert.ok(setupPanel.includes("onJoin({ rounds:"), "single launch button should pass the requested ranked run count");
   assert.ok(!setupPanel.includes("allowAiFill: false"), "setup panel should not expose a human-only match branch");
 }
@@ -350,7 +351,13 @@ function testUiPollsQueuedMatchmakingRooms() {
   assert.ok(main.includes("pollMatchmaking"), "UI should poll queued ranked players into matched rooms");
   assert.ok(main.includes("/api/matchmaking/"), "UI should call the matchmaking status endpoint");
   assert.ok(main.includes("/api/match/"), "UI should be able to fetch an active match room");
-  assert.ok(css.includes(".sync-strip"), "CSS should style room sync and polling state");
+  assert.ok(main.includes("autoRoomSync"), "UI should run automatic room sync without a manual recovery button");
+  assert.ok(main.includes("pollMatchmaking(profile.id, { quiet: true })"), "UI should quietly recover ranked rooms after sign-in or reload");
+  assert.ok(main.includes("syncMatchRoom(match.id, profile.id, { quiet: true })"), "UI should refresh unresolved active rooms automatically");
+  assert.ok(main.includes("auto-sync-strip"), "UI should expose auto-sync status as game state copy");
+  assert.ok(!componentSource("BattleSetupPanel").includes(">Sync</button>"), "first-screen setup should not require a manual Sync button");
+  assert.ok(!componentSource("MatchCard").includes(">Sync</button>"), "matchmaking card should not expose a manual Sync button");
+  assert.ok(css.includes(".auto-sync-strip"), "CSS should style automatic room sync and polling state");
 }
 
 function testBattlefieldReadsAsGameSurface() {

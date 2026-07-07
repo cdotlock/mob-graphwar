@@ -81,6 +81,7 @@ const I18N = {
     signInToPlay: "Sign in to play ranked",
     rankedLocked: "Ranked locked",
     rankedLockedHelp: "Sign in, choose one model, write one standing order.",
+    autoMatchmaking: "Auto-sync ranked room. If no human commander is online, OpenRouter free AI fills the opponent team.",
     modelCatalogUpdated: "Model list updated",
     register: "Register",
     handle: "Handle",
@@ -151,6 +152,7 @@ const I18N = {
     signInToPlay: "登录后开始排位",
     rankedLocked: "排位未解锁",
     rankedLockedHelp: "登录、选择模型、写一条开局指令。",
+    autoMatchmaking: "自动同步排位房间；线上没有人类对手时，由 OpenRouter free AI 补位。",
     modelCatalogUpdated: "模型列表已更新",
     register: "注册",
     handle: "账号名",
@@ -497,12 +499,30 @@ function App() {
   }, [locale]);
 
   useEffect(() => {
-    if (!profile || !queueState || match) return undefined;
-    const timer = window.setInterval(() => {
-      pollMatchmaking(profile.id).catch((err) => setMessage(err.message || "Queue sync failed."));
-    }, 2500);
-    return () => window.clearInterval(timer);
-  }, [profile?.id, queueState?.status, queueState?.queueSize, match?.id]);
+    if (!profile || !sessionToken) return undefined;
+    let cancelled = false;
+    async function autoRoomSync() {
+      if (cancelled || busy) return;
+      try {
+        if (match?.id && match.status !== "resolved" && !match.state?.winner) {
+          await syncMatchRoom(match.id, profile.id, { quiet: true });
+          return;
+        }
+        if (queueState?.polling || !match) {
+          await pollMatchmaking(profile.id, { quiet: true });
+        }
+      } catch (err) {
+        if (!cancelled && (queueState?.polling || match?.id)) setMessage(err.message || "Room auto-sync failed.");
+      }
+    }
+    autoRoomSync();
+    const intervalMs = queueState?.polling ? 2500 : match?.id && match.status !== "resolved" && !match.state?.winner ? 3500 : 8000;
+    const timer = window.setInterval(autoRoomSync, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [profile?.id, sessionToken, queueState?.polling, queueState?.queueSize, match?.id, match?.status, match?.state?.winner, busy]);
 
   useEffect(() => {
     playbackPausedRef.current = playbackPaused;
@@ -566,6 +586,7 @@ function App() {
         displayName: payload.player.displayName || current.displayName
       }));
       await loadLeaderboard();
+      await pollMatchmaking(payload.player.id, { token: storedToken, quiet: true });
       return payload.player;
     } catch (err) {
       window.localStorage.removeItem(PROFILE_STORAGE_KEY);
@@ -628,7 +649,7 @@ function App() {
       setSessionToken(storedToken);
       setLogin((current) => ({ ...current, handle: payload.player.handle || current.handle, displayName: payload.player.displayName }));
       await loadLeaderboard();
-      const status = await pollMatchmaking(payload.player.id);
+      const status = await pollMatchmaking(payload.player.id, { token: storedToken });
       if (!status || status.status === "idle") {
         setMessage(`Restored ${payload.player.displayName} at ${payload.player.rank.rating}.`);
       }
@@ -689,11 +710,14 @@ function App() {
     return models;
   }
 
-  async function syncMatchRoom(matchId = match?.id, playerId = profile?.id) {
+  async function syncMatchRoom(matchId = match?.id, playerId = profile?.id, options = {}) {
     if (!matchId || !playerId) return null;
+    const opts = options || {};
+    const quiet = Boolean(opts.quiet);
+    const token = opts.token || sessionToken;
     playbackToken.current += 1;
     const response = await fetch(`/api/match/${matchId}?playerId=${playerId}`, {
-      headers: authorizedHeaders()
+      headers: authorizedHeaders({}, token)
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "room_sync_failed");
@@ -707,22 +731,25 @@ function App() {
     setLastDecision(null);
     setQueueState(null);
     setAutoBattle(null);
-    setMessage(`Room synced: ${room.status}.`);
+    if (!quiet) setMessage(`Room synced: ${room.status}.`);
     if (room.status !== "resolved" && !room.state?.winner) {
-      await autoStartRankedDuel(room, playerId);
+      await autoStartRankedDuel(room, playerId, { authToken: token });
     }
     return room;
   }
 
-  async function pollMatchmaking(playerId = profile?.id) {
+  async function pollMatchmaking(playerId = profile?.id, options = {}) {
     if (!playerId) return null;
+    const opts = options || {};
+    const quiet = Boolean(opts.quiet);
+    const token = opts.token || sessionToken;
     const response = await fetch(`/api/matchmaking/${playerId}`, {
-      headers: authorizedHeaders()
+      headers: authorizedHeaders({}, token)
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "matchmaking_sync_failed");
     if (payload.status === "matched" && payload.match) {
-      await syncMatchRoom(payload.match.id, playerId);
+      await syncMatchRoom(payload.match.id, playerId, opts);
       return payload;
     }
     if (payload.status === "queued") {
@@ -731,24 +758,8 @@ function App() {
       return payload;
     }
     setQueueState(null);
-    setMessage("No active queue or room for this profile.");
+    if (!quiet) setMessage("No active queue or room for this profile.");
     return payload;
-  }
-
-  async function syncCurrentRoom() {
-    if (!profile) return;
-    setBusy(true);
-    try {
-      if (match?.id) {
-        await syncMatchRoom(match.id, profile.id);
-      } else {
-        await pollMatchmaking(profile.id);
-      }
-    } catch (err) {
-      setMessage(err.message || "Room sync failed.");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function joinMatch(options) {
@@ -1003,7 +1014,7 @@ function App() {
     try {
       const response = await fetch(`/api/match/${room.id}/auto-duel`, {
         method: "POST",
-        headers: authorizedHeaders({ "content-type": "application/json" }),
+        headers: authorizedHeaders({ "content-type": "application/json" }, options.authToken || sessionToken),
         body: JSON.stringify({ command: login.standingOrder })
       });
       const payload = await response.json();
@@ -1103,7 +1114,6 @@ function App() {
             locale={locale}
             onOpenAuth={() => setAuthModalOpen(true)}
             onJoin={joinMatch}
-            onSync={syncCurrentRoom}
             onRefreshModels={refreshProviderModels}
             onTogglePlayback={togglePlayback}
             onStepPlayback={stepPlayback}
@@ -1239,7 +1249,6 @@ function PlayView({
   locale,
   onOpenAuth,
   onJoin,
-  onSync,
   onRefreshModels,
   onTogglePlayback,
   onStepPlayback,
@@ -1275,7 +1284,6 @@ function PlayView({
               locale={locale}
               onOpenAuth={onOpenAuth}
               onJoin={onJoin}
-              onSync={onSync}
               onRefreshModels={onRefreshModels}
             />
             <Battlefield
@@ -1343,7 +1351,6 @@ function BattleSetupPanel({
   locale,
   onOpenAuth,
   onJoin,
-  onSync,
   onRefreshModels
 }) {
   const providers = providerOptions(providerCatalog);
@@ -1356,6 +1363,7 @@ function BattleSetupPanel({
   const canRank = Boolean(profile && sessionToken);
   const rounds = Math.max(1, Math.min(25, Number(login.autoRounds) || 1));
   const launchLabel = tx(locale, "randomMatch") || "Random Match";
+  const autoSyncCopy = tx(locale, "autoMatchmaking") || "Auto-sync ranked room. If no human commander is online, OpenRouter free AI fills the opponent team.";
   const status = autoBattle
     ? `${battleResultLabel(autoBattle.winner)} / ${autoBattle.resolvedTurns} shots`
     : match
@@ -1396,7 +1404,10 @@ function BattleSetupPanel({
         ) : (
           <button type="button" disabled={busy} onClick={() => onJoin({ rounds: rounds })}>{busy ? "Resolving" : launchLabel}</button>
         )}
-        <button type="button" disabled={!profile || busy} onClick={onSync}>Sync</button>
+      </div>
+      <div className="auto-sync-strip" data-testid="auto-sync-strip">
+        <RefreshCw size={14} />
+        <span>{autoSyncCopy}</span>
       </div>
       <p className="setup-footnote">{canRank ? tx(locale, "watchOnly") : tx(locale, "rankedLockedHelp")}</p>
     </aside>
@@ -1626,7 +1637,6 @@ function LaunchBay({
   busy,
   onOpenAuth,
   onJoin,
-  onSync,
   locale
 }) {
   return (
@@ -1654,7 +1664,6 @@ function LaunchBay({
           queueState={queueState}
           busy={busy}
           onJoin={onJoin}
-          onSync={onSync}
           onOpenAuth={onOpenAuth}
         />
       ) : (
@@ -1906,8 +1915,8 @@ function ProviderReadinessGrid({ login, profile, providerCatalog, locale }) {
   );
 }
 
-function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
-  const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id}` : "No room synced";
+function MatchCard({ profile, match, queueState, busy, onJoin }) {
+  const syncLabel = queueState?.polling ? "Auto sync armed" : match ? `Room ${match.id} auto-synced` : "Auto-sync ready";
   const matchLabel = busy ? "Resolving Duel" : match && !match.state?.winner ? "Run Auto Duel" : "Random Match";
   return (
     <div className="match-card">
@@ -1924,10 +1933,9 @@ function MatchCard({ profile, match, queueState, busy, onJoin, onSync }) {
         <Shield size={15} />
         <span><b>Spectator lock</b> One standing order before launch, then models fight unattended.</span>
       </div>
-      <div className="sync-strip" data-testid="room-sync">
+      <div className="auto-sync-strip" data-testid="room-sync">
         <RefreshCw size={15} />
         <span>{syncLabel}</span>
-        <button disabled={!profile || busy} onClick={onSync}>Sync</button>
       </div>
       <div className="match-actions">
         <button disabled={!profile || busy} onClick={() => onJoin({ rounds: 1 })}>{matchLabel}</button>

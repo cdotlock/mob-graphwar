@@ -245,6 +245,15 @@ function testRankedLaunchSupportsSingleButtonAutoRun() {
   assert.ok(!setupPanel.includes("allowAiFill: false"), "setup panel should not expose a human-only match branch");
 }
 
+function testRankedLaunchUsesServerSideIdleBatch() {
+  const joinMatch = main.slice(main.indexOf("async function joinMatch"), main.indexOf("async function runLeague"));
+  assert.ok(joinMatch.includes("rounds"), "ranked launch should still pass the requested idle-run count");
+  assert.ok(joinMatch.includes("rounds: rounds"), "ranked launch should send rounds to the server");
+  assert.ok(joinMatch.includes("payload.batch"), "client should consume the server-side idle batch summary");
+  assert.ok(joinMatch.includes("payload.autoBattles"), "client should consume server-returned per-round battle summaries");
+  assert.ok(!joinMatch.includes("for (let index = 0; index < rounds; index += 1)"), "client should not hide matchmaking inside a local loop");
+}
+
 function testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch() {
   assert.ok(main.includes("AgentThoughtPanel"), "battle watch view should include a named current-agent thinking panel");
   assert.ok(main.includes('data-testid="agent-thought-panel"'), "agent thinking panel should be selectable for browser verification");
@@ -289,6 +298,15 @@ function testGraphwarFirstScreenCentersModelPromptFunctionDuel() {
   assert.ok(css.includes(".battle-setup-panel"), "CSS should style the left-side setup panel");
   assert.ok(css.includes(".battle-outcome-banner"), "CSS should style explicit battle outcome");
   assert.ok(css.includes(".function-line code"), "CSS should style long function expressions");
+}
+
+function testAgentPanelShowsFunctionFeedbackAndCollision() {
+  const thoughtPanel = componentSource("AgentThoughtPanel");
+  assert.ok(thoughtPanel.includes("collisionPoint"), "agent thought panel should show the latest shot collision point");
+  assert.ok(thoughtPanel.includes("closestTargetDistance"), "agent thought panel should show miss distance feedback");
+  assert.ok(thoughtPanel.includes("function-feedback"), "agent thought panel should have a dedicated function feedback section");
+  assert.ok(main.includes("recentFeedback"), "UI should expose model-visible recent feedback in rules packet previews");
+  assert.ok(css.includes(".function-feedback"), "CSS should style function feedback compactly beside the battlefield");
 }
 
 function testRankedGameStatePanelMakesAutoBattleLoopReadable() {
@@ -660,9 +678,11 @@ testGameSurfacesRealAccountAuth();
 testGameShowsRankedOnboardingAndProviderReadiness();
   testModelSetupUsesFetchedModelSelect();
   testRankedLaunchSupportsSingleButtonAutoRun();
+  testRankedLaunchUsesServerSideIdleBatch();
   testOneScreenHudShowsCurrentAgentThinkingAndLanguageSwitch();
   testLaunchHudUsesCompactLocalizedLockedState();
   testGraphwarFirstScreenCentersModelPromptFunctionDuel();
+testAgentPanelShowsFunctionFeedbackAndCollision();
 testRankedGameStatePanelMakesAutoBattleLoopReadable();
 testUiExposesBareRulesPacketForModels();
 testMobileHasGameDockForWatchOnlyLoop();

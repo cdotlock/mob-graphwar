@@ -304,10 +304,37 @@ function testApplyTurnCanUseProviderExpression() {
   });
   const event = state.events[0];
   assert.strictEqual(event.targetId, selected.targetId);
-  assert.strictEqual(event.expression, selected.expression);
+  assert.strictEqual(event.expression, `y=${Sim._internals.normalizeShotExpression(selected.expression)}`);
   assert.strictEqual(event.candidateId, null, "provider-written functions should not need candidate ids");
   assert.ok(state.paths[0].points.length > 10, "provider expression should be sampled into a replay path");
   assert.strictEqual(event.thinking.providerReason, "Provider wrote its own function.");
+}
+
+function testProviderExpressionsNormalizeCommonModelSyntax() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  Sim.applyTurn(state, { A1: "write a smooth line" }, {
+    targetId: "B1",
+    expression: "y = y0 + dy*t + 4*sin(pi*t); t = u/d; d = abs(target.x-shooter.x)",
+    cardSlots: [1],
+    providerReason: "Model used explanatory assignments."
+  });
+  const event = state.events[0];
+  assert.notStrictEqual(event.result, "invalid", "common trailing assignments should not make a provider expression invalid");
+  assert.strictEqual(
+    event.expression,
+    "y=y0 + dy*t + 4*sin(pi*t)",
+    "stored expression should keep only the executable y expression"
+  );
+
+  const whereState = Sim.createInitialState({ seed: 7352 });
+  Sim.applyTurn(whereState, { A1: "write a smooth line" }, {
+    targetId: "B1",
+    expression: "y = y0 + dy*t + 3*sin(pi*t) where t = u/d",
+    cardSlots: [1],
+    providerReason: "Model used where clause."
+  });
+  assert.notStrictEqual(whereState.events[0].result, "invalid", "where clauses should be trimmed from provider expressions");
+  assert.strictEqual(whereState.events[0].expression, "y=y0 + dy*t + 3*sin(pi*t)");
 }
 
 function testRicherCardCatalog() {
@@ -603,6 +630,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testCardProfilesExposeTacticalCardRoles();
   testApplyTurnCanUseProviderCandidate();
   testApplyTurnCanUseProviderExpression();
+  testProviderExpressionsNormalizeCommonModelSyntax();
   testRicherCardCatalog();
   testCardLabelsReadLikeFunctionNames();
   testShotExpressionsUseExpandedMathFunctions();

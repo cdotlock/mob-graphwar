@@ -3297,6 +3297,16 @@ label {
   line-height: 1.35;
 }
 
+.thought-focus-grid .function-feedback {
+  border-color: rgba(255, 200, 87, 0.28);
+  background:
+    linear-gradient(90deg, rgba(255, 200, 87, 0.12), transparent),
+    rgba(0, 0, 0, 0.22);
+  color: #ffecc0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+}
+
 .thought-hand-read {
   border: 1px solid rgba(217, 255, 71, 0.28);
   border-radius: 8px;

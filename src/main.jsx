@@ -106,6 +106,7 @@ const I18N = {
     handRead: "Hand read",
     modelThought: "Model thought",
     functionLine: "Function",
+    functionFeedback: "Function feedback",
     shotResult: "Shot result",
     youWin: "You won",
     youLose: "You lost",
@@ -175,6 +176,7 @@ const I18N = {
     handRead: "手牌判断",
     modelThought: "模型想法",
     functionLine: "函数",
+    functionFeedback: "函数反馈",
     shotResult: "结果",
     youWin: "你赢了",
     youLose: "你输了",
@@ -400,6 +402,19 @@ function rulesSnapshot(state, activeUnitId, command) {
   ];
   const allyIds = state.units.filter((item) => item.team === team && item.hp > 0).map((item) => item.id);
   const opponentIds = state.units.filter((item) => item.team !== team && item.hp > 0).map((item) => item.id);
+  const recentFeedback = (Array.isArray(state.events) ? state.events : []).slice(-6).map((event) => ({
+    turn: event.turn,
+    unitId: event.unitId || event.shooterId || "",
+    targetId: event.targetId || "",
+    expression: event.expression || "",
+    result: event.result || "",
+    resultLabel: event.resultLabel || "",
+    damage: Number(event.damage) || 0,
+    collisionPoint: event.collisionPoint
+      ? { x: Math.round(event.collisionPoint.x * 10) / 10, y: Math.round(event.collisionPoint.y * 10) / 10 }
+      : null,
+    closestTargetDistance: Number.isFinite(Number(event.closestTargetDistance)) ? Math.round(Number(event.closestTargetDistance) * 10) / 10 : null
+  }));
   return {
     activeUnitId: unitId,
     team,
@@ -414,7 +429,8 @@ function rulesSnapshot(state, activeUnitId, command) {
       analysis: Sim.analyzeHand(hand, Sim.getEnergy(state.turn)),
       cards: hand.map((card, index) => ({ slot: index + 1, function: card.label, label: card.label, family: card.family, cost: card.cost }))
     },
-    legalActions
+    legalActions,
+    recentFeedback
   };
 }
 
@@ -745,40 +761,70 @@ function App() {
     setBusy(true);
     setMessage(rounds > 1 ? `Launching ${rounds} random ranked games.` : "Launching random ranked match.");
     try {
-      let latestPayload = null;
-      for (let index = 0; index < rounds; index += 1) {
-        const response = await fetch("/api/match/join", {
-          method: "POST",
-          headers: authorizedHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({
-            preferredProvider: login.provider,
-            allowAiFill: true,
-            standingOrder: login.standingOrder
-          })
-        });
-        const payload = await response.json();
-        if (response.status === 202) {
-          setQueueState({ ...payload, polling: true });
-          setMessage(`Waiting for commanders. ${payload.queueSize}/2 queued.`);
-          latestPayload = payload;
-          break;
-        }
-        if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
-        playbackToken.current += 1;
-        setMatch(payload.match);
-        setBattleState(payload.match.state);
-        setBattlePlayback(null);
-        setPlaybackDeck([]);
-        playbackFramesRef.current = [];
-        setPlaybackPaused(false);
-        setLastDecision(null);
-        setQueueState(null);
-        setAutoBattle(null);
-        setMessage(rounds > 1 ? `Ranked game ${index + 1}/${rounds} resolving.` : "Random match ready. Auto duel launching.");
-        latestPayload = payload;
-        await autoStartRankedDuel(payload.match, profile.id, { skipReplay: rounds > 1 && index < rounds - 1 });
+      const response = await fetch("/api/match/join", {
+        method: "POST",
+        headers: authorizedHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({
+          preferredProvider: login.provider,
+          allowAiFill: true,
+          standingOrder: login.standingOrder,
+          rounds: rounds
+        })
+      });
+      const payload = await response.json();
+      if (response.status === 202) {
+        setQueueState({ ...payload, polling: true });
+        setMessage(`Waiting for commanders. ${payload.queueSize}/2 queued.`);
+        return payload;
       }
-      return latestPayload;
+      if (!response.ok) throw new Error(payload.error || "matchmaking_failed");
+      playbackToken.current += 1;
+      setMatch(payload.match);
+      setBattleState(payload.match.state);
+      setBattlePlayback(null);
+      setPlaybackDeck([]);
+      playbackFramesRef.current = [];
+      setPlaybackPaused(false);
+      setLastDecision(null);
+      setQueueState(null);
+      setAutoBattle(null);
+      if (payload.player) {
+        setProfile(payload.player);
+        window.localStorage.setItem(PROFILE_STORAGE_KEY, payload.player.id);
+      }
+      if (payload.batch) {
+        const payloadAutoBattles = Array.isArray(payload.autoBattles) ? payload.autoBattles : [];
+        const latestBattle = payloadAutoBattles[payloadAutoBattles.length - 1] || payload.autoBattle || null;
+        const rankDelta = Number(payload.rankDelta) || 0;
+        const batchBattle = latestBattle
+          ? {
+              ...latestBattle,
+              rankDelta,
+              rating: payload.player?.rank?.rating || profile.rank.rating,
+              batch: payload.batch,
+              autoBattles: payloadAutoBattles
+            }
+          : null;
+        setAutoBattle(batchBattle);
+        const completed = Number(payload.batch.roundsCompleted) || payloadAutoBattles.length || 0;
+        const requested = Number(payload.batch.roundsRequested) || rounds;
+        setLastDecision({
+          action: "server idle batch",
+          team: payload.match?.state?.winner || "draw",
+          provider: "Ranked Matchmaker",
+          result: `${completed}/${requested} games`,
+          publicReason: `Rank ${rankDelta > 0 ? "+" : ""}${rankDelta}; rating ${payload.player?.rank?.rating || profile.rank.rating}.`
+        });
+        setMessage(`Idle batch complete. ${completed}/${requested} games, rank ${rankDelta > 0 ? "+" : ""}${rankDelta}.`);
+        await loadLeaderboard();
+        if (latestBattle?.frames?.length) {
+          await playAutoBattleFrames(latestBattle.frames, payload.match, latestBattle);
+        }
+        return payload;
+      }
+      setMessage("Random match ready. Auto duel launching.");
+      await autoStartRankedDuel(payload.match, profile.id);
+      return payload;
     } catch (err) {
       setMessage(err.message || "Matchmaking failed.");
       return null;
@@ -2243,9 +2289,12 @@ function ModelRulesTicker({ state, playback, activeUnitId, standingOrder }) {
     legalActionCount: snapshot.legalActions.length,
     legalShotCount: snapshot.legalActions.filter((action) => action.action === "shot").length,
     canSwap: snapshot.legalActions.some((action) => action.action === "swap_hand"),
+    recentFeedbackCount: snapshot.recentFeedback.length,
+    latestFeedback: snapshot.recentFeedback[snapshot.recentFeedback.length - 1] || null,
     allyIds: snapshot.allyIds,
     opponentIds: snapshot.opponentIds
   };
+  const latestFeedback = rulesDigest.latestFeedback || null;
   return (
     <section className="model-rules-ticker" data-testid="model-rules-ticker" aria-label="Bare rules contract visible to models">
       <div className="rules-contract-pill primary">
@@ -2276,7 +2325,10 @@ function ModelRulesTicker({ state, playback, activeUnitId, standingOrder }) {
       <div className="rules-contract-pill wide">
         <span>Visible units</span>
         <strong>{(rulesDigest.allyIds || []).join(" / ")} vs {(rulesDigest.opponentIds || []).join(" / ")}</strong>
-        <small>rulesDigest from replay frame or live rules packet</small>
+        <small>
+          {Number(rulesDigest.recentFeedbackCount) || 0} recentFeedback
+          {latestFeedback ? ` · ${latestFeedback.unitId || ""}->${latestFeedback.targetId || ""} ${latestFeedback.result || ""}` : ""}
+        </small>
       </div>
     </section>
   );
@@ -2635,19 +2687,33 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
   const team = action?.team || activeTeam || (String(unitId).startsWith("B") ? "B" : "A");
   const seat = roster.find((item) => item.unitId === unitId) || roster.find((item) => item.team === team) || {};
   const event = latestEvent && (latestEvent.unitId === unitId || latestEvent.shooterId === unitId || latestEvent.team === team) ? latestEvent : null;
-  const thinking = event?.thinking || {};
+  const feedbackEvent = event || action?.event || latestEvent || null;
+  const thinking = feedbackEvent?.thinking || {};
   const handAnalysis = Sim.analyzeHand(activeHand || [], Sim.getEnergy(state.turn));
   const modelThought = thinking.providerReason || action?.publicReason || thinking.publicReason || tx(locale, "waitingDecision");
-  const expression = isSwap ? "swap_hand()" : event?.expression || action?.event?.expression || "";
+  const expression = isSwap ? "swap_hand()" : feedbackEvent?.expression || action?.event?.expression || "";
   const usedFunctions = isSwap && swappedHand.length
     ? swappedHand.map((card) => card.label || card.id).join(" + ")
-    : event?.components?.length
-      ? event.components.map((component) => component.label || component.id).join(" + ")
+    : feedbackEvent?.components?.length
+      ? feedbackEvent.components.map((component) => component.label || component.id).join(" + ")
       : handAnalysis.archetype || "y0+dy*t";
+  const collisionPoint = feedbackEvent?.collisionPoint || action?.event?.collisionPoint || null;
+  const closestTargetDistance = Number.isFinite(Number(feedbackEvent?.closestTargetDistance))
+    ? Number(feedbackEvent.closestTargetDistance)
+    : Number.isFinite(Number(action?.event?.closestTargetDistance))
+      ? Number(action.event.closestTargetDistance)
+      : null;
+  const functionFeedback = isSwap
+    ? `${tx(locale, "swapHandRead")}: ${swappedHand.length || 0} ${tx(locale, "cards")}`
+    : collisionPoint
+      ? `collisionPoint (${Math.round(collisionPoint.x)}, ${Math.round(collisionPoint.y)})`
+      : closestTargetDistance !== null
+        ? `closestTargetDistance ${Math.round(closestTargetDistance)}`
+        : feedbackEvent?.resultLabel || feedbackEvent?.result || tx(locale, "waitingDecision");
   const shotResult = isSwap
     ? `${tx(locale, "swapHandRead")}: ${swappedHand.length || 0} ${tx(locale, "cards")}${Number.isFinite(Number(action?.swapsRemaining)) ? ` / ${action.swapsRemaining} left` : ""}`
-    : event
-    ? `${event.resultLabel || event.result}${event.damage ? ` / ${event.damage} dmg` : ""}`
+    : feedbackEvent
+    ? `${feedbackEvent.resultLabel || feedbackEvent.result}${feedbackEvent.damage ? ` / ${feedbackEvent.damage} dmg` : ""}`
     : state.winner
       ? battleResultLabel(state.winner)
       : tx(locale, "waitingDecision");
@@ -2661,6 +2727,7 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
       <div className="thought-focus-grid">
         <span className="thought-large"><b>{tx(locale, "modelThought")}</b>{modelThought}</span>
         <span className="function-line"><b>{tx(locale, "functionLine")}</b><code>{expression || "y = waiting"}</code></span>
+        <span className="function-feedback"><b>{tx(locale, "functionFeedback")}</b>{functionFeedback}</span>
         <span><b>{tx(locale, "shotResult")}</b>{shotResult}</span>
       </div>
       <div className="thought-hand-read">
@@ -2889,6 +2956,7 @@ function RulesPacketPanel({ state, activeUnitId, standingOrder }) {
       swapsRemaining: snapshot.hand.swapsRemaining,
       archetype: snapshot.hand.analysis.archetype
     },
+    recentFeedback: snapshot.recentFeedback.slice(-3),
     legalActions: snapshot.legalActions.slice(0, 5)
   };
   return (

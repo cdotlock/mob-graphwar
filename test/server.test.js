@@ -836,6 +836,103 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.ok(!JSON.stringify(autoDuel.json.autoBattle.frames).includes("secret"), "playback frames should not leak stored API keys");
 }
 
+async function testRankedJoinCanRunServerSideIdleBatch() {
+  const createIsolatedServer = freshCreateServer();
+  const capturedPrompts = [];
+  const fetchMock = async (_url, options) => {
+    const requestBody = JSON.parse(options.body);
+    const prompt = providerRulesPayload(requestBody);
+    capturedPrompts.push(prompt);
+    const previous = Array.isArray(prompt.recentFeedback) && prompt.recentFeedback.length
+      ? prompt.recentFeedback[prompt.recentFeedback.length - 1]
+      : null;
+    const targetId = prompt.opponentIds && prompt.opponentIds[0] ? prompt.opponentIds[0] : "";
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                action: previous && previous.result === "blocked" ? "swap_hand" : "shot",
+                targetId: previous && previous.result === "blocked" ? "" : targetId,
+                expression: previous && previous.result === "blocked" ? "" : "y=y0+dy*t+10*sin(pi*t)",
+                cardSlots: previous && previous.result === "blocked" ? [] : [1],
+                publicReason: previous ? `adjusting after ${previous.result}` : "opening function shot"
+              })
+            }
+          }
+        ]
+      })
+    };
+  };
+  const queuedSession = await request(createIsolatedServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Queued Human",
+      providers: { deepseek: { apiKey: "queued-human-secret", model: "deepseek-v4-flash" } }
+    })
+  });
+  assert.strictEqual(queuedSession.status, 200);
+  const queued = await request(createIsolatedServer({ env: {} }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(queuedSession, { "content-type": "application/json" }),
+    body: JSON.stringify({
+      preferredProvider: "deepseek",
+      allowAiFill: false,
+      standingOrder: "wait for a human commander"
+    })
+  });
+  assert.strictEqual(queued.status, 202);
+  assert.strictEqual(queued.json.status, "queued");
+
+  const session = await request(createIsolatedServer({ env: {} }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Idle Batch",
+      providers: { openai: { apiKey: "idle-batch-secret", model: "gpt-idle" } }
+    })
+  });
+  assert.strictEqual(session.status, 200);
+
+  const batch = await request(createIsolatedServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: fetchMock }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({
+      preferredProvider: "openai",
+      allowAiFill: true,
+      standingOrder: "use prior collision feedback; swap blocked hands",
+      rounds: 2,
+      maxActions: 4
+    })
+  });
+
+  assert.strictEqual(batch.status, 200);
+  assert.strictEqual(batch.json.batch.roundsRequested, 2);
+  assert.strictEqual(batch.json.batch.roundsCompleted, 2);
+  assert.strictEqual(batch.json.matches.length, 2, "server should return one settled match per idle-run round");
+  assert.strictEqual(batch.json.autoBattles.length, 2, "server should return one battle summary per idle-run round");
+  assert.strictEqual(batch.json.player.rank.games, 2, "server-side idle batch should settle rank once per round");
+  assert.ok(batch.json.match, "batch response should keep the latest match for the watch UI");
+  assert.ok(
+    capturedPrompts.some((prompt) => Array.isArray(prompt.recentFeedback) && prompt.recentFeedback.length > 0),
+    "later model turns should receive recent shot feedback"
+  );
+  assert.ok(!batch.text.includes("idle-batch-secret"), "idle batch response must not leak player provider keys");
+
+  const queuedStatus = await request(
+    createIsolatedServer({ env: {} }),
+    `/api/matchmaking/${queuedSession.json.player.id}`,
+    { headers: authHeaders(queuedSession) }
+  );
+  assert.strictEqual(queuedStatus.status, 200);
+  assert.strictEqual(queuedStatus.json.status, "queued", "server-side idle batch should not consume waiting human commanders");
+  assert.ok(!queuedStatus.text.includes("queued-human-secret"), "queue status must not leak waiting player API keys");
+}
+
 async function testMatchRulesEndpointExposesBareModelContract() {
   const createIsolatedServer = freshCreateServer();
   const session = await request(createIsolatedServer({ env: {} }), "/api/session", {
@@ -1347,6 +1444,7 @@ async function testProviderShotRequiresKey() {
   await testQueuedPlayersCanPollMatchedRoom();
   await testRankedMatchRejectsMidDuelManualActions();
   await testAutoDuelResolvesRankedMatchWithBattleSummary();
+  await testRankedJoinCanRunServerSideIdleBatch();
   await testMatchRulesEndpointExposesBareModelContract();
   await testAutoDuelThrowsWhenProviderIsNotConfigured();
   testProviderErrorsAreNotSilentlyFallbacked();

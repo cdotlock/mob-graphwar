@@ -77,6 +77,25 @@ function testRulesPayloadDoesNotExposeShotCandidates() {
   assert.ok(shotAction.output.expression.includes("y="), "shot action should tell the model to write an expression");
 }
 
+function testRulesPayloadIncludesRecentShotFeedback() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  Sim.applyTurn(state, { A1: "safe high arc target B1" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t",
+    cardSlots: [],
+    providerReason: "probe line"
+  });
+  const payload = Contract.buildRulesPayload(state, "B1", "adjust from the last collision");
+  assert.ok(Array.isArray(payload.recentFeedback), "provider payload should include recent replay feedback");
+  assert.ok(payload.recentFeedback.length > 0, "recent feedback should include previous shots");
+  const latest = payload.recentFeedback[payload.recentFeedback.length - 1];
+  assert.strictEqual(latest.expression, "y=y0+dy*t");
+  assert.ok(latest.result, "recent feedback should include the shot result");
+  assert.ok("collisionPoint" in latest, "recent feedback should include collision point data even when null");
+  assert.ok("closestTargetDistance" in latest, "recent feedback should include miss distance");
+  assert.ok(JSON.stringify(payload).includes("If recentFeedback shows repeated blocked/ground/invalid shots"), "rules should tell the model how to use feedback");
+}
+
 function testDecisionValidation() {
   const state = Sim.createInitialState({ seed: 7351 });
   const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
@@ -120,6 +139,7 @@ testCandidateExportIsSafe();
 testRulesPayloadIsBareGameStateAndLegalActions();
 testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames();
 testRulesPayloadDoesNotExposeShotCandidates();
+testRulesPayloadIncludesRecentShotFeedback();
 testDecisionValidation();
 testSecretRedaction();
 

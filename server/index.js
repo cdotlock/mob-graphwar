@@ -566,6 +566,18 @@ function createAiFallbackMatch(player, preferredProvider, standingOrder) {
   return createRankedMatch(player, preferredProvider, standingOrder);
 }
 
+function normalizeIdleRounds(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.min(25, Math.floor(parsed)));
+}
+
+function normalizeActionCap(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.max(1, Math.min(96, Math.floor(parsed)));
+}
+
 function getPlayerSeat(match, player) {
   if (!match || !player) return null;
   return match.roster.find((seat) => seat.playerId === player.id) || null;
@@ -648,6 +660,8 @@ function buildRulesDigest(rulesPayload) {
   const payload = rulesPayload || {};
   const hand = payload.hand || {};
   const legalActions = Array.isArray(payload.legalActions) ? payload.legalActions : [];
+  const recentFeedback = Array.isArray(payload.recentFeedback) ? payload.recentFeedback : [];
+  const latestFeedback = recentFeedback[recentFeedback.length - 1] || null;
   return {
     promptPolicy: "bare_rules_only",
     activeUnitId: payload.activeUnitId || "",
@@ -661,6 +675,16 @@ function buildRulesDigest(rulesPayload) {
     legalActionCount: legalActions.length,
     legalShotCount: legalActions.filter((action) => action.action === "shot").length,
     canSwap: legalActions.some((action) => action.action === "swap_hand"),
+    recentFeedbackCount: recentFeedback.length,
+    latestFeedback: latestFeedback
+      ? {
+          unitId: latestFeedback.unitId || "",
+          targetId: latestFeedback.targetId || "",
+          result: latestFeedback.result || "",
+          collisionPoint: latestFeedback.collisionPoint || null,
+          closestTargetDistance: latestFeedback.closestTargetDistance ?? null
+        }
+      : null,
     allyIds: Array.isArray(payload.allyIds) ? payload.allyIds.slice() : [],
     opponentIds: Array.isArray(payload.opponentIds) ? payload.opponentIds.slice() : []
   };
@@ -781,7 +805,8 @@ async function advanceMatchToResolution(match, options) {
   const opts = options || {};
   opts.providerBudget = opts.providerBudget || createProviderBudget(opts.env);
   let guard = 0;
-  const maxActions = Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
+  const configuredMaxActions = normalizeActionCap(opts.maxActions);
+  const maxActions = configuredMaxActions || Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
   while (!match.state.winner && guard < maxActions) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
@@ -1004,6 +1029,7 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
     playerId: player.id,
     playerTeam,
     command: opts.command,
+    maxActions: opts.maxActions,
     frames
   });
   let settlement = match.rankSettlements[player.id];
@@ -1022,6 +1048,56 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
     rankDelta: settlement.rankDelta,
     score: finalState.score,
     autoBattle: buildAutoBattleSummary(match, opts.startedTurn ?? startedTurn, playerTeam, opts.mode || "auto_duel", frames)
+  };
+}
+
+async function runRankedIdleBatch(player, body, env, fetchFn) {
+  const rounds = normalizeIdleRounds(body.rounds);
+  const standingOrder = normalizeStandingOrder(body.standingOrder);
+  const preferredProvider = body.preferredProvider;
+  const maxActions = normalizeActionCap(body.maxActions);
+  const matchesOut = [];
+  const autoBattles = [];
+  const rankDeltas = [];
+  let latestPayload = null;
+  for (let index = 0; index < rounds; index += 1) {
+    const indexedMatch = getIndexedMatch(player.id);
+    if (indexedMatch && indexedMatch.status === "resolved") {
+      playerMatchIndex.delete(player.id);
+    }
+    removeQueuedPlayer(player.id);
+    const match = createRankedMatch(player, preferredProvider, standingOrder);
+    const playerSeat = getPlayerSeat(match, player);
+    const payload = await settleResolvedMatch(
+      match,
+      player,
+      playerSeat,
+      env,
+      {
+        mode: "idle_batch",
+        command: standingOrder,
+        maxActions
+      },
+      fetchFn
+    );
+    latestPayload = payload;
+    matchesOut.push(payload.match);
+    autoBattles.push(payload.autoBattle);
+    rankDeltas.push(payload.rankDelta);
+  }
+  return {
+    match: latestPayload ? latestPayload.match : null,
+    matches: matchesOut,
+    autoBattles,
+    player: publicPlayer(player),
+    rankDelta: rankDeltas.reduce((sum, value) => sum + (Number(value) || 0), 0),
+    batch: {
+      mode: "server_idle_batch",
+      roundsRequested: rounds,
+      roundsCompleted: matchesOut.length,
+      rankDeltas,
+      finalRating: player.rank.rating
+    }
   };
 }
 
@@ -1648,6 +1724,15 @@ function createServer(options) {
         }
         const allowAiFill = body.allowAiFill !== false;
         const standingOrder = normalizeStandingOrder(body.standingOrder);
+        const rounds = normalizeIdleRounds(body.rounds);
+        if (allowAiFill && rounds > 1) {
+          try {
+            sendJson(res, 200, await runRankedIdleBatch(player, { ...body, rounds, standingOrder }, env, fetchFn));
+          } catch (err) {
+            sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
+          }
+          return;
+        }
         if (!allowAiFill) {
           const queuedMatch = queueRankedPlayer(player, body.preferredProvider, standingOrder);
           if (!queuedMatch) {
@@ -1686,7 +1771,7 @@ function createServer(options) {
         }
         const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
         try {
-          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command }, fetchFn));
+          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command, maxActions: body.maxActions }, fetchFn));
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
         }
@@ -1708,7 +1793,7 @@ function createServer(options) {
           return;
         }
         try {
-          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve" }, fetchFn));
+          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve", maxActions: body.maxActions }, fetchFn));
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
         }

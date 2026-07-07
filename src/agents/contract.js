@@ -54,6 +54,25 @@
     };
   }
 
+  function publicRecentFeedback(state) {
+    const events = Array.isArray(state.events) ? state.events.slice(-8) : [];
+    return events.map((event) => ({
+      turn: event.turn,
+      team: event.team,
+      unitId: event.unitId || event.shooterId || "",
+      targetId: event.targetId || "",
+      expression: event.expression || "",
+      result: event.result || "",
+      resultLabel: event.resultLabel || "",
+      damage: Number(event.damage) || 0,
+      collisionPoint: event.collisionPoint
+        ? { x: event.collisionPoint.x, y: event.collisionPoint.y }
+        : null,
+      closestTargetDistance: Number.isFinite(Number(event.closestTargetDistance)) ? Number(event.closestTargetDistance) : null,
+      maxY: Number.isFinite(Number(event.maxY)) ? Number(event.maxY) : null
+    }));
+  }
+
   function buildRulesPayload(state, owner, command) {
     const units = state.units || [];
     const controlledUnit = resolveControlledUnit(state, owner);
@@ -95,6 +114,8 @@
         cardUse: `${Sim.CONFIG.maxCardsPerShot} cards max, ${Sim.CONFIG.maxShapeCards} shape cards max, ${Sim.CONFIG.maxModifierCards} modifier max`,
         expressionVariables: "t is normalized 0..1, u is horizontal travel, d is shooter-target horizontal distance, x is board x, y0/y1 are shooter/target y, dy=y1-y0",
         expressionFunctions: "allowed functions include sin, cos, tan, abs, min, max, exp, log, log1p, sqrt, pow, atan, tanh, sigmoid, softplus, GELU, SiLU",
+        expressionSyntax: "write exactly one y=<expression>; do not write semicolon assignments, where clauses, undefined variables, prose, or helper definitions",
+        feedbackPolicy: "If recentFeedback shows repeated blocked/ground/invalid shots, change the curve materially or use swap_hand instead of repeating the same family",
         promptPolicy: "this JSON packet is the full public model contract; no hidden tactical hints are provided",
         output: "return JSON only with action,targetId,expression,cardSlots,publicReason; swap_hand uses empty targetId/expression and [] cardSlots"
       },
@@ -114,6 +135,7 @@
         units: units.map((unit) => ({ id: unit.id, team: unit.team, x: unit.x, y: unit.y, hp: unit.hp })),
         obstacles: state.obstacles || []
       },
+      recentFeedback: publicRecentFeedback(state),
       hand: {
         owner: activeUnitId,
         retained: true,

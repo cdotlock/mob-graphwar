@@ -1798,11 +1798,17 @@
 
   function normalizeShotExpression(expression) {
     let source = String(expression || "").trim();
+    source = source.replace(/\*\*/g, "^");
+    source = source.replace(/\s+where\s+[\s\S]*$/i, "").trim();
     const semicolon = source.indexOf(";");
     if (semicolon >= 0) source = source.slice(0, semicolon).trim();
     const equals = source.indexOf("=");
     if (/^y\s*=/.test(source) && equals >= 0) source = source.slice(equals + 1).trim();
-    return source.replace(/\*\*/g, "^");
+    return source;
+  }
+
+  function normalizeProviderShotExpression(expression) {
+    return `y=${normalizeShotExpression(expression)}`;
   }
 
   function tokenizeExpression(source) {
@@ -2688,7 +2694,7 @@
       amp: 0
     }));
     const validation = validateResourceUse(hand, components, energy);
-    const expression = String(options.expression || "").trim().slice(0, 600);
+    const expression = normalizeProviderShotExpression(String(options.expression || "").trim().slice(0, 600));
     let expressionFn = null;
     let invalidExpressionReason = null;
     try {
@@ -2705,7 +2711,7 @@
       components,
       cost: validation.cost,
       usedCardIds: selectedCards.map((card) => card.instanceId),
-      expression: /^y\s*=/.test(expression) ? expression : `y=${expression}`,
+      expression,
       expressionFn,
       invalidExpressionReason
     };
@@ -3056,6 +3062,7 @@
       distance,
       evalShotY,
       compileShotExpression,
+      normalizeShotExpression,
       generateComponentCombos
     }
   };

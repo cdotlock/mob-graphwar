@@ -23,6 +23,10 @@ function testDeterministicBattle() {
   assert.ok(["S", "A", "B", "C", "D"].includes(first.score.rank), "battle should include a rank");
 }
 
+function testGlobalActionCapIsTwentyFour() {
+  assert.strictEqual(Sim.CONFIG.maxResolutionActions, 24, "global AI battle action cap should be 24");
+}
+
 function testBattleDoesNotDrawFromTurnLimit() {
   const state = Sim.createInitialState({ seed: 7351 });
   for (const unit of state.units) {
@@ -673,8 +677,9 @@ function testTraceShapeIncludesMapAndScore() {
   assert.ok(trace.events.every((event) => event.mapFit === undefined), "events should not include route-window fit");
 }
 
-  testDeterministicBattle();
-  testBattleDoesNotDrawFromTurnLimit();
+testGlobalActionCapIsTwentyFour();
+testDeterministicBattle();
+testBattleDoesNotDrawFromTurnLimit();
 testStandingOrdersStayLockedDuringAutoBattle();
 testTurnsRotateAcrossFourUnitSeats();
 testNoInvalidState();

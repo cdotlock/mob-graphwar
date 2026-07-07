@@ -11,7 +11,7 @@
     width: 100,
     height: 60,
     viewPadding: 0,
-    maxResolutionActions: 96,
+    maxResolutionActions: 24,
     handSize: 4,
     localSearchComboCap: 360,
     maxSwapsPerTurn: 3,
@@ -2918,7 +2918,8 @@
     const opts = options || {};
     const commands = opts.commands || {};
     const state = createInitialState({ seed: opts.seed, lockedOrders: commands });
-    const maxActions = Math.max(24, Number(opts.maxActions || CONFIG.maxResolutionActions) || 96);
+    const requestedMaxActions = Number(opts.maxActions || CONFIG.maxResolutionActions) || CONFIG.maxResolutionActions;
+    const maxActions = clamp(Math.floor(requestedMaxActions), 1, CONFIG.maxResolutionActions);
     let guard = 0;
     while (!state.winner && guard < maxActions) {
       applyTurn(state, commands);

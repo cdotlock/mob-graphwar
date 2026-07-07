@@ -90,6 +90,14 @@ async function testLeagueBattleCanUseBenchmarkActionCap() {
   assert.ok(battle.state.winner, "capped benchmark battle should still settle by guard for ranking");
 }
 
+async function testLeagueBattleCannotExceedGlobalActionCap() {
+  const teamA = { id: "raw-a", label: "Raw A", provider: "local", model: "", command: "" };
+  const teamB = { id: "raw-b", label: "Raw B", provider: "local", model: "", command: "" };
+  const battle = await runLeagueBattle(4, teamA, teamB, {}, globalThis.fetch, { maxActions: 96 });
+  assert.ok(battle.actions.length <= 24, "requested caps above 24 should be clamped by the global battle cap");
+  assert.strictEqual(battle.state.reason, "resolution_guard", "capped battle should settle by comparing remaining HP");
+}
+
 async function testRunWithConcurrencyKeepsResultsInScheduleOrder() {
   const seen = [];
   const results = await runWithConcurrency(
@@ -173,6 +181,7 @@ async function testBenchmarkStopsOnProviderErrorByDefault() {
   testBenchmarkScheduleAlternatesSidesForEveryPair();
   testBenchmarkStoreRegistersRawRowsWithoutSecrets();
   await testLeagueBattleCanUseBenchmarkActionCap();
+  await testLeagueBattleCannotExceedGlobalActionCap();
   await testRunWithConcurrencyKeepsResultsInScheduleOrder();
   await testConcurrentBenchmarkDoesNotDoubleScore();
   await testBenchmarkStopsOnProviderErrorByDefault();

@@ -575,7 +575,7 @@ function normalizeIdleRounds(value) {
 function normalizeActionCap(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-  return Math.max(1, Math.min(96, Math.floor(parsed)));
+  return Math.max(1, Math.min(Number(Sim.CONFIG.maxResolutionActions || 24), Math.floor(parsed)));
 }
 
 function getPlayerSeat(match, player) {
@@ -777,7 +777,7 @@ async function advanceMatchToResolution(match, options) {
   opts.providerBudget = opts.providerBudget || createProviderBudget(opts.env);
   let guard = 0;
   const configuredMaxActions = normalizeActionCap(opts.maxActions);
-  const maxActions = configuredMaxActions || Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxSwapsPerTurn + 1));
+  const maxActions = configuredMaxActions || Number(Sim.CONFIG.maxResolutionActions || 24);
   while (!match.state.winner && guard < maxActions) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
@@ -1333,10 +1333,8 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
   let guard = 0;
   const actions = [];
   const failures = [];
-  const configuredMaxActions = Number(opts.maxActions);
-  const maxActions = Number.isFinite(configuredMaxActions) && configuredMaxActions > 0
-    ? Math.max(1, Math.floor(configuredMaxActions))
-    : Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxSwapsPerTurn + 1));
+  const configuredMaxActions = normalizeActionCap(opts.maxActions);
+  const maxActions = configuredMaxActions || Number(Sim.CONFIG.maxResolutionActions || 24);
   while (!state.winner && guard < maxActions) {
     guard += 1;
     const unitId = getActiveUnitId(state);

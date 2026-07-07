@@ -76,7 +76,7 @@ function providerTimeoutMs(options) {
   const raw = opts.timeoutMs ?? source.GRAPHWAR_REQUEST_TIMEOUT_MS;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) return 300_000;
-  return Math.min(parsed, 300_000);
+  return parsed;
 }
 
 async function fetchWithTimeout(fetchFn, url, request, timeoutMs) {

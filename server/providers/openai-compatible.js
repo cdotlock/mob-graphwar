@@ -42,6 +42,7 @@ function decisionResponseFormat() {
 function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const isDeepSeek = provider.id === "deepseek";
   const isOpenRouter = provider.id === "openrouter";
+  const isInfron = provider.id === "infron";
   const usesApiKeyHeader = provider.requestAuth === "api-key" || provider.modelList?.auth === "api-key";
   const rulesPayload =
     payload.rulesPayload || {
@@ -71,7 +72,6 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const body = {
     model: payload.model || provider.defaultModel,
     temperature: 0.2,
-    max_tokens: 260,
     response_format: { type: "json_object" },
     messages: [
       {
@@ -86,19 +86,24 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   if (isDeepSeek) {
     body.thinking = { type: "disabled" };
   }
-  if (isOpenRouter) {
+  if (isOpenRouter || isInfron) {
     if (payload.reasoning && typeof payload.reasoning === "object") {
-      body.include_reasoning = payload.reasoning.exclude === false;
       body.reasoning = { ...payload.reasoning };
       if (body.reasoning.max_tokens && body.reasoning.effort) delete body.reasoning.effort;
-      body.max_tokens = Math.max(body.max_tokens, Number(payload.maxTokens) || 6000);
-      body.max_completion_tokens = Math.max(Number(body.max_completion_tokens) || 0, body.max_tokens);
+      const outputBudget = Number(payload.maxTokens) || Number(payload.max_tokens) || 6000;
+      body.max_tokens = outputBudget;
+      body.max_completion_tokens = Math.max(Number(body.max_completion_tokens) || 0, outputBudget);
+      if (isOpenRouter) body.include_reasoning = payload.reasoning.exclude === false;
     } else {
-      body.include_reasoning = false;
-      body.reasoning = { exclude: true };
+      if (isOpenRouter) {
+        body.include_reasoning = false;
+        body.reasoning = { exclude: true };
+      } else {
+        body.reasoning = { effort: "none" };
+      }
     }
     if (payload.strictDecisionSchema) {
-      body.plugins = [{ id: "response-healing" }];
+      if (isOpenRouter) body.plugins = [{ id: "response-healing" }];
     }
   }
   return {

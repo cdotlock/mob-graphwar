@@ -1270,7 +1270,11 @@ function contestantFailureDecision(contestant, state, unitId, err, failures) {
     model: contestant.model || "",
     error: err && err.message ? err.message : "provider_error",
     status: err && err.status ? err.status : null,
-    body: err && err.body ? String(err.body).slice(0, 1200) : ""
+    body: err && err.body ? String(err.body).slice(0, 1200) : "",
+    rawText: err && err.rawText ? String(err.rawText).slice(0, 4000) : "",
+    reasoningText: err && err.reasoningText ? String(err.reasoningText).slice(0, 4000) : "",
+    reasoningDetails: err && err.reasoningDetails ? clonePublic(err.reasoningDetails) : null,
+    validation: err && err.validation ? clonePublic(err.validation) : null
   };
   if (Array.isArray(failures)) failures.push(failure);
   return {
@@ -1282,6 +1286,20 @@ function contestantFailureDecision(contestant, state, unitId, err, failures) {
     reasoningDetails: err && err.reasoningDetails ? clonePublic(err.reasoningDetails) : null,
     failure
   };
+}
+
+function isModelDecisionError(err) {
+  const message = err && err.message ? String(err.message) : "";
+  if (!message) return false;
+  if (err.status || err.body) return false;
+  return ![
+    "provider_http_error",
+    "provider_timeout",
+    "provider_not_configured",
+    "provider_budget_exhausted",
+    "missing_api_key",
+    "fetch_unavailable"
+  ].includes(message);
 }
 
 function publicLeagueTrace(state) {
@@ -1344,7 +1362,28 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
     try {
       resolved = await contestantDecision(contestant, state, unitId, env, fetchFn);
     } catch (err) {
-      contestantFailureDecision(contestant, state, unitId, err, failures);
+      const failed = contestantFailureDecision(contestant, state, unitId, err, failures);
+      if (opts.penalizeInvalidActions && isModelDecisionError(err)) {
+        actions.push(publicLeagueAction(state, {
+          index: actions.length,
+          turn: state.turn,
+          team,
+          unitId,
+          contestantId: contestant.id,
+          contestantLabel: contestant.label,
+          model: contestant.model || "",
+          provider: failed.providerLabel,
+          action: "invalid",
+          modelOutput: failed.rawText || "",
+          reasoning: failed.reasoningText || "",
+          reasoningDetails: failed.reasoningDetails || null,
+          failure: failed.failure,
+          publicReason: `Invalid model action: ${failed.failure.error}`
+        }, state.events.length));
+        state.turn += 1;
+        continue;
+      }
+      err.leagueFailure = failed.failure;
       throw err;
     }
     const actionBase = {

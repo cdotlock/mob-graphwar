@@ -7,11 +7,33 @@ const { runLeagueBattle } = require("../server/index.js");
 const Sim = require("../src/sim-core.js");
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const INFRON_MODELS_URL = "https://llm.onerouter.pro/v1/models";
 const DEFAULT_GAMES_PER_PAIR = 2;
 const DEFAULT_MAX_ACTIONS = Sim.CONFIG.maxResolutionActions;
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_SEED_BASE = 64000;
+
+const BENCHMARK_ROUTES = {
+  openrouter: {
+    id: "openrouter",
+    label: "OpenRouter",
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    providerId: "openrouter",
+    modelsUrl: OPENROUTER_MODELS_URL,
+    artifactDir: "openrouter-benchmark",
+    reportTitle: "OpenRouter Raw Model Benchmark"
+  },
+  infron: {
+    id: "infron",
+    label: "Infron",
+    apiKeyEnv: "INFRON_API_KEY",
+    providerId: "infron",
+    modelsUrl: INFRON_MODELS_URL,
+    artifactDir: "infron-benchmark",
+    reportTitle: "Infron Raw Model Benchmark"
+  }
+};
 
 const TARGET_MODEL_SPECS = [
   {
@@ -29,13 +51,6 @@ const TARGET_MODEL_SPECS = [
     patterns: [/^anthropic\/claude-opus-4\.8$/i, /claude-opus-4[.-]8/i]
   },
   {
-    id: "anthropic-claude-sonnet-5",
-    requested: "Anthropic claude-sonnet-5",
-    label: "Anthropic Claude Sonnet 5",
-    exactIds: ["anthropic/claude-sonnet-5"],
-    patterns: [/^anthropic\/claude-sonnet-5$/i]
-  },
-  {
     id: "google-gemini-3-5-flash",
     requested: "Gemini gemini-3.5-flash",
     label: "Google Gemini 3.5 Flash",
@@ -48,13 +63,6 @@ const TARGET_MODEL_SPECS = [
     label: "Google Gemini 3.1 Pro",
     exactIds: ["google/gemini-3.1-pro-preview", "google/gemini-3.1-pro-preview-customtools"],
     patterns: [/^google\/gemini-3\.1-pro/i]
-  },
-  {
-    id: "xai-grok-4-3",
-    requested: "Grok grok-4.3",
-    label: "xAI Grok 4.3",
-    exactIds: ["x-ai/grok-4.3"],
-    patterns: [/^x-ai\/grok-4\.3$/i]
   },
   {
     id: "moonshot-kimi-k2-7-code",
@@ -85,25 +93,11 @@ const TARGET_MODEL_SPECS = [
     patterns: [/^deepseek\/deepseek-v4-pro$/i]
   },
   {
-    id: "stepfun-step-3-7-flash",
-    requested: "StepFun step-3.7-flash",
-    label: "StepFun Step 3.7 Flash",
-    exactIds: ["stepfun/step-3.7-flash"],
-    patterns: [/^stepfun\/step-3\.7-flash$/i]
-  },
-  {
     id: "minimax-m3",
     requested: "MiniMax MiniMax-M3",
     label: "MiniMax M3",
     exactIds: ["minimax/minimax-m3"],
     patterns: [/^minimax\/minimax-m3$/i]
-  },
-  {
-    id: "xiaomi-mimo-v2-5-pro",
-    requested: "MiMo mimo-v2.5-pro",
-    label: "Xiaomi MiMo V2.5 Pro",
-    exactIds: ["xiaomi/mimo-v2.5-pro"],
-    patterns: [/mimo-v2\.5-pro/i]
   }
 ];
 
@@ -150,16 +144,27 @@ function isoTimestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+function benchmarkRoute(platform) {
+  const id = String(platform || "openrouter").toLowerCase();
+  const route = BENCHMARK_ROUTES[id];
+  if (!route) throw new Error(`unknown_benchmark_platform:${platform}`);
+  return route;
+}
+
 function modelSupportsText(model) {
   const architecture = model && model.architecture ? model.architecture : {};
   const identity = `${model?.id || ""} ${model?.name || ""}`.toLowerCase();
   if (/(image|banana|dall[- ]?e|stable diffusion|midjourney|flux|sdxl)/.test(identity)) return false;
   const outputModalities = Array.isArray(architecture.output_modalities)
     ? architecture.output_modalities.map((item) => String(item).toLowerCase())
+    : Array.isArray(model?.output_modalities)
+      ? model.output_modalities.map((item) => String(item).toLowerCase())
     : [];
   if (outputModalities.length) return outputModalities.includes("text");
   const inputModalities = Array.isArray(architecture.input_modalities)
     ? architecture.input_modalities.map((item) => String(item).toLowerCase())
+    : Array.isArray(model?.input_modalities)
+      ? model.input_modalities.map((item) => String(item).toLowerCase())
     : [];
   if (inputModalities.length && !inputModalities.includes("text")) return false;
   return true;
@@ -167,9 +172,15 @@ function modelSupportsText(model) {
 
 function modelCost(model) {
   const pricing = model?.pricing || {};
+  if (pricing.prompt !== undefined || pricing.completion !== undefined) {
+    return {
+      prompt: Number(pricing.prompt || 0) || 0,
+      completion: Number(pricing.completion || 0) || 0
+    };
+  }
   return {
-    prompt: Number(pricing.prompt || 0) || 0,
-    completion: Number(pricing.completion || 0) || 0
+    prompt: (Number(model?.min_prompt_price || 0) || 0) / 1_000_000,
+    completion: (Number(model?.min_completion_price || 0) || 0) / 1_000_000
   };
 }
 
@@ -178,7 +189,7 @@ function publicModelMeta(model) {
   const cost = modelCost(model);
   return {
     id: model.id,
-    name: model.name || model.id,
+    name: model.name || model.display_name || model.id,
     created: Number(model.created || model.created_at || 0) || null,
     contextLength: Number(model.context_length || model.contextLength || 0) || null,
     pricing: cost,
@@ -226,8 +237,9 @@ function findModelForSpec(catalog, spec) {
 
 function resolveTargetModels(catalog, options) {
   const opts = options || {};
+  const route = benchmarkRoute(opts.platform || opts.route);
   const reasoningMode = String(opts.reasoning || "off").toLowerCase();
-  const specs = opts.includeRoutes ? TARGET_MODEL_SPECS.concat(ROUTE_MODEL_SPECS) : TARGET_MODEL_SPECS;
+  const specs = opts.includeRoutes && route.id === "openrouter" ? TARGET_MODEL_SPECS.concat(ROUTE_MODEL_SPECS) : TARGET_MODEL_SPECS;
   const missing = [];
   const resolutions = specs.map((spec) => {
     const model = findModelForSpec(catalog, spec);
@@ -243,9 +255,9 @@ function resolveTargetModels(catalog, options) {
       id: resolution.spec.id,
       label: resolution.spec.label,
       requested: resolution.spec.requested,
-      provider: "openrouter",
+      provider: route.providerId,
       model: resolution.model.id,
-      modelName: resolution.model.name || resolution.model.id,
+      modelName: resolution.model.name || resolution.model.display_name || resolution.model.id,
       command: "",
       apiKey: "",
       reasoning: reasoningMode === "high" ? reasoningConfigForModel(resolution.model) : null,
@@ -287,6 +299,39 @@ function buildBenchmarkSchedule(contestants, gamesPerPair, seedBase, maxMatches)
   }
   const cap = Number(maxMatches);
   return Number.isFinite(cap) && cap > 0 ? schedule.slice(0, cap) : schedule;
+}
+
+function matchIdForEntry(entry) {
+  return `match-${String(entry.index + 1).padStart(4, "0")}`;
+}
+
+function traceFileForEntry(outputDir, entry) {
+  return path.join(outputDir, "traces", `${matchIdForEntry(entry)}.json`);
+}
+
+function readExistingMatchSummary(outputDir, entry) {
+  const traceFile = traceFileForEntry(outputDir, entry);
+  if (!fs.existsSync(traceFile)) return null;
+  try {
+    const trace = JSON.parse(fs.readFileSync(traceFile, "utf8"));
+    const state = trace.state || {};
+    return {
+      id: trace.id || matchIdForEntry(entry),
+      seed: trace.seed ?? entry.seed,
+      pair: trace.pair || entry.pair,
+      game: trace.game || entry.game,
+      teamA: trace.teamA?.id || entry.teamA.id,
+      teamB: trace.teamB?.id || entry.teamB.id,
+      winner: state.winner || "draw",
+      reason: state.reason || "",
+      events: Array.isArray(state.events) ? state.events.length : 0,
+      failures: Array.isArray(trace.failures) ? trace.failures.length : 0,
+      score: state.score || null,
+      trace: path.relative(outputDir, traceFile)
+    };
+  } catch {
+    return null;
+  }
 }
 
 function createRows(contestants) {
@@ -394,6 +439,7 @@ function buildBenchmarkStore(leaderboard, existingStore) {
   const now = new Date().toISOString();
   for (const row of leaderboard) {
     const id = `benchmark-${slug(row.model)}-raw`;
+    const providerId = String(row.provider || "openrouter").trim() || "openrouter";
     store.players[id] = {
       id,
       handle: slug(`${row.label}-raw`).slice(0, 24),
@@ -408,7 +454,8 @@ function buildBenchmarkStore(leaderboard, existingStore) {
         games: row.games
       },
       providers: {
-        openrouter: {
+        ...(store.players[id]?.providers || {}),
+        [providerId]: {
           model: row.model,
           configured: true
         }
@@ -418,20 +465,25 @@ function buildBenchmarkStore(leaderboard, existingStore) {
   return store;
 }
 
-async function fetchOpenRouterModels(apiKey, fetchFn) {
+async function fetchBenchmarkModels(routeOrPlatform, apiKey, fetchFn) {
+  const route = typeof routeOrPlatform === "string" ? benchmarkRoute(routeOrPlatform) : routeOrPlatform;
   const fetchImpl = fetchFn || globalThis.fetch;
   if (typeof fetchImpl !== "function") throw new Error("fetch_unavailable");
-  const response = await fetchImpl(OPENROUTER_MODELS_URL, {
+  const response = await fetchImpl(route.modelsUrl, {
     method: "GET",
     headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {}
   });
   if (!response || !response.ok) {
-    const err = new Error("openrouter_models_failed");
+    const err = new Error(`${route.id}_models_failed`);
     err.status = response && response.status;
     throw err;
   }
   const payload = await response.json();
   return Array.isArray(payload?.data) ? payload.data : [];
+}
+
+async function fetchOpenRouterModels(apiKey, fetchFn) {
+  return fetchBenchmarkModels(benchmarkRoute("openrouter"), apiKey, fetchFn);
 }
 
 function parseArgs(argv) {
@@ -448,9 +500,10 @@ function parseArgs(argv) {
 
 function buildReport(data) {
   const lines = [];
-  lines.push("# OpenRouter Raw Model Benchmark");
+  lines.push(`# ${data.reportTitle || "Raw Model Benchmark"}`);
   lines.push("");
   lines.push(`Generated: ${data.generatedAt}`);
+  if (data.platformLabel) lines.push(`Platform: ${data.platformLabel}`);
   lines.push(`Games per pair: ${data.gamesPerPair}`);
   if (data.maxActions) lines.push(`Action cap per game: ${data.maxActions}`);
   lines.push(`Models: ${data.contestants.length}`);
@@ -459,7 +512,7 @@ function buildReport(data) {
   lines.push("");
   lines.push("## Model Mapping");
   lines.push("");
-  lines.push("| Requested | OpenRouter model | Status |");
+  lines.push(`| Requested | ${data.platformLabel || "Platform"} model | Status |`);
   lines.push("| --- | --- | --- |");
   for (const resolution of data.resolutions) {
     lines.push(`| ${resolution.requested} | ${resolution.model ? resolution.model.id : "-"} | ${resolution.model ? "mapped" : "missing"} |`);
@@ -475,7 +528,7 @@ function buildReport(data) {
   lines.push("");
   lines.push("## Data Files");
   lines.push("");
-  lines.push("- `models.json`: resolved OpenRouter model metadata and substitutions.");
+  lines.push("- `models.json`: resolved platform model metadata and substitutions.");
   lines.push("- `matches.jsonl`: one summary row per game.");
   lines.push("- `leaderboard.json`: final raw model standings.");
   lines.push("- `graphwar-store.json`: leaderboard import file using model name + `(raw)`.");
@@ -485,15 +538,16 @@ function buildReport(data) {
 
 async function runBenchmark(options) {
   const opts = options || {};
-  const apiKey = opts.apiKey || process.env.OPENROUTER_API_KEY || "";
-  if (!apiKey && !opts.dryRun) throw new Error("missing_OPENROUTER_API_KEY");
+  const route = benchmarkRoute(opts.platform || opts.route || opts.provider);
+  const apiKey = opts.apiKey || process.env[route.apiKeyEnv] || "";
+  if (!apiKey && !opts.dryRun) throw new Error(`missing_${route.apiKeyEnv}`);
   const generatedAt = new Date().toISOString();
-  const outputDir = path.resolve(opts.outDir || path.join("artifacts", "openrouter-benchmark", isoTimestamp()));
+  const outputDir = path.resolve(opts.outDir || path.join("artifacts", route.artifactDir, isoTimestamp()));
   ensureDir(outputDir);
   ensureDir(path.join(outputDir, "traces"));
 
-  const catalog = opts.catalog || await fetchOpenRouterModels(apiKey, opts.fetch);
-  const resolved = resolveTargetModels(catalog, { includeRoutes: opts.includeRoutes, reasoning: opts.reasoning });
+  const catalog = opts.catalog || await fetchBenchmarkModels(route, apiKey, opts.fetch);
+  const resolved = resolveTargetModels(catalog, { includeRoutes: opts.includeRoutes, reasoning: opts.reasoning, platform: route.id });
   if (resolved.missing.length && !opts.allowMissing) {
     const err = new Error(`missing_models:${resolved.missing.map((item) => item.requested).join(",")}`);
     err.missing = resolved.missing;
@@ -506,10 +560,19 @@ async function runBenchmark(options) {
   const maxActions = Math.max(1, Math.min(Sim.CONFIG.maxResolutionActions, Number(opts.maxActions) || DEFAULT_MAX_ACTIONS));
   const concurrency = Math.max(1, Math.min(16, Number(opts.concurrency) || DEFAULT_CONCURRENCY));
   const schedule = buildBenchmarkSchedule(contestants, gamesPerPair, opts.seedBase, opts.maxMatches);
+  const resumedMatches = [];
+  const pendingSchedule = [];
+  for (const entry of schedule) {
+    const existing = opts.resume ? readExistingMatchSummary(outputDir, entry) : null;
+    if (existing) resumedMatches.push(existing);
+    else pendingSchedule.push(entry);
+  }
 
   writeJson(path.join(outputDir, "models.json"), {
     generatedAt,
-    openRouterModelsUrl: OPENROUTER_MODELS_URL,
+    platform: route.id,
+    platformLabel: route.label,
+    modelsUrl: route.modelsUrl,
     targetSpecs: TARGET_MODEL_SPECS.map((spec) => ({ id: spec.id, requested: spec.requested, label: spec.label })),
     includeRoutes: Boolean(opts.includeRoutes),
     resolutions: resolved.resolutions,
@@ -524,37 +587,41 @@ async function runBenchmark(options) {
       teamB: entry.teamB.id
     })),
     maxActionsPerGame: maxActions,
-    concurrency
+    concurrency,
+    resumedMatches: resumedMatches.length,
+    pendingMatches: pendingSchedule.length
   });
 
   if (opts.dryRun) {
     const report = buildReport({
       generatedAt,
+      reportTitle: route.reportTitle,
+      platformLabel: route.label,
       gamesPerPair,
       maxActions,
       contestants,
       schedule,
       resolutions: resolved.resolutions,
-      matches: [],
+      matches: resumedMatches,
       leaderboard: []
     });
     fs.writeFileSync(path.join(outputDir, "report.md"), report);
-    return { outputDir, dryRun: true, contestants, schedule, leaderboard: [], matches: [] };
+    return { outputDir, dryRun: true, contestants, schedule, leaderboard: [], matches: resumedMatches };
   }
 
   const rows = createRows(contestants);
   const matchesFile = path.join(outputDir, "matches.jsonl");
   const env = {
     ...process.env,
-    OPENROUTER_API_KEY: apiKey,
-    GRAPHWAR_ALLOWED_PROVIDERS: "openrouter",
+    [route.apiKeyEnv]: apiKey,
+    GRAPHWAR_ALLOWED_PROVIDERS: route.providerId,
     GRAPHWAR_REQUEST_TIMEOUT_MS: String(opts.timeoutMs || process.env.GRAPHWAR_REQUEST_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
   };
 
-  const matches = await runWithConcurrency(schedule, concurrency, async (entry) => {
-    const id = `match-${String(entry.index + 1).padStart(4, "0")}`;
+  const matches = await runWithConcurrency(pendingSchedule, concurrency, async (entry) => {
+    const id = matchIdForEntry(entry);
     const startedAt = new Date().toISOString();
-    const traceFile = path.join(outputDir, "traces", `${id}.json`);
+    const traceFile = traceFileForEntry(outputDir, entry);
     let summary;
     if (!opts.quiet) {
       console.error(
@@ -564,7 +631,8 @@ async function runBenchmark(options) {
     try {
       const battle = await runLeagueBattle(entry.seed, entry.teamA, entry.teamB, env, opts.fetch || globalThis.fetch, {
         continueOnProviderError: Boolean(opts.continueOnError),
-        maxActions
+        maxActions,
+        penalizeInvalidActions: true
       });
       const endedAt = new Date().toISOString();
       const trace = {
@@ -642,9 +710,11 @@ async function runBenchmark(options) {
     }
     return summary;
   });
+  const allMatches = resumedMatches.concat(matches)
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
   fs.writeFileSync(matchesFile, "");
-  for (const summary of matches) appendJsonl(matchesFile, summary);
-  for (const summary of matches) {
+  for (const summary of allMatches) appendJsonl(matchesFile, summary);
+  for (const summary of allMatches) {
     const teamA = contestants.find((contestant) => contestant.id === summary.teamA);
     const teamB = contestants.find((contestant) => contestant.id === summary.teamB);
     const trace = summary.trace ? JSON.parse(fs.readFileSync(path.join(outputDir, summary.trace), "utf8")) : null;
@@ -653,22 +723,24 @@ async function runBenchmark(options) {
 
   const leaderboard = sortedLeaderboard(rows);
   writeJson(path.join(outputDir, "leaderboard.json"), leaderboard);
-  writeJson(path.join(outputDir, "matches-summary.json"), matches);
+  writeJson(path.join(outputDir, "matches-summary.json"), allMatches);
   const store = buildBenchmarkStore(leaderboard, readStore(opts.writeStore));
   writeJson(path.join(outputDir, "graphwar-store.json"), store);
   if (opts.writeStore) writeJson(path.resolve(opts.writeStore), store);
   const report = buildReport({
     generatedAt,
+    reportTitle: route.reportTitle,
+    platformLabel: route.label,
     gamesPerPair,
     maxActions,
     contestants,
     schedule,
     resolutions: resolved.resolutions,
-    matches,
+    matches: allMatches,
     leaderboard
   });
   fs.writeFileSync(path.join(outputDir, "report.md"), report);
-  return { outputDir, contestants, schedule, leaderboard, matches };
+  return { outputDir, contestants, schedule, leaderboard, matches: allMatches };
 }
 
 async function main() {
@@ -684,6 +756,8 @@ async function main() {
     timeoutMs: args["timeout-ms"],
     maxActions: args["max-actions"],
     concurrency: args.concurrency,
+    platform: args.platform || args.provider || args.route,
+    resume: Boolean(args.resume),
     includeRoutes: Boolean(args["include-routes"]),
     dryRun: Boolean(args["dry-run"]),
     allowMissing: Boolean(args["allow-missing"]),
@@ -703,7 +777,12 @@ async function main() {
 
 if (require.main === module) {
   main().catch((err) => {
-    console.error(err.message || err);
+    console.error(JSON.stringify({
+      error: err && err.message ? err.message : String(err),
+      status: err && err.status ? err.status : null,
+      body: err && err.body ? String(err.body).slice(0, 2000) : "",
+      leagueFailure: err && err.leagueFailure ? err.leagueFailure : null
+    }, null, 2));
     process.exit(1);
   });
 }
@@ -711,8 +790,10 @@ if (require.main === module) {
 module.exports = {
   ROUTE_MODEL_SPECS,
   TARGET_MODEL_SPECS,
+  benchmarkRoute,
   buildBenchmarkSchedule,
   buildBenchmarkStore,
+  fetchBenchmarkModels,
   fetchOpenRouterModels,
   resolveTargetModels,
   runWithConcurrency,

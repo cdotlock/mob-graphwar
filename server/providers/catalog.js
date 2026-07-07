@@ -1,6 +1,7 @@
 "use strict";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const INFRON_MODELS_URL = "https://llm.onerouter.pro/v1/models";
 const MODEL_CACHE_MS = 10 * 60 * 1000;
 
 const PROVIDERS = [
@@ -14,6 +15,17 @@ const PROVIDERS = [
     defaultBaseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "openrouter/free",
     modelList: { url: OPENROUTER_MODELS_URL, auth: "optional-bearer", parser: "openrouter", public: true }
+  },
+  {
+    id: "infron",
+    label: "Infron",
+    adapter: "openai-compatible",
+    keyEnv: "INFRON_API_KEY",
+    baseUrlEnv: "INFRON_BASE_URL",
+    modelEnv: "INFRON_MODEL",
+    defaultBaseUrl: "https://llm.onerouter.pro/v1",
+    defaultModel: "openai/gpt-5.5",
+    modelList: { url: INFRON_MODELS_URL, auth: "bearer", parser: "infron" }
   },
   {
     id: "openai",
@@ -143,6 +155,17 @@ const CURATED_PROVIDER_MODELS = {
     { id: "google/gemini-3.5-flash", label: "Google: Gemini 3.5 Flash", family: "gemini", free: false, contextLength: 1000000 },
     { id: "deepseek/deepseek-v4-flash", label: "DeepSeek: DeepSeek V4 Flash", family: "deepseek", free: false, contextLength: 1000000 }
   ],
+  infron: [
+    { id: "openai/gpt-5.5", label: "OpenAI: GPT-5.5", family: "openai", free: false, contextLength: 1050000 },
+    { id: "anthropic/claude-opus-4.8", label: "Anthropic: Claude Opus 4.8", family: "anthropic", free: false, contextLength: 1000000 },
+    { id: "google/gemini-3.5-flash", label: "Google: Gemini 3.5 Flash", family: "gemini", free: false, contextLength: 1000000 },
+    { id: "google/gemini-3.1-pro-preview", label: "Google: Gemini 3.1 Pro Preview", family: "gemini", free: false, contextLength: 1048576 },
+    { id: "moonshotai/kimi-k2.7-code", label: "MoonshotAI: Kimi K2.7 Code", family: "kimi", free: false, contextLength: 262144 },
+    { id: "z-ai/glm-5.2", label: "Z.ai: GLM 5.2", family: "zhipu", free: false, contextLength: 1000000 },
+    { id: "deepseek/deepseek-v4-flash", label: "DeepSeek: DeepSeek V4 Flash", family: "deepseek", free: false, contextLength: 1000000 },
+    { id: "deepseek/deepseek-v4-pro", label: "DeepSeek: DeepSeek V4 Pro", family: "deepseek", free: false, contextLength: 1000000 },
+    { id: "minimax/minimax-m3", label: "MiniMax: MiniMax M3", family: "minimax", free: false, contextLength: 1000000 }
+  ],
   openai: [
     { id: "gpt-5.5", label: "gpt-5.5", free: false, contextLength: null },
     { id: "gpt-5.5-pro", label: "gpt-5.5-pro", free: false, contextLength: null },
@@ -239,10 +262,14 @@ function modelSupportsText(model) {
     ? architecture.output_modalities.map((item) => String(item).toLowerCase())
     : Array.isArray(architecture.output)
       ? architecture.output.map((item) => String(item).toLowerCase())
+      : Array.isArray(model?.output_modalities)
+        ? model.output_modalities.map((item) => String(item).toLowerCase())
       : [];
   if (outputModalities.length) return outputModalities.includes("text");
   const inputModalities = Array.isArray(architecture.input_modalities)
     ? architecture.input_modalities.map((item) => String(item).toLowerCase())
+    : Array.isArray(model?.input_modalities)
+      ? model.input_modalities.map((item) => String(item).toLowerCase())
     : [];
   if (inputModalities.length && !inputModalities.includes("text")) return false;
   const encoded = JSON.stringify(architecture).toLowerCase();
@@ -306,6 +333,21 @@ function normalizeOpenAICompatibleModel(model) {
     free: typeof model.free === "boolean" ? model.free : false,
     contextLength: Number(model.context_length || model.contextLength || model.context_window || 0) || null,
     created: Number(model.created || model.created_at || 0) || null
+  };
+}
+
+function normalizeInfronModel(model) {
+  const id = String(model.id || model.model_id || model.name || "").trim();
+  const inputCost = (Number(model.min_prompt_price || 0) || 0) / 1_000_000;
+  const outputCost = (Number(model.min_completion_price || 0) || 0) / 1_000_000;
+  return {
+    id,
+    label: String(model.display_name || model.name || id).trim(),
+    free: priceIsFree(model.min_prompt_price) && priceIsFree(model.min_completion_price),
+    contextLength: Number(model.context_length || model.contextLength || model.context_window || 0) || null,
+    created: Number(model.created || model.created_at || 0) || null,
+    inputCost,
+    outputCost
   };
 }
 
@@ -404,6 +446,7 @@ function normalizeProviderModels(provider, payload) {
     .filter((model) => parser !== "openrouter" || modelSupportsText(model))
     .map((model) => {
       if (parser === "openrouter") return normalizeOpenRouterModel(model);
+      if (parser === "infron") return normalizeInfronModel(model);
       if (parser === "anthropic") return normalizeAnthropicModel(model);
       return normalizeOpenAICompatibleModel(model);
     });

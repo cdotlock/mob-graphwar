@@ -403,7 +403,7 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
 
   assert.deepStrictEqual(request.body.response_format, { type: "json_object" });
   assert.deepStrictEqual(request.body.thinking, { type: "disabled" });
-  assert.ok(request.body.max_tokens > 0 && request.body.max_tokens <= 512, "JSON mode should cap output tokens");
+  assert.strictEqual(request.body.max_tokens, undefined, "default provider calls should not impose a hard output budget");
   assert.strictEqual(request.body.messages.length, 1, "provider should receive only the bare rules packet as prompt content");
   assert.strictEqual(request.body.messages[0].role, "user");
   const userPayload = JSON.parse(request.body.messages[0].content);
@@ -439,6 +439,7 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
   assert.strictEqual(request.body.include_reasoning, false);
   assert.deepStrictEqual(request.body.reasoning, { exclude: true });
   assert.strictEqual(request.body.reasoning_effort, undefined);
+  assert.strictEqual(request.body.max_tokens, undefined, "OpenRouter default calls should let the routed model finish normally");
   assert.strictEqual(request.body.messages.length, 1, "OpenRouter should receive only the public rules payload");
   const userPayload = JSON.parse(request.body.messages[0].content);
   assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"));
@@ -446,6 +447,30 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
   assert.ok(shotAction, "provider should receive a shot action contract");
   assert.ok(!JSON.stringify(userPayload).includes("candidateId"), "provider prompt should not include precomputed shot candidates");
   assert.ok(shotAction.output.expression.includes("y="), "provider prompt should ask the model to write a function expression");
+}
+
+function testInfronDisablesReasoningByDefault() {
+  const infron = getProvider("infron");
+  assert.strictEqual(infron.defaultBaseUrl, "https://llm.onerouter.pro/v1");
+
+  const request = buildOpenAICompatibleRequest(
+    infron,
+    {
+      command: "",
+      stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
+      model: "openai/gpt-5.5",
+      strictDecisionSchema: true
+    },
+    "sk-infron"
+  );
+
+  assert.strictEqual(request.url, "https://llm.onerouter.pro/v1/chat/completions");
+  assert.strictEqual(request.headers.authorization, "Bearer sk-infron");
+  assert.strictEqual(request.body.model, "openai/gpt-5.5");
+  assert.strictEqual(request.body.response_format.type, "json_schema");
+  assert.deepStrictEqual(request.body.reasoning, { effort: "none" });
+  assert.strictEqual(request.body.include_reasoning, undefined);
+  assert.strictEqual(request.body.max_tokens, undefined, "Infron default calls should not starve reasoning-capable models with a tiny output cap");
 }
 
 function testOpenRouterCanEnableReasoningForBenchmark() {
@@ -615,6 +640,7 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
 function testProviderRequestTimeoutDefaultsToThinkingBudget() {
   assert.ok(providerTimeoutMs({ env: {} }) >= 300_000, "default provider timeout should allow reasoning models enough time");
   assert.strictEqual(providerTimeoutMs({ env: { GRAPHWAR_REQUEST_TIMEOUT_MS: "300000" } }), 300_000);
+  assert.strictEqual(providerTimeoutMs({ env: { GRAPHWAR_REQUEST_TIMEOUT_MS: "900000" } }), 900_000);
 }
 
 async function testExecuteProviderDecisionReturnsReasoningTrace() {
@@ -747,6 +773,7 @@ async function testExecuteProviderDecisionAttachesHttpErrorBody() {
   testNormalizeDecision();
   testDeepSeekUsesCurrentJsonModeDefaults();
   testOpenRouterUsesFreeJsonModeDefaults();
+  testInfronDisablesReasoningByDefault();
   testOpenRouterCanEnableReasoningForBenchmark();
   testOpenRouterBenchmarkCanRequireStrictDecisionJson();
   testDeepSeekStrictDecisionFallsBackToJsonObject();

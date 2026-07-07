@@ -72,6 +72,27 @@
     }));
   }
 
+  function publicOwnRecentFeedback(state, activeUnitId) {
+    const id = String(activeUnitId || "").toUpperCase();
+    const events = Array.isArray(state.events) ? state.events : [];
+    return events
+      .filter((event) => String(event.unitId || event.shooterId || "").toUpperCase() === id)
+      .slice(-4)
+      .map((event) => ({
+        turn: event.turn,
+        unitId: event.unitId || event.shooterId || "",
+        targetId: event.targetId || "",
+        expression: event.expression || "",
+        result: event.result || "",
+        resultLabel: event.resultLabel || "",
+        damage: Number(event.damage) || 0,
+        collisionPoint: event.collisionPoint
+          ? { x: event.collisionPoint.x, y: event.collisionPoint.y }
+          : null,
+        closestTargetDistance: Number.isFinite(Number(event.closestTargetDistance)) ? Number(event.closestTargetDistance) : null
+      }));
+  }
+
   function buildRulesPayload(state, owner, command) {
     const units = state.units || [];
     const controlledUnit = resolveControlledUnit(state, owner);
@@ -97,7 +118,7 @@
       output: {
         action: "shot",
         targetId: "one allowedTargetIds value",
-        expression: "y=<math expression using t,u,d,x,y0,y1,dy>. Do not use a, amp, target, shooter, or helper variables.",
+        expression: "y=<absolute board y expression>. Usually start with y0+dy*t, then add scaled current-hand function terms. Do not use a, amp, target, shooter, or helper variables.",
         cardSlots: "optional array of 1-based hand card slots referenced for UI highlighting",
         publicReason: "short visible explanation"
       }
@@ -112,10 +133,13 @@
         handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
         swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
         functionHand: "the current hand is the function whitelist; combine any or all current hand function types freely",
+        functionScaling: "card labels name allowed function types, not fixed amplitudes; free numeric coefficients are allowed and often need board-scale values such as 10..60",
         expressionVariables: "t is normalized 0..1, u is horizontal travel, d is shooter-target horizontal distance, x is board x, y0/y1 are shooter/target y, dy=y1-y0",
-        expressionFunctions: "call only function names that appear in hand.availableFunctionTypes; arithmetic, numbers, variables, pi, e, +, -, *, /, ^, comparisons, and ternary expressions are always allowed",
+        expressionCoordinate: "y is the absolute board y coordinate, not a small offset; y0+dy*t is the straight shooter-to-target baseline and card functions should be added as scaled offsets around that baseline",
+        expressionFunctions: "call only function names that appear in hand.availableFunctionTypes; if a useful function is absent, use swap_hand instead of inventing sin/cos/max/etc; arithmetic, numbers, variables, pi, e, +, -, *, /, ^, comparisons, and ternary expressions are always allowed",
         expressionSyntax: "write exactly one y=<expression>; do not write semicolon assignments, where clauses, undefined variables, prose, helper definitions, or the internal amplitude placeholder a",
-        feedbackPolicy: "If recentFeedback shows repeated blocked/ground/invalid shots, change the curve materially; when the hand looks unsuitable, consider swap_hand instead of repeating the same family",
+        feedbackPolicy: "If recentFeedback shows repeated ground shots, anchor on y0+dy*t and increase positive board-scale lift; for blocked shots, route above or around the reported collisionPoint instead of repeating the same curve; for hitAlly, do not repeat that path and choose a different target/path or swap_hand; if invalid unavailable functions appear, use only the whitelist or swap_hand",
+        repeatPolicy: "Do not repeat the exact same failed expression from ownRecentFeedback after blocked, hitAlly, out, ground, or invalid results; change coefficients/shape materially or use swap_hand",
         promptPolicy: "this JSON packet is the full public model contract; no hidden tactical hints are provided",
         output: "return JSON only with action,targetId,expression,cardSlots,publicReason; swap_hand uses empty targetId/expression and [] cardSlots"
       },
@@ -136,6 +160,7 @@
         obstacles: state.obstacles || []
       },
       recentFeedback: publicRecentFeedback(state),
+      ownRecentFeedback: publicOwnRecentFeedback(state, activeUnitId),
       hand: {
         owner: activeUnitId,
         retained: true,

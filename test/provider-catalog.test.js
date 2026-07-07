@@ -515,6 +515,24 @@ function testOpenRouterBenchmarkCanRequireStrictDecisionJson() {
   assert.strictEqual(request.body.provider, undefined);
 }
 
+function testDeepSeekStrictDecisionFallsBackToJsonObject() {
+  const deepseek = getProvider("deepseek");
+  const request = buildOpenAICompatibleRequest(
+    deepseek,
+    {
+      command: "",
+      candidates: [{ candidateId: "A-0-0-B2-arc", targetId: "B2" }],
+      stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
+      model: "deepseek-v4-flash",
+      strictDecisionSchema: true
+    },
+    "sk-deepseek"
+  );
+
+  assert.deepStrictEqual(request.body.response_format, { type: "json_object" });
+  assert.strictEqual(request.body.plugins, undefined);
+}
+
 function testMiMoUsesApiKeyHeaderForOpenAICompatibleChat() {
   const mimo = getProvider("mimo");
   const request = buildOpenAICompatibleRequest(
@@ -750,6 +768,7 @@ async function testExecuteProviderDecisionAttachesHttpErrorBody() {
   testOpenRouterUsesFreeJsonModeDefaults();
   testOpenRouterCanEnableReasoningForBenchmark();
   testOpenRouterBenchmarkCanRequireStrictDecisionJson();
+  testDeepSeekStrictDecisionFallsBackToJsonObject();
   testMiMoUsesApiKeyHeaderForOpenAICompatibleChat();
   testAnthropicUsesSameBareRulesPayload();
   testRealDeepSeekSmokeScriptIsDiscoverable();

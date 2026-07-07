@@ -544,17 +544,17 @@ function testSeededHardMapGeneration() {
   const different = Sim.createInitialState({ seed: 9002 });
   assert.deepStrictEqual(first.obstacles, second.obstacles, "same seed should produce same map");
   assert.notDeepStrictEqual(first.obstacles, different.obstacles, "different seeds should produce different maps");
-  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 72 && first.mapMeta.difficulty <= 90, "map should include moderated difficulty metadata");
+  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 68 && first.mapMeta.difficulty <= 86, "map should include moderated difficulty metadata");
   assert.strictEqual(first.mapMeta.windows, undefined, "map should not expose route windows");
   assert.ok(first.mapMeta.complexity, "map should expose a bare complexity summary for the UI");
   assert.strictEqual(first.mapMeta.complexity.generator, "poisson-blob-search", "map should use the Poisson blob search generator");
   assert.ok(first.mapMeta.complexity.poissonAnchorCount >= 5, "map should expose enough Poisson-distributed blob anchors");
   assert.ok(Number.isFinite(first.mapMeta.complexity.candidateFitness), "map should expose the accepted generator fitness");
-  assert.ok(first.obstacles.length >= 6 && first.obstacles.length <= 10, "map should use at most ten readable blob blockers");
+  assert.strictEqual(first.obstacles.length, 6, "map should use six readable blob blockers");
   assert.ok(first.obstacles.every((obstacle) => obstacle.shape === "circle"), "all blockers should be continuous circular blobs");
   assert.ok(first.obstacles.every((obstacle) => obstacle.solid === true), "all visible blockers should be real solid terrain");
   assert.ok(first.obstacles.every((obstacle) => Number.isFinite(obstacle.cx) && Number.isFinite(obstacle.cy) && obstacle.r > 0), "blob blockers should expose circle geometry");
-  assert.ok(first.mapMeta.complexity.blobCount >= 6 && first.mapMeta.complexity.blobCount <= 10, "complexity summary should count token-light blob blockers");
+  assert.strictEqual(first.mapMeta.complexity.blobCount, 6, "complexity summary should count token-light blob blockers");
   assert.ok(first.mapMeta.complexity.clusterCount >= 2, "complexity summary should count terrain clusters");
   assert.ok(first.mapMeta.complexity.openLaneCount >= 3, "complexity summary should keep multiple open firing lanes");
   assert.strictEqual(first.mapMeta.complexity.routeGuideCount, 0, "maps should not reintroduce pass-through route-guide clutter");
@@ -578,7 +578,7 @@ function testHardMapsRemainSolvableByFiniteCardCombos() {
   for (let seed = 1; seed <= 40; seed += 1) {
     const state = Sim.createInitialState({ seed });
     assert.ok(state.mapMeta.complexity.blobCount >= 6, `seed ${seed} should keep enough continuous blockers`);
-    assert.ok(state.mapMeta.complexity.blobCount <= 10, `seed ${seed} should keep blocker count within ten`);
+    assert.strictEqual(state.mapMeta.complexity.blobCount, 6, `seed ${seed} should keep blocker count at six`);
     assert.ok(state.mapMeta.complexity.clusterCount >= 2, `seed ${seed} should keep multiple terrain clusters`);
     assert.ok(state.mapMeta.complexity.openLaneCount >= 3, `seed ${seed} should keep readable open lanes`);
     assert.ok(state.mapMeta.complexity.routePressure >= 58 && state.mapMeta.complexity.routePressure <= 88, `seed ${seed} should keep moderate route pressure`);
@@ -618,7 +618,7 @@ function testHardMapsExposeSolverPressureWithoutBecomingImpossible() {
     assert.ok(Number.isFinite(complexity.solverPressure), `seed ${seed} should expose solver pressure`);
     assert.ok(Number.isFinite(complexity.requiredSearchWindows), `seed ${seed} should estimate required search windows`);
     assert.ok(complexity.solidObstacleCount >= 6, `seed ${seed} should still keep real blockers`);
-    assert.ok(complexity.solidObstacleCount <= 10, `seed ${seed} should keep blocker count within ten`);
+    assert.strictEqual(complexity.solidObstacleCount, 6, `seed ${seed} should keep blocker count at six`);
     assert.strictEqual(complexity.routeGuideCount, 0, `seed ${seed} should not count route-guide overlays`);
     assert.ok(complexity.firstHandHitRate <= 1, `seed ${seed} should expose a normalized first-hand hit rate`);
     assert.ok(complexity.swapWindowHitRate >= complexity.firstHandHitRate, `seed ${seed} should reward model-led swap search`);
@@ -637,13 +637,13 @@ function testCommercialMapsExposeTopologyNotJustBlockCount() {
     const state = Sim.createInitialState({ seed });
     const complexity = state.mapMeta.complexity;
     assert.ok(complexity.obstacleCount >= 6, `seed ${seed} should feel like a Graphwar arena, not an empty board`);
-    assert.ok(complexity.obstacleCount <= 10, `seed ${seed} should stay readable and token-light`);
+    assert.strictEqual(complexity.obstacleCount, 6, `seed ${seed} should stay readable and token-light`);
     assert.ok(complexity.solidObstacleCount === complexity.obstacleCount, `seed ${seed} should only expose real solid blockers`);
     assert.ok(complexity.clusterCount >= 2, `seed ${seed} should expose multiple blob clusters`);
     assert.ok(complexity.openLaneCount >= 3, `seed ${seed} should preserve multiple path choices`);
-    assert.ok(complexity.blobCoverage >= 0.1, `seed ${seed} should distribute blob terrain across the arena`);
+    assert.ok(complexity.blobCoverage >= 0.07, `seed ${seed} should distribute blob terrain across the arena`);
     assert.ok(complexity.blobCoverage <= 0.32, `seed ${seed} should avoid overfilling the arena`);
-    assert.ok(complexity.routePressure >= 58 && complexity.routePressure <= 88, `seed ${seed} should preserve moderate route pressure`);
+    assert.ok(complexity.routePressure >= 54 && complexity.routePressure <= 82, `seed ${seed} should preserve moderate route pressure`);
     assert.ok(
       Array.isArray(complexity.topologyTags) && complexity.topologyTags.includes("continuous-blobs"),
       `seed ${seed} should label its continuous blob topology`

@@ -43,6 +43,9 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(Array.isArray(payload.hand.availableFunctionTypes), "payload should expose the current hand function whitelist");
   assert.ok(payload.rules.functionHand.includes("function whitelist"), "rules should describe the function whitelist");
   assert.ok(payload.rules.expressionFunctions.includes("availableFunctionTypes"), "rules should bind expressions to current hand functions");
+  assert.ok(payload.rules.expressionCoordinate.includes("absolute board y"), "rules should state that y is the absolute board coordinate");
+  assert.ok(payload.rules.expressionCoordinate.includes("y0+dy*t"), "rules should tell models to anchor shots on the shooter-target baseline");
+  assert.ok(payload.rules.functionScaling.includes("free numeric coefficients"), "rules should clarify that function cards are types, not fixed amplitudes");
   assert.ok(payload.legalActions.some((action) => action.action === "swap_hand"), "payload should include swap_hand as a legal model action");
   assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should include shot as a legal model action");
   assert.ok(payload.rules.handRetention.includes("persist"), "rules should describe retained hands");
@@ -85,7 +88,8 @@ function testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames() {
     );
   }
   const shotAction = payload.legalActions.find((action) => action.action === "shot");
-  assert.ok(shotAction.output.expression.includes("math expression"), "shot action should ask the model to write math");
+  assert.ok(shotAction.output.expression.includes("absolute board y expression"), "shot action should ask the model to write absolute board-y math");
+  assert.ok(shotAction.output.expression.includes("y0+dy*t"), "shot action should remind the model to use the shooter-target baseline");
   assert.ok(shotAction.output.expression.includes("Do not use a"), "shot output should explicitly reject internal amplitude placeholders");
 }
 
@@ -117,8 +121,31 @@ function testRulesPayloadIncludesRecentShotFeedback() {
   assert.ok(latest.result, "recent feedback should include the shot result");
   assert.ok("collisionPoint" in latest, "recent feedback should include collision point data even when null");
   assert.ok("closestTargetDistance" in latest, "recent feedback should include miss distance");
-  assert.ok(JSON.stringify(payload).includes("If recentFeedback shows repeated blocked/ground/invalid shots"), "rules should tell the model how to use feedback");
-  assert.ok(JSON.stringify(payload).includes("consider swap_hand"), "rules should lightly remind models that hand swaps are available");
+  assert.ok(JSON.stringify(payload).includes("If recentFeedback shows repeated ground shots"), "rules should tell the model how to use feedback");
+  assert.ok(JSON.stringify(payload).includes("blocked shots"), "rules should tell the model how to respond to obstacle collisions");
+  assert.ok(JSON.stringify(payload).includes("hitAlly"), "rules should tell the model not to repeat friendly-fire paths");
+  assert.ok(JSON.stringify(payload).includes("swap_hand"), "rules should remind models that hand swaps are available");
+}
+
+function testRulesPayloadIncludesOwnRecentFeedback() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  Sim.applyTurn(state, { A1: "safe high arc target B1" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t",
+    cardSlots: [],
+    providerReason: "probe line"
+  });
+  Sim.applyTurn(state, { B1: "safe high arc target A1" }, {
+    targetId: "A1",
+    expression: "y=y0+dy*t",
+    cardSlots: [],
+    providerReason: "probe line"
+  });
+  const payload = Contract.buildRulesPayload(state, "A1", "adjust from my last shot");
+  assert.ok(Array.isArray(payload.ownRecentFeedback), "provider payload should include active unit feedback");
+  assert.ok(payload.ownRecentFeedback.length > 0, "active unit feedback should include the unit's previous shots");
+  assert.ok(payload.ownRecentFeedback.every((event) => event.unitId === "A1"), "ownRecentFeedback should be filtered to the active unit");
+  assert.ok(JSON.stringify(payload).includes("Do not repeat the exact same failed expression"), "rules should forbid exact failed repeats");
 }
 
 function testDecisionValidation() {
@@ -165,6 +192,7 @@ testRulesPayloadIsBareGameStateAndLegalActions();
 testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames();
 testRulesPayloadDoesNotExposeShotCandidates();
 testRulesPayloadIncludesRecentShotFeedback();
+testRulesPayloadIncludesOwnRecentFeedback();
 testDecisionValidation();
 testSecretRedaction();
 

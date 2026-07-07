@@ -6,6 +6,7 @@ function buildAnthropicRequest(provider, payload, apiKey) {
       rules: {
         actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot; for shot write your own function expression",
         handRetention: "cards persist until the active model chooses swap_hand",
+        expressionCoordinate: "y is absolute board y; start with y0+dy*t and add scaled current-hand function terms",
         output: "return JSON only"
       },
       command: payload.command,
@@ -18,7 +19,7 @@ function buildAnthropicRequest(provider, payload, apiKey) {
           output: {
             action: "shot",
             targetId: "target unit id",
-            expression: "y=<math expression>",
+            expression: "y=<absolute board y expression>",
             cardSlots: [],
             publicReason: "short explanation"
           }

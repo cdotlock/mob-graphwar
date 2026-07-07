@@ -20,7 +20,7 @@ function decisionResponseFormat() {
           },
           expression: {
             type: "string",
-            description: "When action is shot, write y=<math expression> using t,u,d,x,y0,y1,dy. When action is swap_hand, use an empty string."
+            description: "When action is shot, write y=<absolute board y expression> using t,u,d,x,y0,y1,dy. Anchor on y0+dy*t and add scaled allowed current-hand functions. When action is swap_hand, use an empty string."
           },
           cardSlots: {
             type: "array",
@@ -48,6 +48,7 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
       rules: {
         actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot; for shot write your own function expression",
         handRetention: "cards persist until the active model chooses swap_hand",
+        expressionCoordinate: "y is absolute board y; start with y0+dy*t and add scaled current-hand function terms",
         output: "return JSON only"
       },
       command: payload.command,
@@ -60,7 +61,7 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
           output: {
             action: "shot",
             targetId: "target unit id",
-            expression: "y=<math expression>",
+            expression: "y=<absolute board y expression>",
             cardSlots: [],
             publicReason: "short explanation"
           }
@@ -79,7 +80,7 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
       }
     ]
   };
-  if (payload.strictDecisionSchema) {
+  if (payload.strictDecisionSchema && !isDeepSeek) {
     body.response_format = decisionResponseFormat();
   }
   if (isDeepSeek) {

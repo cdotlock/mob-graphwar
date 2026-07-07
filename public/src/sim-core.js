@@ -1142,9 +1142,9 @@
 
   function buildGraphwarBlobObstacles(rng, units, template) {
     const bands = [
-      { id: "upper", minY: 36, maxY: 52, minDistance: 24, maxPoints: 2, countMin: 1, countMax: 1, minR: 5.2, maxR: 8.2 },
-      { id: "middle", minY: 20, maxY: 38, minDistance: 21, maxPoints: 3, countMin: 1, countMax: 2, minR: 4.5, maxR: 8.0 },
-      { id: "low", minY: 9, maxY: 17, minDistance: 24, maxPoints: 2, countMin: 1, countMax: 1, minR: 3.8, maxR: 6.0 }
+      { id: "upper", minY: 36, maxY: 52, minDistance: 28, maxPoints: 1, countMin: 1, countMax: 1, minR: 4.8, maxR: 7.0 },
+      { id: "middle", minY: 20, maxY: 38, minDistance: 24, maxPoints: 2, countMin: 1, countMax: 1, minR: 4.1, maxR: 6.8 },
+      { id: "low", minY: 9, maxY: 17, minDistance: 27, maxPoints: 1, countMin: 1, countMax: 1, minR: 3.3, maxR: 5.2 }
     ];
     const obstacles = [];
     const anchors = [];
@@ -1213,9 +1213,9 @@
     }
 
     let guard = 0;
-    while (obstacles.length < 8 && guard < 80) {
+    while (obstacles.length < 6 && guard < 80) {
       guard += 1;
-      const radius = 3.4 + rng() * 4.8;
+      const radius = 3.2 + rng() * 4.0;
       const cx = clamp(22 + rng() * 56, radius + 2, CONFIG.width - radius - 2);
       const cy = clamp(12 + rng() * 38, radius + 5, CONFIG.height - radius - 2);
       const candidate = makeCircleObstacle(`seed-blob-fill-${guard}`, cx, cy, radius, {
@@ -1228,7 +1228,7 @@
       }
     }
 
-    return { obstacles: obstacles.slice(0, 10), anchorCount: anchors.length };
+    return { obstacles: obstacles.slice(0, 6), anchorCount: anchors.length };
   }
 
   function bonusPointClear(point, units, obstacles) {
@@ -1384,7 +1384,7 @@
         58,
         88
       );
-      const difficulty = clamp(Math.round(62 + routePressure / 5 + density * 10 + rng() * 3), 72, 90);
+      const difficulty = clamp(Math.round(60 + routePressure / 5 + density * 8 + rng() * 3), 68, 86);
       const map = {
         id: template.id,
         name: template.name,
@@ -1436,11 +1436,11 @@
     const complexity = map.complexity || {};
     return (
       complexity.obstacleCount >= 6 &&
-      complexity.obstacleCount <= 10 &&
+      complexity.obstacleCount <= 6 &&
       complexity.solidObstacleCount === complexity.obstacleCount &&
       complexity.routeGuideCount === 0 &&
       complexity.blobCount >= 6 &&
-      complexity.blobCount <= 10 &&
+      complexity.blobCount <= 6 &&
       complexity.clusterCount >= 2 &&
       complexity.openLaneCount >= 3 &&
       complexity.bonusPointCount === 3 &&
@@ -1462,7 +1462,7 @@
     return (
       solvableBonus +
       searchReward +
-      -Math.abs((complexity.solidObstacleCount || 0) - 8) * 24 +
+      -Math.abs((complexity.solidObstacleCount || 0) - 6) * 24 +
       (complexity.bonusPointCount || 0) * 18 +
       (complexity.clusterCount || 0) * 16 +
       (complexity.routeArchetypes ? complexity.routeArchetypes.length : 0) * 55 +

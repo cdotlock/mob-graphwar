@@ -6,6 +6,25 @@ function hasStandaloneAmplitudeVariable(text) {
   return /(^|[^A-Za-z0-9_])a([^A-Za-z0-9_]|$)/.test(String(text || ""));
 }
 
+function openFeedbackState(seed = 10) {
+  const state = Sim.createInitialState({ seed });
+  state.obstacles = [];
+  state.bonusPoints = [];
+  const units = {
+    A1: { x: 20, y: 20 },
+    A2: { x: 20, y: 8 },
+    B1: { x: 60, y: 20 },
+    B2: { x: 70, y: 8 }
+  };
+  state.units = state.units.map((unit) => ({
+    ...unit,
+    x: units[unit.id].x,
+    y: units[unit.id].y,
+    hp: 100
+  }));
+  return state;
+}
+
 function testCandidateExportIsSafe() {
   const state = Sim.createInitialState({ seed: 7351 });
   const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
@@ -46,6 +65,14 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(payload.rules.expressionCoordinate.includes("absolute board y"), "rules should state that y is the absolute board coordinate");
   assert.ok(payload.rules.expressionCoordinate.includes("y0+dy*t"), "rules should tell models to anchor shots on the shooter-target baseline");
   assert.ok(payload.rules.functionScaling.includes("free numeric coefficients"), "rules should clarify that function cards are types, not fixed amplitudes");
+  assert.ok(payload.rules.damageModel.includes("proximityAccuracy"), "rules should explain close hits as proximity accuracy");
+  assert.ok(payload.rules.damageModel.includes("damageBonus"), "rules should explain high-damage function metadata");
+  assert.ok(payload.rules.damageModel.includes("volatility"), "rules should explain high-risk function metadata");
+  assert.ok(payload.rules.cardEffectMeaning.includes("high-risk"), "rules should define high-risk without prescribing a tactic");
+  assert.ok(payload.hand.cards.every((card) => card.effect && Number.isFinite(card.effect.damageBonus)), "hand cards should expose numeric damage metadata");
+  assert.ok(payload.hand.cards.every((card) => card.effect && Number.isFinite(card.effect.volatility)), "hand cards should expose numeric volatility metadata");
+  assert.ok(payload.hand.cards.every((card) => card.effect && Number.isFinite(card.effect.precisionBonus)), "hand cards should expose numeric precision metadata");
+  assert.ok(payload.hand.cards.every((card) => typeof card.risk === "string"), "hand cards should expose readable risk level");
   assert.ok(payload.legalActions.some((action) => action.action === "swap_hand"), "payload should include swap_hand as a legal model action");
   assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should include shot as a legal model action");
   assert.ok(payload.rules.handRetention.includes("persist"), "rules should describe retained hands");
@@ -106,8 +133,8 @@ function testRulesPayloadDoesNotExposeShotCandidates() {
 }
 
 function testRulesPayloadIncludesRecentShotFeedback() {
-  const state = Sim.createInitialState({ seed: 7351 });
-  Sim.applyTurn(state, { A1: "safe high arc target B1" }, {
+  const state = openFeedbackState();
+  Sim.applyTurn(state, { A1: "direct center line target B1" }, {
     targetId: "B1",
     expression: "y=y0+dy*t",
     cardSlots: [],
@@ -121,6 +148,8 @@ function testRulesPayloadIncludesRecentShotFeedback() {
   assert.ok(latest.result, "recent feedback should include the shot result");
   assert.ok("collisionPoint" in latest, "recent feedback should include collision point data even when null");
   assert.ok("closestTargetDistance" in latest, "recent feedback should include miss distance");
+  assert.strictEqual(latest.hitDistance, 0, "recent feedback should expose exact hit distance for close hits");
+  assert.strictEqual(latest.proximityAccuracy, 1, "recent feedback should expose exact close-hit accuracy");
   assert.ok(JSON.stringify(payload).includes("If recentFeedback shows repeated ground shots"), "rules should tell the model how to use feedback");
   assert.ok(JSON.stringify(payload).includes("blocked shots"), "rules should tell the model how to respond to obstacle collisions");
   assert.ok(JSON.stringify(payload).includes("hitAlly"), "rules should tell the model not to repeat friendly-fire paths");

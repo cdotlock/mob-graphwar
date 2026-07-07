@@ -64,6 +64,8 @@
       result: event.result || "",
       resultLabel: event.resultLabel || "",
       damage: Number(event.damage) || 0,
+      hitDistance: Number.isFinite(Number(event.hitDistance)) ? Number(event.hitDistance) : null,
+      proximityAccuracy: Number.isFinite(Number(event.proximityAccuracy)) ? Number(event.proximityAccuracy) : null,
       collisionPoint: event.collisionPoint
         ? { x: event.collisionPoint.x, y: event.collisionPoint.y }
         : null,
@@ -86,11 +88,29 @@
         result: event.result || "",
         resultLabel: event.resultLabel || "",
         damage: Number(event.damage) || 0,
+        hitDistance: Number.isFinite(Number(event.hitDistance)) ? Number(event.hitDistance) : null,
+        proximityAccuracy: Number.isFinite(Number(event.proximityAccuracy)) ? Number(event.proximityAccuracy) : null,
         collisionPoint: event.collisionPoint
           ? { x: event.collisionPoint.x, y: event.collisionPoint.y }
           : null,
         closestTargetDistance: Number.isFinite(Number(event.closestTargetDistance)) ? Number(event.closestTargetDistance) : null
       }));
+  }
+
+  function publicCardEffect(card) {
+    const effect = card && card.effect ? card.effect : {};
+    return {
+      damageBonus: Number(effect.damageBonus) || 0,
+      volatility: Number(effect.volatility) || 0,
+      precisionBonus: Number(effect.precisionBonus) || 0
+    };
+  }
+
+  function publicCardRisk(card) {
+    const tags = card && Array.isArray(card.tags) ? card.tags : [];
+    if (tags.includes("volatile")) return "high-risk";
+    if (card && card.family === "risk") return "risk";
+    return "stable";
   }
 
   function buildRulesPayload(state, owner, command) {
@@ -105,6 +125,8 @@
       label: card.label,
       family: card.family,
       tags: card.tags,
+      risk: publicCardRisk(card),
+      effect: publicCardEffect(card),
       description: card.description
     }));
     const availableFunctionTypes =
@@ -134,6 +156,8 @@
         swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
         functionHand: "the current hand is the function whitelist; combine any or all current hand function types freely",
         functionScaling: "card labels name allowed function types, not fixed amplitudes; free numeric coefficients are allowed and often need board-scale values such as 10..60",
+        cardEffectMeaning: "high-risk means card.effect.volatility is above 0; high-damage means card.effect.damageBonus is above 0; precision support means card.effect.precisionBonus is above 0. These are public card metadata, not a required tactic.",
+        damageModel: "enemy damage rises with proximityAccuracy, expression function count, card effect damageBonus/volatility, and route bonus points. proximityAccuracy is 1 at a unit center and falls toward 0 at the unit edge.",
         expressionVariables: "t is normalized 0..1, u is horizontal travel, d is shooter-target horizontal distance, x is board x, y0/y1 are shooter/target y, dy=y1-y0",
         expressionCoordinate: "y is the absolute board y coordinate, not a small offset; y0+dy*t is the straight shooter-to-target baseline and card functions should be added as scaled offsets around that baseline",
         expressionFunctions: "call only function names that appear in hand.availableFunctionTypes; if a useful function is absent, use swap_hand instead of inventing sin/cos/max/etc; arithmetic, numbers, variables, pi, e, +, -, *, /, ^, comparisons, and ternary expressions are always allowed",

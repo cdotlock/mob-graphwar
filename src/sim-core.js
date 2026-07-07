@@ -2168,10 +2168,46 @@
     };
   }
 
-  function calculateHitDamage(state, shot, sim, routeBonus) {
+  function distanceToSegment(point, start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq <= 0) return distance(point, start);
+    const ratio = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq, 0, 1);
+    return distance(point, { x: start.x + dx * ratio, y: start.y + dy * ratio });
+  }
+
+  function closestPathDistanceToUnit(shot, unit) {
+    const direction = shot.target.x >= shot.shooter.x ? 1 : -1;
+    const maxU = direction > 0 ? CONFIG.width - shot.shooter.x : shot.shooter.x;
+    const centerU = Math.abs(unit.x - shot.shooter.x);
+    const windowPad = CONFIG.unitRadius * 2 + CONFIG.sampleStep;
+    const startU = Math.max(0, centerU - windowPad);
+    const endU = Math.min(maxU, centerU + windowPad);
+    let closest = Infinity;
+    let previous = null;
+    for (let u = startU; u <= endU; u += CONFIG.sampleStep) {
+      const point = { x: shot.shooter.x + direction * u, y: evalShotY(shot, u) };
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+      closest = Math.min(closest, distance(point, unit));
+      if (previous) closest = Math.min(closest, distanceToSegment(unit, previous, point));
+      previous = point;
+    }
+    return closest;
+  }
+
+  function calculateHitMetrics(state, shot, sim) {
     const hitUnit = (state.units || []).find((unit) => unit.id === sim.unitId);
-    const hitDistance = hitUnit && sim.point ? distance(sim.point, hitUnit) : CONFIG.unitRadius;
-    const accuracy = clamp(1 - hitDistance / Math.max(0.1, CONFIG.unitRadius), 0, 1);
+    const hitDistance = hitUnit && shot ? closestPathDistanceToUnit(shot, hitUnit) : null;
+    const proximityAccuracy = Number.isFinite(hitDistance)
+      ? clamp(1 - hitDistance / Math.max(0.1, CONFIG.unitRadius), 0, 1)
+      : null;
+    return { hitDistance, proximityAccuracy };
+  }
+
+  function calculateHitDamage(state, shot, sim, routeBonus) {
+    const hitMetrics = calculateHitMetrics(state, shot, sim);
+    const accuracy = Number.isFinite(hitMetrics.proximityAccuracy) ? hitMetrics.proximityAccuracy : 0;
     const functionCount = expressionFunctionNames(shot.expression || "").length;
     const functionCommitment = clamp(functionCount * 4 + (shot.components || []).length * 2, 0, 18);
     const effects = sumEffects(shot.components || []);
@@ -2915,6 +2951,9 @@
       const hitUnit = state.units.find((unit) => unit.id === sim.unitId);
       if (hitUnit) hitUnit.hp = Math.max(0, hitUnit.hp - damage);
     }
+    const hitMetrics = sim.kind === "hitEnemy" || sim.kind === "hitAlly"
+      ? calculateHitMetrics(state, decision.shot, sim)
+      : { hitDistance: null, proximityAccuracy: null };
 
     const event = {
       turn: state.turn,
@@ -2943,6 +2982,8 @@
       result: sim.kind,
       resultLabel: resultLabel(sim),
       damage,
+      hitDistance: Number.isFinite(hitMetrics.hitDistance) ? round(hitMetrics.hitDistance, 2) : null,
+      proximityAccuracy: Number.isFinite(hitMetrics.proximityAccuracy) ? round(hitMetrics.proximityAccuracy, 3) : null,
       score: round(decision.score, 2),
       closestTargetDistance: round(sim.closestTargetDistance, 2),
       maxY: round(sim.maxY, 2),

@@ -388,6 +388,20 @@ function testDamageVariesByHitQualityAndFunctionCombo() {
   assert.ok(boostedDamage > baselineDamage, "route bonus and current-hand function commitment should increase damage");
 }
 
+function testHitEventsExposeProximityAccuracy() {
+  const state = openDamageState(10);
+  Sim.applyTurn(state, { A1: "" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t",
+    cardSlots: [],
+    providerReason: "direct center hit"
+  });
+  const event = state.events[0];
+  assert.strictEqual(event.result, "hitEnemy", "test setup should hit the enemy");
+  assert.strictEqual(event.hitDistance, 0, "center hits should expose zero hit distance");
+  assert.strictEqual(event.proximityAccuracy, 1, "center hits should expose max proximity accuracy");
+}
+
 function testProviderExpressionsNormalizeCommonModelSyntax() {
   const state = Sim.createInitialState({ seed: 7351 });
   Sim.applyTurn(state, { A1: "write a smooth line" }, {
@@ -720,6 +734,7 @@ testApplyTurnCanUseProviderCandidate();
 testApplyTurnCanUseProviderExpression();
 testProviderExpressionCanUseEveryCurrentHandFunction();
 testDamageVariesByHitQualityAndFunctionCombo();
+testHitEventsExposeProximityAccuracy();
 testProviderExpressionsNormalizeCommonModelSyntax();
 testRicherCardCatalog();
   testCardLabelsReadLikeFunctionNames();

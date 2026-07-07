@@ -891,8 +891,6 @@ function publicEventSummary(event) {
     shooterId: event.shooterId,
     targetId: event.targetId,
     candidateId: event.candidateId || null,
-    energy: event.energy,
-    cost: event.cost,
     result: event.result,
     resultLabel: event.resultLabel,
     combo: event.combo ? clonePublic(event.combo) : { name: "y0+dy*t" },

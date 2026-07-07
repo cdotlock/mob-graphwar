@@ -92,13 +92,11 @@
       .map((unit) => `${unit.name}:${unit.hp}`)
       .join(" ");
     const nextTeam = state.winner ? "-" : state.turn % 2 === 0 ? "A" : "B";
-    const energy = state.winner ? "-" : Sim.getEnergy(state.turn);
     const score = state.score ? `${state.score.rank} / ${state.score.value}` : "pending";
     const orderState = state.lockedOrders ? "locked" : "editable";
     statusStrip.innerHTML = [
       statusItem("Turn", `${state.turn}/${Sim.CONFIG.maxTurns}`),
       statusItem("Next", nextTeam),
-      statusItem("Energy", energy),
       statusItem("Orders", orderState),
       statusItem("Map", `${state.mapMeta.name} ${state.mapMeta.difficulty}`),
       statusItem("Team A HP", aHp),
@@ -238,7 +236,6 @@
       summaryRow("Shooter", `${event.shooterId} -> ${event.targetId}`),
       summaryRow("Command", event.command || "(empty)"),
       summaryRow("Result", `${event.resultLabel}, damage ${event.damage}`),
-      summaryRow("Energy", `${event.cost}/${event.energy}`),
       summaryRow("Agent", event.provider || "Local"),
       summaryRow("Rules", event.thinking?.commandRules || "soft guidance only"),
       summaryRow("Combo", comboSummary(event)),
@@ -260,8 +257,8 @@
     return `${event.combo.name}${traits ? ` - ${traits}` : ""}`;
   }
 
-  function cardMarkup(card, used, energy) {
-    const profile = Sim.cardProfile(card, energy);
+  function cardMarkup(card, used) {
+    const profile = Sim.cardProfile(card);
     const tags = (card.tags || []).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("");
     const profileClass = `role-${profile.role.toLowerCase()}`;
     return `
@@ -271,17 +268,17 @@
         <div class="card-meta"><span>${esc(card.family)}</span><span>${esc(card.rarity || "basic")}</span></div>
         <div class="card-role-row">
           <span class="card-role">${esc(profile.role)}</span>
-          <span>${esc(profile.costPressure)}</span>
+          <span>${esc(profile.functionAccess)}</span>
         </div>
-        <h3>${esc(card.label)} <small>${card.cost}E</small></h3>
+        <h3>${esc(card.label)}</h3>
         <p>${esc(card.description)}</p>
         <div class="card-table-text">${esc(profile.tableText)} <b>${esc(profile.riskText)}</b></div>
         <div class="tag-row">${tags}</div>
       </article>`;
   }
 
-  function renderHandRead(hand, energy) {
-    const read = Sim.analyzeHand(hand, energy);
+  function renderHandRead(hand) {
+    const read = Sim.analyzeHand(hand);
     const traits = read.traits.map((trait) => `<span class="tag">${esc(trait)}</span>`).join("");
     handRead.innerHTML = `
       <div class="hand-read-main">
@@ -290,7 +287,7 @@
       </div>
       <div class="hand-read-copy">${esc(read.commandRead)}</div>
       <div class="hand-read-stats">
-        <span>${esc(read.energyRead)}</span>
+        <span>${esc(read.functionRead)}</span>
         <span>${esc(read.risk)}</span>
       </div>
       <div class="tag-row">${traits}</div>
@@ -302,17 +299,16 @@
     if (state.winner && event) {
       handTitle.textContent = `Final Shot Hand - Team ${event.team}`;
       handHint.textContent = "Used cards glow";
-      renderHandRead(event.hand, event.energy);
-      handCards.innerHTML = event.hand.map((card) => cardMarkup(card, event.usedCardIds.includes(card.instanceId), event.energy)).join("");
+      renderHandRead(event.hand);
+      handCards.innerHTML = event.hand.map((card) => cardMarkup(card, event.usedCardIds.includes(card.instanceId))).join("");
       return;
     }
     const team = state.turn % 2 === 0 ? "A" : "B";
     const hand = Sim.dealHand(state.seed, state.turn, team);
-    const energy = Sim.getEnergy(state.turn);
     handTitle.textContent = `Current Hand - Team ${team}`;
-    handHint.textContent = state.lockedOrders ? `${energy} energy, order locked` : `${energy} energy before order lock`;
-    renderHandRead(hand, energy);
-    handCards.innerHTML = hand.map((card) => cardMarkup(card, false, energy)).join("");
+    handHint.textContent = state.lockedOrders ? "function whitelist, order locked" : "current hand is the function whitelist";
+    renderHandRead(hand);
+    handCards.innerHTML = hand.map((card) => cardMarkup(card, false)).join("");
   }
 
   function renderThinking(event) {
@@ -353,7 +349,7 @@
         return `
           <li class="${cls}">
             <strong>Turn ${event.turn} - Team ${event.team} - ${esc(event.resultLabel)}</strong>
-            <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} using ${event.cost}/${event.energy} energy.</div>
+            <div>${esc(event.shooterId)} aimed at ${esc(event.targetId)} with the current function hand.</div>
             <div>${esc(event.combo ? event.combo.name : "y0+dy*t")} - ${esc(
               event.components.map((component) => component.label).join(" + ") || "baseline"
             )}</div>

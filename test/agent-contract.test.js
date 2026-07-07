@@ -2,6 +2,10 @@ const assert = require("assert");
 const Sim = require("../src/sim-core.js");
 const Contract = require("../src/agents/contract.js");
 
+function hasStandaloneAmplitudeVariable(text) {
+  return /(^|[^A-Za-z0-9_])a([^A-Za-z0-9_]|$)/.test(String(text || ""));
+}
+
 function testCandidateExportIsSafe() {
   const state = Sim.createInitialState({ seed: 7351 });
   const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
@@ -16,6 +20,7 @@ function testCandidateExportIsSafe() {
   );
   assert.ok(candidates.every((candidate) => candidate.mapFit === undefined), "candidate should not expose simulated map fit");
   assert.ok(candidates.every((candidate) => candidate.score === undefined), "candidate should not expose local score");
+  assert.ok(candidates.every((candidate) => candidate.cost === undefined), "candidate should not expose removed gameplay cost");
   assert.ok(candidates.every((candidate) => candidate.resultLabel === undefined), "candidate should not expose simulated result");
   assert.ok(candidates.every((candidate) => candidate.action === "shot"), "candidate should expose the legal shot action");
 }
@@ -35,6 +40,9 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.strictEqual(payload.hand.retained, true, "payload should tell providers that hands persist");
   assert.strictEqual(payload.hand.swapsUsed, 0, "payload should expose active-turn swap usage");
   assert.strictEqual(payload.hand.swapsRemaining, Sim.CONFIG.maxRerollsPerTurn, "payload should expose remaining hand swaps");
+  assert.ok(Array.isArray(payload.hand.availableFunctionTypes), "payload should expose the current hand function whitelist");
+  assert.ok(payload.rules.functionHand.includes("function whitelist"), "rules should describe the function whitelist");
+  assert.ok(payload.rules.expressionFunctions.includes("availableFunctionTypes"), "rules should bind expressions to current hand functions");
   assert.ok(payload.legalActions.some((action) => action.action === "swap_hand"), "payload should include swap_hand as a legal model action");
   assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should include shot as a legal model action");
   assert.ok(payload.rules.handRetention.includes("persist"), "rules should describe retained hands");
@@ -42,6 +50,11 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(!serialized.includes('"action":"reroll"'), "provider payload should not expose reroll as the public action");
   assert.ok(!serialized.includes("score"), "payload should not expose local scoring");
   assert.ok(!serialized.includes("hitEnemy"), "payload should not expose simulated outcomes");
+  assert.ok(!serialized.includes("energy"), "payload should not expose removed energy rules");
+  assert.ok(!serialized.includes("cost"), "payload should not expose removed cost rules");
+  assert.ok(!serialized.includes("card-count"), "payload should not expose removed card-count rules");
+  assert.ok(!serialized.includes("shape card"), "payload should not expose removed shape-card limits");
+  assert.ok(!serialized.includes("modifier max"), "payload should not expose removed modifier limits");
 }
 
 function testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames() {
@@ -61,8 +74,19 @@ function testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames() {
     payload.hand.cards.every((card) => typeof card.function === "string" && card.function.includes("t")),
     "hand cards should expose math function expressions"
   );
+  assert.ok(
+    payload.hand.cards.every((card) => !hasStandaloneAmplitudeVariable(card.function)),
+    "hand cards should not expose internal amplitude variable a"
+  );
+  for (const card of payload.hand.cards) {
+    assert.doesNotThrow(
+      () => Sim._internals.compileShotExpression(`y=y0+dy*t+(${card.function})`),
+      `public card function should compile without hidden variables: ${card.function}`
+    );
+  }
   const shotAction = payload.legalActions.find((action) => action.action === "shot");
   assert.ok(shotAction.output.expression.includes("math expression"), "shot action should ask the model to write math");
+  assert.ok(shotAction.output.expression.includes("Do not use a"), "shot output should explicitly reject internal amplitude placeholders");
 }
 
 function testRulesPayloadDoesNotExposeShotCandidates() {
@@ -94,6 +118,7 @@ function testRulesPayloadIncludesRecentShotFeedback() {
   assert.ok("collisionPoint" in latest, "recent feedback should include collision point data even when null");
   assert.ok("closestTargetDistance" in latest, "recent feedback should include miss distance");
   assert.ok(JSON.stringify(payload).includes("If recentFeedback shows repeated blocked/ground/invalid shots"), "rules should tell the model how to use feedback");
+  assert.ok(JSON.stringify(payload).includes("consider swap_hand"), "rules should lightly remind models that hand swaps are available");
 }
 
 function testDecisionValidation() {

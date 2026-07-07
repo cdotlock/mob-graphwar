@@ -188,7 +188,8 @@ async function testLoginMatchmakingAndRankLoop() {
     ["A1", "A2"],
     "one player should command both allied agents"
   );
-  assert.ok(match.json.match.state.mapMeta.difficulty >= 90, "ranked match should use complex maps");
+  assert.ok(match.json.match.state.mapMeta.difficulty >= 72 && match.json.match.state.mapMeta.difficulty <= 90, "ranked match should use moderated Graphwar maps");
+  assert.ok(match.json.match.state.obstacles.length <= 10, "ranked match should keep blocker count token-light");
   assert.strictEqual(match.json.match.state.mapMeta.complexity.generator, "poisson-blob-search", "ranked match should expose the map generator");
   assert.strictEqual(match.json.match.state.bonusPoints.length, 3, "ranked match should expose a small set of route bonus points to spectators");
 

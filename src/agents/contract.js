@@ -43,7 +43,6 @@
       candidateId: shot.candidateId,
       targetId: shot.targetId,
       cards: shot.cards,
-      cost: shot.cost,
       combo: shot.combo
         ? {
             name: shot.combo.name,
@@ -84,10 +83,11 @@
       function: card.label,
       label: card.label,
       family: card.family,
-      cost: card.cost,
       tags: card.tags,
       description: card.description
     }));
+    const availableFunctionTypes =
+      typeof Sim.allowedFunctionNamesForHand === "function" ? Sim.allowedFunctionNamesForHand(cards) : [];
     const swapsUsed = handState ? Number(handState.swapsUsed ?? handState.rerollsUsed) || 0 : 0;
     const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
     const opponentIds = units.filter((unit) => unit.team !== team && unit.hp > 0).map((unit) => unit.id);
@@ -97,8 +97,8 @@
       output: {
         action: "shot",
         targetId: "one allowedTargetIds value",
-        expression: "y=<math expression using t,u,d,x,y0,y1,dy>; t=(u/d)",
-        cardSlots: "array of 1-based hand card slots used",
+        expression: "y=<math expression using t,u,d,x,y0,y1,dy>. Do not use a, amp, target, shooter, or helper variables.",
+        cardSlots: "optional array of 1-based hand card slots referenced for UI highlighting",
         publicReason: "short visible explanation"
       }
     };
@@ -111,11 +111,11 @@
         actionLimit: "choose exactly one legal action: swap_hand or shot; for shot, write your own function expression instead of choosing a precomputed candidate",
         handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
         swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
-        cardUse: `${Sim.CONFIG.maxCardsPerShot} cards max, ${Sim.CONFIG.maxShapeCards} shape cards max, ${Sim.CONFIG.maxModifierCards} modifier max`,
+        functionHand: "the current hand is the function whitelist; combine any or all current hand function types freely",
         expressionVariables: "t is normalized 0..1, u is horizontal travel, d is shooter-target horizontal distance, x is board x, y0/y1 are shooter/target y, dy=y1-y0",
-        expressionFunctions: "allowed functions include sin, cos, tan, abs, min, max, exp, log, log1p, sqrt, pow, atan, tanh, sigmoid, softplus, GELU, SiLU",
-        expressionSyntax: "write exactly one y=<expression>; do not write semicolon assignments, where clauses, undefined variables, prose, or helper definitions",
-        feedbackPolicy: "If recentFeedback shows repeated blocked/ground/invalid shots, change the curve materially or use swap_hand instead of repeating the same family",
+        expressionFunctions: "call only function names that appear in hand.availableFunctionTypes; arithmetic, numbers, variables, pi, e, +, -, *, /, ^, comparisons, and ternary expressions are always allowed",
+        expressionSyntax: "write exactly one y=<expression>; do not write semicolon assignments, where clauses, undefined variables, prose, helper definitions, or the internal amplitude placeholder a",
+        feedbackPolicy: "If recentFeedback shows repeated blocked/ground/invalid shots, change the curve materially; when the hand looks unsuitable, consider swap_hand instead of repeating the same family",
         promptPolicy: "this JSON packet is the full public model contract; no hidden tactical hints are provided",
         output: "return JSON only with action,targetId,expression,cardSlots,publicReason; swap_hand uses empty targetId/expression and [] cardSlots"
       },
@@ -143,7 +143,8 @@
         swapsRemaining,
         rerollsUsed: swapsUsed,
         rerollsRemaining: swapsRemaining,
-        analysis: Sim.analyzeHand(cards, Sim.getEnergy(state.turn)),
+        analysis: Sim.analyzeHand(cards),
+        availableFunctionTypes,
         cards
       },
       actionSpace: {
@@ -185,7 +186,7 @@
         action: "shot",
         targetId: decision.targetId,
         expression,
-        cardSlots: Array.from(new Set(cardSlots)).slice(0, Sim.CONFIG.maxCardsPerShot),
+        cardSlots: Array.from(new Set(cardSlots)),
         publicReason:
           typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider wrote a function shot."
       };

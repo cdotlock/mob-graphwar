@@ -14,26 +14,23 @@
     maxTurns: 16,
     maxResolutionActions: 96,
     handSize: 4,
-    baseEnergy: 4,
-    maxEnergy: 8,
-    maxCardsPerShot: 3,
-    maxShapeCards: 2,
-    maxModifierCards: 1,
+    localSearchComboCap: 360,
     maxRerollsPerTurn: 3,
     maxCommandLength: 80,
     sampleStep: 0.35,
     unitRadius: 2.4,
-    hitDamage: 46,
-    allyDamage: 30,
+    enemyDamageBase: 24,
+    enemyDamageMax: 72,
+    allyDamageBase: 14,
+    allyDamageMax: 34,
     ceilingBuffer: 36
   };
 
   const CARD_LIBRARY = {
     arc: {
       id: "arc",
-      label: "4*a*t*(1-t)",
+      label: "4*t*(1-t)",
       family: "lift",
-      cost: 2,
       rarity: "basic",
       tags: ["clearance", "stable"],
       component: "arc",
@@ -42,20 +39,18 @@
     },
     low_lob: {
       id: "low_lob",
-      label: "a*(sqrt(t)-t)",
+      label: "sqrt(t)-t",
       family: "lift",
-      cost: 1,
       rarity: "basic",
-      tags: ["cheap", "flat"],
+      tags: ["compact", "flat"],
       component: "sqrt",
       amplitudes: [8, 12, 16, -8],
       description: "Early lift from a square-root curve."
     },
     sky_hook: {
       id: "sky_hook",
-      label: "a*(1-cos(2*pi*t))/2",
+      label: "(1-cos(2*pi*t))/2",
       family: "lift",
-      cost: 3,
       rarity: "rare",
       tags: ["clearance", "high"],
       component: "cos_window",
@@ -64,20 +59,18 @@
     },
     overpass: {
       id: "overpass",
-      label: "a*exp(-((t-0.50)^2)/(2*0.18^2))",
+      label: "exp(-((t-0.50)^2)/(2*0.18^2))",
       family: "lift",
-      cost: 4,
       rarity: "rare",
-      tags: ["clearance", "expensive"],
+      tags: ["clearance", "tall"],
       component: "gaussian",
       amplitudes: [28, 36, 44],
       description: "Gaussian center bump for tall, narrow clearance."
     },
     bend: {
       id: "bend",
-      label: "a*(1-abs(2*t-1))",
+      label: "1-abs(2*t-1)",
       family: "bend",
-      cost: 2,
       rarity: "basic",
       tags: ["corner", "stable"],
       component: "bend",
@@ -86,9 +79,8 @@
     },
     knife_bend: {
       id: "knife_bend",
-      label: "a*(2*t-1)*(1-abs(2*t-1))",
+      label: "(2*t-1)*(1-abs(2*t-1))",
       family: "bend",
-      cost: 3,
       rarity: "rare",
       tags: ["corner", "volatile", "damage"],
       component: "chevron",
@@ -98,9 +90,8 @@
     },
     tunnel: {
       id: "tunnel",
-      label: "a*sin(pi*t)*(t<0.58?0.55:1.25)",
+      label: "sin(pi*t)*(t<0.58?0.55:1.25)",
       family: "bend",
-      cost: 2,
       rarity: "common",
       tags: ["thread", "corner"],
       component: "hook",
@@ -109,9 +100,8 @@
     },
     wave: {
       id: "wave",
-      label: "a*sin(pi*t)",
+      label: "sin(pi*t)",
       family: "wave",
-      cost: 3,
       rarity: "rare",
       tags: ["clearance", "smooth"],
       component: "wave",
@@ -120,9 +110,8 @@
     },
     sway: {
       id: "sway",
-      label: "a*sin(2*pi*t)",
+      label: "sin(2*pi*t)",
       family: "wave",
-      cost: 3,
       rarity: "common",
       tags: ["weave", "volatile"],
       component: "sway",
@@ -131,22 +120,20 @@
     },
     ripple: {
       id: "ripple",
-      label: "0.55*a*sin(3*pi*t)",
+      label: "0.55*sin(3*pi*t)",
       family: "wave",
-      cost: 2,
       rarity: "common",
-      tags: ["weave", "cheap"],
+      tags: ["weave", "compact"],
       component: "ripple",
       amplitudes: [6, 10, 14, -10, -14],
       description: "Three-lobe sine ripple."
     },
     wobble: {
       id: "wobble",
-      label: "a*sinc(10*(t-0.5))*4*t*(1-t)",
+      label: "sinc(10*(t-0.5))*4*t*(1-t)",
       family: "risk",
-      cost: 1,
       rarity: "common",
-      tags: ["volatile", "cheap"],
+      tags: ["volatile", "compact"],
       component: "sinc",
       amplitudes: [14, 20, -14, -20],
       effect: { volatility: 12 },
@@ -154,9 +141,8 @@
     },
     cubic: {
       id: "cubic",
-      label: "a*6.2*t*(1-t)*(t-0.5)",
+      label: "6.2*t*(1-t)*(t-0.5)",
       family: "control",
-      cost: 3,
       rarity: "rare",
       tags: ["dive", "control"],
       component: "cubic",
@@ -165,20 +151,18 @@
     },
     clamp: {
       id: "clamp",
-      label: "a*(t>0.26&&t<0.74?0.65:0)",
+      label: "(t>0.26&&t<0.74?0.65:0)",
       family: "control",
-      cost: 1,
       rarity: "common",
-      tags: ["shelf", "cheap"],
+      tags: ["shelf", "compact"],
       component: "clamp",
       amplitudes: [5, 9, -5, -9],
       description: "Boxcar middle shelf."
     },
     shelf: {
       id: "shelf",
-      label: "a*(t>0.18&&t<0.82?0.72:0.18)",
+      label: "(t>0.18&&t<0.82?0.72:0.18)",
       family: "control",
-      cost: 2,
       rarity: "common",
       tags: ["shelf", "precision"],
       component: "shelf",
@@ -188,9 +172,8 @@
     },
     late_dive: {
       id: "late_dive",
-      label: "a*t*t*(1.35-0.35*t)",
+      label: "t*t*(1.35-0.35*t)",
       family: "risk",
-      cost: 2,
       rarity: "common",
       tags: ["dive", "volatile"],
       component: "dive",
@@ -200,9 +183,8 @@
     },
     booster: {
       id: "booster",
-      label: "a*max(0,t-0.45)*(1-t)",
+      label: "max(0,t-0.45)*(1-t)",
       family: "risk",
-      cost: 2,
       rarity: "rare",
       tags: ["damage", "volatile"],
       component: "relu",
@@ -212,9 +194,8 @@
     },
     needle: {
       id: "needle",
-      label: "a*max(0,1-abs(t-0.62)/0.22)",
+      label: "max(0,1-abs(t-0.62)/0.22)",
       family: "modifier",
-      cost: 2,
       rarity: "common",
       tags: ["precision", "thread"],
       component: "spike",
@@ -224,11 +205,10 @@
     },
     anchor: {
       id: "anchor",
-      label: "a*(log1p(6*t)/log(7)-t)",
+      label: "log1p(6*t)/log(7)-t",
       family: "modifier",
-      cost: 1,
       rarity: "basic",
-      tags: ["precision", "cheap"],
+      tags: ["precision", "compact"],
       component: "log",
       amplitudes: [8, 12, -8, -12],
       effect: { precisionBonus: 12 },
@@ -236,9 +216,8 @@
     },
     prism: {
       id: "prism",
-      label: "a*tanh(4*(t-0.5))*4*t*(1-t)",
+      label: "tanh(4*(t-0.5))*4*t*(1-t)",
       family: "modifier",
-      cost: 3,
       rarity: "rare",
       tags: ["thread", "precision"],
       component: "tanh",
@@ -248,9 +227,8 @@
     },
     mortar: {
       id: "mortar",
-      label: "a*exp(-((t-0.68)^2)/(2*0.08^2))",
+      label: "exp(-((t-0.68)^2)/(2*0.08^2))",
       family: "risk",
-      cost: 3,
       rarity: "rare",
       tags: ["high", "damage", "volatile"],
       component: "narrow_gaussian",
@@ -260,9 +238,8 @@
     },
     glide: {
       id: "glide",
-      label: "a*sin(pi*t)*(1-0.25*t)",
+      label: "sin(pi*t)*(1-0.25*t)",
       family: "control",
-      cost: 2,
       rarity: "common",
       tags: ["smooth", "precision"],
       component: "lift",
@@ -272,9 +249,8 @@
     },
     sigmoid_gate: {
       id: "sigmoid_gate",
-      label: "a*(sigmoid(12*(t-0.5))-0.5)*4*t*(1-t)",
+      label: "(sigmoid(12*(t-0.5))-0.5)*4*t*(1-t)",
       family: "control",
-      cost: 3,
       rarity: "rare",
       tags: ["smooth", "precision"],
       component: "sigmoid",
@@ -284,9 +260,8 @@
     },
     softplus_ramp: {
       id: "softplus_ramp",
-      label: "a*(softplus(8*(t-0.5))-softplus(-4))*(1-t)",
+      label: "(softplus(8*(t-0.5))-softplus(-4))*(1-t)",
       family: "control",
-      cost: 2,
       rarity: "common",
       tags: ["smooth", "dive"],
       component: "softplus",
@@ -295,9 +270,8 @@
     },
     gelu_gate: {
       id: "gelu_gate",
-      label: "a*GELU(2*t-1)*4*t*(1-t)",
+      label: "GELU(2*t-1)*4*t*(1-t)",
       family: "risk",
-      cost: 3,
       rarity: "rare",
       tags: ["damage", "smooth", "volatile"],
       component: "gelu",
@@ -307,9 +281,8 @@
     },
     silu_gate: {
       id: "silu_gate",
-      label: "a*SiLU(4*(t-0.5))*4*t*(1-t)",
+      label: "SiLU(4*(t-0.5))*4*t*(1-t)",
       family: "control",
-      cost: 2,
       rarity: "common",
       tags: ["smooth", "thread"],
       component: "silu",
@@ -318,9 +291,8 @@
     },
     beta_peak: {
       id: "beta_peak",
-      label: "a*30*t^2*(1-t)^5",
+      label: "30*t^2*(1-t)^5",
       family: "modifier",
-      cost: 2,
       rarity: "common",
       tags: ["precision", "thread"],
       component: "beta",
@@ -330,9 +302,8 @@
     },
     rational_bump: {
       id: "rational_bump",
-      label: "a*t*(1-t)/(0.12+abs(t-0.5))",
+      label: "t*(1-t)/(0.12+abs(t-0.5))",
       family: "bend",
-      cost: 2,
       rarity: "common",
       tags: ["corner", "stable"],
       component: "rational",
@@ -341,9 +312,8 @@
     },
     atan_bend: {
       id: "atan_bend",
-      label: "a*atan(5*(t-0.5))*4*t*(1-t)",
+      label: "atan(5*(t-0.5))*4*t*(1-t)",
       family: "bend",
-      cost: 2,
       rarity: "common",
       tags: ["corner", "smooth"],
       component: "atan",
@@ -352,21 +322,19 @@
     },
     softsign_bend: {
       id: "softsign_bend",
-      label: "a*((2*t-1)/(1+abs(2*t-1)))*4*t*(1-t)",
+      label: "((2*t-1)/(1+abs(2*t-1)))*4*t*(1-t)",
       family: "modifier",
-      cost: 1,
       rarity: "basic",
-      tags: ["precision", "cheap"],
+      tags: ["precision", "compact"],
       component: "softsign",
       amplitudes: [10, 14, -10, -14],
       effect: { precisionBonus: 10 },
-      description: "Softsign activation for cheap signed correction."
+      description: "Softsign activation for compact signed correction."
     },
     elu_gate: {
       id: "elu_gate",
-      label: "a*ELU(4*(t-0.5))*4*t*(1-t)",
+      label: "ELU(4*(t-0.5))*4*t*(1-t)",
       family: "risk",
-      cost: 2,
       rarity: "common",
       tags: ["volatile", "smooth"],
       component: "elu",
@@ -710,10 +678,6 @@
 
   function swapHand(state, owner) {
     return rerollHand(state, owner);
-  }
-
-  function getEnergy(turn) {
-    return Math.min(CONFIG.maxEnergy, CONFIG.baseEnergy + Math.floor(turn / 3));
   }
 
   function parseDirective(command) {
@@ -1178,9 +1142,9 @@
 
   function buildGraphwarBlobObstacles(rng, units, template) {
     const bands = [
-      { id: "upper", minY: 36, maxY: 52, minDistance: 18, maxPoints: 4, countMin: 2, countMax: 3, minR: 4.6, maxR: 8.2 },
-      { id: "middle", minY: 20, maxY: 38, minDistance: 15, maxPoints: 5, countMin: 2, countMax: 3, minR: 4.0, maxR: 7.6 },
-      { id: "low", minY: 9, maxY: 17, minDistance: 19, maxPoints: 3, countMin: 1, countMax: 2, minR: 3.2, maxR: 5.4 }
+      { id: "upper", minY: 36, maxY: 52, minDistance: 24, maxPoints: 2, countMin: 1, countMax: 1, minR: 5.2, maxR: 8.2 },
+      { id: "middle", minY: 20, maxY: 38, minDistance: 21, maxPoints: 3, countMin: 1, countMax: 2, minR: 4.5, maxR: 8.0 },
+      { id: "low", minY: 9, maxY: 17, minDistance: 24, maxPoints: 2, countMin: 1, countMax: 1, minR: 3.8, maxR: 6.0 }
     ];
     const obstacles = [];
     const anchors = [];
@@ -1217,7 +1181,7 @@
     });
 
     let lowGuard = 0;
-    while (obstacles.filter((obstacle) => obstacle.cy < 18).length < 2 && lowGuard < 40) {
+    while (obstacles.filter((obstacle) => obstacle.cy < 18).length < 1 && lowGuard < 40) {
       lowGuard += 1;
       const radius = 3.2 + rng() * 2.1;
       const cx = clamp(30 + rng() * 40, radius + 4, CONFIG.width - radius - 4);
@@ -1233,7 +1197,7 @@
     }
 
     let midGuard = 0;
-    while (obstacles.filter((obstacle) => obstacle.cy >= 18 && obstacle.cy < 38).length < 4 && midGuard < 50) {
+    while (obstacles.filter((obstacle) => obstacle.cy >= 18 && obstacle.cy < 38).length < 2 && midGuard < 50) {
       midGuard += 1;
       const radius = 4 + rng() * 2.8;
       const cx = clamp(28 + rng() * 44, radius + 3, CONFIG.width - radius - 3);
@@ -1249,7 +1213,7 @@
     }
 
     let guard = 0;
-    while (obstacles.length < 18 && guard < 80) {
+    while (obstacles.length < 8 && guard < 80) {
       guard += 1;
       const radius = 3.4 + rng() * 4.8;
       const cx = clamp(22 + rng() * 56, radius + 2, CONFIG.width - radius - 2);
@@ -1264,7 +1228,7 @@
       }
     }
 
-    return { obstacles: obstacles.slice(0, 30), anchorCount: anchors.length };
+    return { obstacles: obstacles.slice(0, 10), anchorCount: anchors.length };
   }
 
   function bonusPointClear(point, units, obstacles) {
@@ -1346,10 +1310,10 @@
     const midBlobs = obstacles.filter((obstacle) => obstacle.cy >= 18 && obstacle.cy < 38).length;
     const lowBlobs = obstacles.filter((obstacle) => obstacle.cy < 18).length;
     const routeArchetypes = ["high"];
-    if (midBlobs >= 4) routeArchetypes.push("mid-pocket");
-    if (lowBlobs >= 2) routeArchetypes.push("low-skim");
+    if (midBlobs >= 2) routeArchetypes.push("mid-pocket");
+    if (lowBlobs >= 1) routeArchetypes.push("low-skim");
     if ((bonusPoints || []).length >= 3) routeArchetypes.push("bonus-thread");
-    if (clusterCount >= 5) routeArchetypes.push("side-pocket");
+    if (clusterCount >= 3) routeArchetypes.push("side-pocket");
     const weights = [
       Math.max(1, upperBlobs),
       Math.max(1, midBlobs),
@@ -1370,8 +1334,8 @@
       routeArchetypes,
       highArcDominance: round(clamp(0.5 - upperBlobs * 0.018 - (bonusPoints || []).length * 0.012 + solver.firstHandHitRate * 0.12, 0.24, 0.55), 3),
       routeEntropy: round(Math.max(entropy, routeArchetypes.length >= 4 ? 1.22 : entropy), 3),
-      requiredBendCount: Math.max(2, Math.round((midBlobs + lowBlobs) / 5)),
-      ceilingLock: upperBlobs >= 4,
+      requiredBendCount: Math.max(1, Math.round((midBlobs + lowBlobs) / 5)),
+      ceilingLock: upperBlobs >= 3,
       projectileMazeRooms: 0,
       projectileCorridorWalls: 0,
       ceilingLockCount: upperBlobs
@@ -1410,17 +1374,17 @@
       const layerCount = clamp(Math.round(3 + blobMetrics.clusterCount + ceilingCount / 3), 6, 12);
       const routePressure = clamp(
         Math.round(
-          70 +
-            solidObstacleCount * 1.6 +
-            chokePoints * 2.2 +
-            topology.straightLaneBreaks * 1.5 +
+          34 +
+            solidObstacleCount * 1.4 +
+            chokePoints * 1.7 +
+            topology.straightLaneBreaks * 1.1 +
             blobMetrics.bonusPointCount * 2 +
-            density * 38
+            density * 30
         ),
-        95,
-        99
+        58,
+        88
       );
-      const difficulty = clamp(Math.round(90 + routePressure / 12 + density * 14 + rng() * 4), 90, 99);
+      const difficulty = clamp(Math.round(62 + routePressure / 5 + density * 10 + rng() * 3), 72, 90);
       const map = {
         id: template.id,
         name: template.name,
@@ -1471,20 +1435,21 @@
   function playableMapCandidate(map) {
     const complexity = map.complexity || {};
     return (
-      complexity.obstacleCount >= 16 &&
-      complexity.obstacleCount <= 34 &&
+      complexity.obstacleCount >= 6 &&
+      complexity.obstacleCount <= 10 &&
       complexity.solidObstacleCount === complexity.obstacleCount &&
       complexity.routeGuideCount === 0 &&
-      complexity.blobCount >= 16 &&
-      complexity.clusterCount >= 4 &&
+      complexity.blobCount >= 6 &&
+      complexity.blobCount <= 10 &&
+      complexity.clusterCount >= 2 &&
       complexity.openLaneCount >= 3 &&
       complexity.bonusPointCount === 3 &&
       Array.isArray(complexity.routeArchetypes) &&
       complexity.routeArchetypes.length >= 3 &&
       complexity.highArcDominance <= 0.55 &&
       complexity.routeEntropy >= 1.1 &&
-      complexity.requiredBendCount >= 2 &&
-      complexity.firstHandHitRate <= 0.3 &&
+      complexity.requiredBendCount >= 1 &&
+      complexity.firstHandHitRate <= 0.95 &&
       complexity.swapWindowHitRate > 0
     );
   }
@@ -1492,12 +1457,12 @@
   function mapCandidateScore(map) {
     const complexity = map.complexity || {};
     const solvableBonus = complexity.swapWindowHitRate > 0 ? 500 : -500;
-    const firstHandPenalty = complexity.firstHandHitRate * 220;
+    const firstHandPenalty = complexity.firstHandHitRate * 120;
     const searchReward = Math.min(4, complexity.requiredSearchWindows || 1) * 30;
     return (
       solvableBonus +
       searchReward +
-      (complexity.solidObstacleCount || 0) * 5 +
+      -Math.abs((complexity.solidObstacleCount || 0) - 8) * 24 +
       (complexity.bonusPointCount || 0) * 18 +
       (complexity.clusterCount || 0) * 16 +
       (complexity.routeArchetypes ? complexity.routeArchetypes.length : 0) * 55 +
@@ -1811,6 +1776,42 @@
     return `y=${normalizeShotExpression(expression)}`;
   }
 
+  function expressionFunctionNames(expression) {
+    const text = normalizeShotExpression(expression);
+    const names = [];
+    const matcher = /\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+    let match = matcher.exec(text);
+    while (match) {
+      names.push(match[1].toLowerCase());
+      match = matcher.exec(text);
+    }
+    return uniqueValues(names);
+  }
+
+  function allowedFunctionNameSetForHand(hand) {
+    const names = new Set();
+    for (const card of hand || []) {
+      for (const name of expressionFunctionNames(card.label || "")) {
+        names.add(name);
+      }
+    }
+    return names;
+  }
+
+  function allowedFunctionNamesForHand(hand) {
+    return Array.from(allowedFunctionNameSetForHand(hand)).sort();
+  }
+
+  function validateExpressionFunctionSet(expression, hand) {
+    const allowed = allowedFunctionNameSetForHand(hand);
+    for (const name of expressionFunctionNames(expression)) {
+      if (!allowed.has(name)) {
+        return { ok: false, reason: `function_not_in_hand:${name}`, allowed: Array.from(allowed).sort() };
+      }
+    }
+    return { ok: true, reason: "ok", allowed: Array.from(allowed).sort() };
+  }
+
   function tokenizeExpression(source) {
     const tokens = [];
     let index = 0;
@@ -1894,8 +1895,10 @@
       sigmoid: (value) => 1 / (1 + Math.exp(-value)),
       softplus: (value) => Math.log1p(Math.exp(value)),
       relu: (value) => Math.max(0, value),
+      sinc: (value) => (Math.abs(value) < 0.0001 ? 1 : Math.sin(value) / value),
       gelu: (value) => 0.5 * value * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (value + 0.044715 * value ** 3))),
-      silu: (value) => value / (1 + Math.exp(-value))
+      silu: (value) => value / (1 + Math.exp(-value)),
+      elu: (value) => (value >= 0 ? value : Math.exp(value) - 1)
     };
     const parseExpression = () => parseTernary();
     const parseTernary = () => {
@@ -2165,6 +2168,29 @@
     };
   }
 
+  function calculateHitDamage(state, shot, sim, routeBonus) {
+    const hitUnit = (state.units || []).find((unit) => unit.id === sim.unitId);
+    const hitDistance = hitUnit && sim.point ? distance(sim.point, hitUnit) : CONFIG.unitRadius;
+    const accuracy = clamp(1 - hitDistance / Math.max(0.1, CONFIG.unitRadius), 0, 1);
+    const functionCount = expressionFunctionNames(shot.expression || "").length;
+    const functionCommitment = clamp(functionCount * 4 + (shot.components || []).length * 2, 0, 18);
+    const effects = sumEffects(shot.components || []);
+    const volatilityDamage = clamp((effects.damageBonus || 0) + (effects.volatility || 0) * 0.18, 0, 14);
+    const routeDamage = clamp((routeBonus?.value || 0) * 0.4, 0, 12);
+    if (sim.kind === "hitAlly") {
+      return clamp(
+        Math.round(CONFIG.allyDamageBase + accuracy * 8 + functionCommitment * 0.35 + volatilityDamage * 0.2),
+        8,
+        CONFIG.allyDamageMax
+      );
+    }
+    return clamp(
+      Math.round(CONFIG.enemyDamageBase + accuracy * 20 + functionCommitment + volatilityDamage + routeDamage),
+      20,
+      CONFIG.enemyDamageMax
+    );
+  }
+
   function cardAmplitudeOptions(card, directive) {
     const values = Array.isArray(card.amplitudes) ? card.amplitudes.slice() : [0];
     if (directive.high && card.tags.includes("clearance")) {
@@ -2179,30 +2205,16 @@
     return values;
   }
 
-  function generateComponentCombos(hand, energy, directive) {
+  function generateComponentCombos(hand, directive) {
     const cards = hand.filter((card) => CARD_LIBRARY[card.id]);
-    const options = [{ components: [], cost: 0, usedCardIds: [] }];
+    const options = [{ components: [], usedCardIds: [] }];
 
     for (const card of cards) {
       const existing = options.slice();
       for (const base of existing) {
-        if (base.components.length >= CONFIG.maxCardsPerShot) continue;
-        const nextCost = base.cost + card.cost;
-        if (nextCost > energy) continue;
-        const nextComponents = base.components.concat({
-          id: card.id,
-          cardId: card.instanceId,
-          label: card.label,
-          family: card.family,
-          tags: card.tags.slice(),
-          effect: card.effect || null,
-          component: card.component,
-          amp: 0
-        });
-        const shapeCount = nextComponents.filter((component) => component.family !== "modifier").length;
-        const modifierCount = nextComponents.filter((component) => component.family === "modifier").length;
-        if (shapeCount > CONFIG.maxShapeCards || modifierCount > CONFIG.maxModifierCards) continue;
+        if (options.length >= CONFIG.localSearchComboCap) break;
         for (const amp of cardAmplitudeOptions(card, directive)) {
+          if (options.length >= CONFIG.localSearchComboCap) break;
           options.push({
             components: base.components.concat({
               id: card.id,
@@ -2214,7 +2226,6 @@
               component: card.component,
               amp
             }),
-            cost: nextCost,
             usedCardIds: base.usedCardIds.concat(card.instanceId)
           });
         }
@@ -2224,36 +2235,20 @@
     return options;
   }
 
-  function validateResourceUse(hand, components, energy) {
+  function validateResourceUse(hand, components) {
     const byInstance = new Map(hand.map((card) => [card.instanceId, card]));
     const seen = new Set();
-    let cost = 0;
     for (const component of components) {
       const card = byInstance.get(component.cardId);
       if (!card) {
-        return { ok: false, reason: "card_not_in_hand", cost };
+        return { ok: false, reason: "card_not_in_hand" };
       }
       if (seen.has(component.cardId)) {
-        return { ok: false, reason: "card_reused", cost };
+        return { ok: false, reason: "card_reused" };
       }
       seen.add(component.cardId);
-      cost += card.cost;
     }
-    if (cost > energy) {
-      return { ok: false, reason: "not_enough_energy", cost };
-    }
-    if (components.length > CONFIG.maxCardsPerShot) {
-      return { ok: false, reason: "too_many_components", cost };
-    }
-    const shapeCount = components.filter((component) => component.family !== "modifier").length;
-    const modifierCount = components.filter((component) => component.family === "modifier").length;
-    if (shapeCount > CONFIG.maxShapeCards) {
-      return { ok: false, reason: "too_many_shape_cards", cost };
-    }
-    if (modifierCount > CONFIG.maxModifierCards) {
-      return { ok: false, reason: "too_many_modifier_cards", cost };
-    }
-    return { ok: true, reason: "ok", cost };
+    return { ok: true, reason: "ok" };
   }
 
   function sumEffects(components) {
@@ -2295,7 +2290,7 @@
         name: "y0+dy*t",
         traits: ["baseline"],
         scoreBonus: 0,
-        note: "No card spend; only exposed lines work."
+        note: "No function card used; only exposed lines work."
       };
     }
     const comboName = summarizeFunctionLabels(parts);
@@ -2365,12 +2360,12 @@
         note: "Oscillation searches for a side-door angle."
       };
     }
-    if (has("cheap")) {
+    if (has("compact")) {
       return {
         name: comboName,
-        traits: ["cheap", "efficient"],
+        traits: ["compact", "efficient"],
         scoreBonus: 8,
-        note: "Low spend keeps the shot efficient."
+        note: "Compact functions keep the curve readable."
       };
     }
     return {
@@ -2385,11 +2380,9 @@
     return cards.filter((card) => (card.tags || []).includes(tag)).length;
   }
 
-  function cardProfile(card, energy) {
+  function cardProfile(card) {
     const tags = card && Array.isArray(card.tags) ? card.tags : [];
     const has = (tag) => tags.includes(tag);
-    const cost = card && Number.isFinite(Number(card.cost)) ? Number(card.cost) : 0;
-    const availableEnergy = Number.isFinite(Number(energy)) ? Number(energy) : 0;
 
     let role = "Curve";
     let tableText = "Flexible curve ingredient.";
@@ -2408,39 +2401,37 @@
     } else if (has("shelf") || (card && card.family === "control")) {
       role = "Control";
       tableText = "Shapes the middle of the curve.";
-    } else if (has("cheap")) {
+    } else if (has("compact")) {
       role = "Tempo";
-      tableText = "Keeps energy flexible.";
+      tableText = "Compact ingredient for readable shots.";
     } else if (has("damage")) {
       role = "Burst";
       tableText = "Adds pressure when a hit is available.";
     }
 
-    const playable = cost <= availableEnergy;
-    const costPressure = !playable ? "over budget" : cost <= 1 ? "cheap" : cost >= availableEnergy ? "full spend" : "mid cost";
+    const playable = true;
+    const functionAccess = "allowed";
     const riskText = has("volatile") ? "volatile" : card && card.family === "risk" ? "risky" : "stable";
 
     return {
       role,
       playable,
-      costPressure,
+      functionAccess,
       riskText,
       tableText
     };
   }
 
-  function analyzeHand(hand, energy) {
+  function analyzeHand(hand) {
     const cards = Array.isArray(hand) ? hand : [];
     const tags = componentTags(cards);
     const families = componentFamilies(cards);
     const has = (tag) => tags.includes(tag);
     const usesFamily = (family) => families.includes(family);
-    const playable = cards.filter((card) => card.cost <= energy);
-    const totalCost = cards.reduce((sum, card) => sum + card.cost, 0);
     const precisionCount = countTag(cards, "precision");
     const clearanceCount = countTag(cards, "clearance");
     const cornerCount = countTag(cards, "corner");
-    const cheapCount = countTag(cards, "cheap");
+    const compactCount = countTag(cards, "compact");
     const volatileCount = countTag(cards, "volatile");
 
     let commandRead = "Flexible hand with no single dominant lane.";
@@ -2458,11 +2449,11 @@
       commandRead = "Damage pressure is available without much stability.";
     } else if (has("weave")) {
       commandRead = "Oscillation can search for side-door angles.";
-    } else if (cheapCount >= 2) {
-      commandRead = "Cheap cards can conserve energy.";
+    } else if (compactCount >= 2) {
+      commandRead = "Compact functions support low-commitment shots.";
     }
 
-    const traitPriority = ["clearance", "precision", "thread", "corner", "shelf", "weave", "damage", "cheap", "volatile"];
+    const traitPriority = ["clearance", "precision", "thread", "corner", "shelf", "weave", "damage", "compact", "volatile"];
     const traits = traitPriority.filter((tag) => has(tag)).slice(0, 3);
     const risk =
       volatileCount > 0 && precisionCount > 0
@@ -2472,19 +2463,16 @@
           : usesFamily("risk")
             ? "damage option"
             : "stable";
-    const averageCost = cards.length ? round(totalCost / cards.length, 1) : 0;
-    const energyRead = `${playable.length}/${cards.length} playable at ${energy}E; avg ${averageCost}E`;
+    const functionRead = `${cards.length} current functions; unrestricted composition`;
 
     return {
       archetype: summarizeFunctionLabels(cards),
       traits: traits.length ? traits : families.slice(0, 3),
-      playableCount: playable.length,
+      playableCount: cards.length,
       handSize: cards.length,
-      energy,
-      totalCost,
-      averageCost,
+      functionCount: cards.length,
       risk,
-      energyRead,
+      functionRead,
       commandRead
     };
   }
@@ -2511,7 +2499,6 @@
     }
 
     score -= Math.max(0, sim.closestTargetDistance - effects.precisionBonus / 20) * (directive.aggressive ? 7 : 9);
-    score -= shot.cost * 7;
     if (directive.safe) {
       score -= Math.max(0, 10 - sim.closestEnemyDistance) * 0.5;
     }
@@ -2539,7 +2526,6 @@
       distance: d,
       deltaY: target.y - shooter.y,
       components: clone(combo.components),
-      cost: combo.cost,
       usedCardIds: combo.usedCardIds.slice()
     };
   }
@@ -2571,7 +2557,7 @@
     return {
       intent: describeIntent(decision.directive),
       targetPriority: decision.targetPriority,
-      handConstraint: `${decision.hand.length} cards, ${decision.energy} energy, ${CONFIG.maxShapeCards} shapes + ${CONFIG.maxModifierCards} modifier max`,
+      handConstraint: `${decision.hand.length} current hand functions; any or all may be combined`,
       commandRules: (decision.ruleSummary || decision.directive.ruleSummary).join("; "),
       selectedCombo: usedLabels.length ? usedLabels.join(" + ") : "baseline line",
       comboName: combo.name,
@@ -2607,17 +2593,16 @@
 
     const directive = parseDirective(command);
     const hand = getCurrentHand(state, handOwner);
-    const energy = getEnergy(state.turn);
     const rankedTargets = rankTargets(state, shooter, directive);
     const targetConstraint = applyTargetConstraints(rankedTargets, directive);
     const targets = targetConstraint.targets;
-    const combos = generateComponentCombos(hand, energy, directive);
+    const combos = generateComponentCombos(hand, directive);
 
     const choices = [];
     for (const target of targets) {
       for (const combo of combos) {
         if (comboViolatesDirective(combo, directive)) continue;
-        const validation = validateResourceUse(hand, combo.components, energy);
+        const validation = validateResourceUse(hand, combo.components);
         if (!validation.ok) continue;
         const shot = makeShot(shooter, target, combo);
         const sim = simulateShot(state, shot);
@@ -2639,7 +2624,6 @@
             priority: index + 1
           })),
           hand,
-          energy,
           directive,
           ruleSummary: targetConstraint.ruleSummary,
           combo: comboIdentity,
@@ -2674,13 +2658,11 @@
     if (!target || target.team === shooter.team) return null;
     const directive = parseDirective(command);
     const hand = getCurrentHand(state, shooter.id);
-    const energy = getEnergy(state.turn);
     const requestedSlots = Array.isArray(options.cardSlots) ? options.cardSlots : [];
     const slotSet = new Set(
       requestedSlots
         .map((slot) => Number(slot))
         .filter((slot) => Number.isInteger(slot) && slot >= 1 && slot <= hand.length)
-        .slice(0, CONFIG.maxCardsPerShot)
     );
     const selectedCards = hand.filter((card, index) => slotSet.has(index + 1));
     const components = selectedCards.map((card) => ({
@@ -2693,15 +2675,21 @@
       effect: card.effect || {},
       amp: 0
     }));
-    const validation = validateResourceUse(hand, components, energy);
+    const validation = validateResourceUse(hand, components);
     const expression = normalizeProviderShotExpression(String(options.expression || "").trim().slice(0, 600));
+    const functionValidation = validateExpressionFunctionSet(expression, hand);
     let expressionFn = null;
     let invalidExpressionReason = null;
-    try {
-      expressionFn = compileShotExpression(expression);
-    } catch (err) {
-      invalidExpressionReason = err && err.message ? err.message : "invalid_expression";
+    if (!functionValidation.ok) {
+      invalidExpressionReason = functionValidation.reason;
       expressionFn = () => NaN;
+    } else {
+      try {
+        expressionFn = compileShotExpression(expression);
+      } catch (err) {
+        invalidExpressionReason = err && err.message ? err.message : "invalid_expression";
+        expressionFn = () => NaN;
+      }
     }
     const shot = {
       shooter: clone(shooter),
@@ -2709,15 +2697,14 @@
       distance: Math.max(1, Math.abs(target.x - shooter.x)),
       deltaY: target.y - shooter.y,
       components,
-      cost: validation.cost,
       usedCardIds: selectedCards.map((card) => card.instanceId),
       expression,
       expressionFn,
       invalidExpressionReason
     };
-    const sim = validation.ok ? simulateShot(state, shot) : {
+    const sim = validation.ok && !invalidExpressionReason ? simulateShot(state, shot) : {
       kind: "invalid",
-      reason: validation.reason,
+      reason: validation.ok ? invalidExpressionReason : validation.reason,
       points: [],
       maxY: -Infinity,
       closestTargetDistance: Infinity,
@@ -2740,14 +2727,13 @@
         priority: index + 1
       })),
       hand,
-      energy,
       directive,
       ruleSummary: ["model wrote function expression"],
       combo: comboIdentity,
       routeBonus,
       shot,
       sim,
-      validation,
+      validation: validation.ok ? functionValidation : validation,
       candidateId: null
     };
   }
@@ -2761,10 +2747,8 @@
         function: component.label,
         label: component.label,
         family: component.family,
-        tags: component.tags,
-        cost: choice.hand.find((card) => card.instanceId === component.cardId)?.cost || 0
+        tags: component.tags
       })),
-      cost: choice.shot.cost,
       combo: choice.combo,
       expression: formatExpression(choice.shot),
       result: choice.sim.kind,
@@ -2821,7 +2805,7 @@
     if (sim.kind === "blocked") return `blocked by ${sim.obstacleId}`;
     if (sim.kind === "ground") return "hit ground";
     if (sim.kind === "out") return "out of bounds";
-    if (sim.kind === "invalid") return "invalid function";
+    if (sim.kind === "invalid") return sim.reason ? `invalid: ${sim.reason}` : "invalid function";
     return "miss";
   }
 
@@ -2927,8 +2911,7 @@
     const sim = decision.sim;
     let damage = 0;
     if (sim.kind === "hitEnemy" || sim.kind === "hitAlly") {
-      const effects = sumEffects(decision.shot.components);
-      damage = sim.kind === "hitEnemy" ? CONFIG.hitDamage + effects.damageBonus : CONFIG.allyDamage;
+      damage = calculateHitDamage(state, decision.shot, sim, decision.routeBonus);
       const hitUnit = state.units.find((unit) => unit.id === sim.unitId);
       if (hitUnit) hitUnit.hp = Math.max(0, hitUnit.hp - damage);
     }
@@ -2940,8 +2923,6 @@
       command: decision.directive.raw,
       shooterId: decision.shooter.id,
       targetId: decision.target.id,
-      energy: decision.energy,
-      cost: decision.shot.cost,
       candidateId: decision.candidateId,
       provider: decision.provider,
       hand: decision.hand.map((card) => ({
@@ -2950,7 +2931,6 @@
         family: card.family,
         rarity: card.rarity,
         tags: card.tags,
-        cost: card.cost,
         instanceId: card.instanceId,
         description: card.description
       })),
@@ -3045,7 +3025,6 @@
     dealHand,
     analyzeHand,
     cardProfile,
-    getEnergy,
     groundY,
     parseDirective,
     getTurnOrder,
@@ -3054,6 +3033,9 @@
     listLegalShots,
     simulateShot,
     validateResourceUse,
+    expressionFunctionNames,
+    allowedFunctionNamesForHand,
+    validateExpressionFunctionSet,
     formatExpression,
     resultLabel,
     _internals: {
@@ -3063,6 +3045,9 @@
       evalShotY,
       compileShotExpression,
       normalizeShotExpression,
+      expressionFunctionNames,
+      allowedFunctionNamesForHand,
+      validateExpressionFunctionSet,
       generateComponentCombos
     }
   };

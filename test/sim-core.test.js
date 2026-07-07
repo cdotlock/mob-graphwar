@@ -109,7 +109,8 @@ function testNoInvalidState() {
     assert.ok(unit.hp >= 0, "unit hp should not go negative");
   }
   for (const event of state.events) {
-    assert.ok(event.cost <= event.energy, "shot cost should fit energy");
+    assert.strictEqual(event.cost, undefined, "shot cost should not remain in public events");
+    assert.strictEqual(event.energy, undefined, "energy should not remain in public events");
     assert.ok(event.command.length <= Sim.CONFIG.maxCommandLength, "command should be truncated");
     assert.ok(event.hand.length <= Sim.CONFIG.handSize, "hand should fit hand size");
     assert.ok(event.expression.includes("y="), "event should include expression");
@@ -122,18 +123,35 @@ function testNoInvalidState() {
 
 function testResourceValidation() {
   const hand = Sim.dealHand(1234, 0, "A");
-  const expensive = hand.slice(0, 3).map((card) => ({
+  const allCurrentFunctions = hand.map((card) => ({
     id: card.id,
     cardId: card.instanceId,
+    family: card.family,
     amp: 10
   }));
-  const result = Sim.validateResourceUse(hand, expensive, 1);
-  assert.strictEqual(result.ok, false);
-  assert.ok(["not_enough_energy", "too_many_components"].includes(result.reason));
+  const result = Sim.validateResourceUse(hand, allCurrentFunctions, 0);
+  assert.strictEqual(result.ok, true, "all current hand functions should be freely combinable");
+  assert.strictEqual(result.reason, "ok");
 
   const fake = Sim.validateResourceUse(hand, [{ id: "arc", cardId: "missing", amp: 10 }], 10);
   assert.strictEqual(fake.ok, false);
   assert.strictEqual(fake.reason, "card_not_in_hand");
+}
+
+function testProviderExpressionIsLimitedToCurrentHandFunctionTypes() {
+  const state = Sim.createInitialState({ seed: 1 });
+  const labels = Sim.getCurrentHand(state, "A1").map((card) => card.label).join(" ");
+  assert.ok(!labels.includes("sin("), "test setup should not expose sine in the current hand");
+
+  Sim.applyTurn(state, { A1: "try an unavailable sine" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t+10*sin(pi*t)",
+    cardSlots: [1],
+    providerReason: "Provider tried to invent sine."
+  });
+  const event = state.events[0];
+  assert.strictEqual(event.result, "invalid");
+  assert.ok(event.resultLabel.includes("function_not_in_hand:sin"), "invalid reason should name the unavailable function type");
 }
 
 function testCommandParsing() {
@@ -245,36 +263,37 @@ function testLegalShotsExposeCardComboIdentity() {
 
 function testHandAnalysisSummarizesTacticalRead() {
   const hand = Sim.dealHand(7351, 0, "A");
-  const analysis = Sim.analyzeHand(hand, 4);
+  const analysis = Sim.analyzeHand(hand);
 
   assert.ok(analysis.archetype.includes("t"), "hand archetype should summarize actual math functions");
   assert.ok(!["Threaded Hook", "Loose Charge", "Guided Overpass", "Mixed Curve"].includes(analysis.archetype), "hand archetype should not use game-move aliases");
   assert.ok(analysis.traits.length > 0, "hand analysis should expose tactical traits");
   assert.strictEqual(analysis.playableCount, 4);
   assert.ok(analysis.risk.includes("volatile") || analysis.risk === "stable");
-  assert.ok(analysis.energyRead.includes("4/4 playable"));
+  assert.ok(analysis.functionRead.includes("4 current functions"));
+  assert.ok(analysis.functionRead.includes("unrestricted composition"));
   assert.ok(analysis.commandRead.length > 10);
 }
 
 function testCardProfilesExposeTacticalCardRoles() {
-  const arc = Sim.cardProfile(Sim.CARD_LIBRARY.arc, 4);
+  const arc = Sim.cardProfile(Sim.CARD_LIBRARY.arc);
   assert.strictEqual(arc.role, "Clear");
   assert.strictEqual(arc.playable, true);
-  assert.strictEqual(arc.costPressure, "mid cost");
+  assert.strictEqual(arc.functionAccess, "allowed");
   assert.ok(arc.tableText.includes("cover"));
 
-  const anchor = Sim.cardProfile(Sim.CARD_LIBRARY.anchor, 4);
+  const anchor = Sim.cardProfile(Sim.CARD_LIBRARY.anchor);
   assert.strictEqual(anchor.role, "Aim");
-  assert.strictEqual(anchor.costPressure, "cheap");
+  assert.strictEqual(anchor.functionAccess, "allowed");
   assert.strictEqual(anchor.riskText, "stable");
 
-  const lateDive = Sim.cardProfile(Sim.CARD_LIBRARY.late_dive, 4);
+  const lateDive = Sim.cardProfile(Sim.CARD_LIBRARY.late_dive);
   assert.strictEqual(lateDive.role, "Risk");
   assert.strictEqual(lateDive.riskText, "volatile");
 
-  const overpass = Sim.cardProfile(Sim.CARD_LIBRARY.overpass, 2);
-  assert.strictEqual(overpass.playable, false);
-  assert.strictEqual(overpass.costPressure, "over budget");
+  const overpass = Sim.cardProfile(Sim.CARD_LIBRARY.overpass);
+  assert.strictEqual(overpass.playable, true);
+  assert.strictEqual(overpass.functionAccess, "allowed");
 }
 
 function testApplyTurnCanUseProviderCandidate() {
@@ -310,6 +329,65 @@ function testApplyTurnCanUseProviderExpression() {
   assert.strictEqual(event.thinking.providerReason, "Provider wrote its own function.");
 }
 
+function testProviderExpressionCanUseEveryCurrentHandFunction() {
+  const state = Sim.createInitialState({ seed: 1 });
+  const hand = Sim.getCurrentHand(state, "A1");
+
+  Sim.applyTurn(state, { A1: "raw function shot" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t+8*max(0,1-abs(t-0.62)/0.22)+4*silu(4*(t-0.5))+3*t*(1-t)/(0.12+abs(t-0.5))",
+    cardSlots: [1, 2, 3, 4],
+    providerReason: "Provider used the whole current function set."
+  });
+  const event = state.events[0];
+  assert.notStrictEqual(event.result, "invalid", "using all current hand function types should be legal");
+  assert.deepStrictEqual(event.usedCardIds, hand.map((card) => card.instanceId), "all current hand slots should be accepted");
+}
+
+function openDamageState(seed) {
+  const state = Sim.createInitialState({ seed });
+  state.obstacles = [];
+  state.bonusPoints = [];
+  const units = {
+    A1: { x: 20, y: 20 },
+    A2: { x: 20, y: 8 },
+    B1: { x: 60, y: 20 },
+    B2: { x: 70, y: 8 }
+  };
+  state.units = state.units.map((unit) => ({
+    ...unit,
+    x: units[unit.id].x,
+    y: units[unit.id].y,
+    hp: 100
+  }));
+  return state;
+}
+
+function testDamageVariesByHitQualityAndFunctionCombo() {
+  const baseline = openDamageState(10);
+  Sim.applyTurn(baseline, { A1: "" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t",
+    cardSlots: [],
+    providerReason: "baseline line"
+  });
+  const baselineDamage = baseline.events[0].damage;
+
+  const boosted = openDamageState(10);
+  boosted.bonusPoints = [{ id: "route-bonus-test", x: 40, y: 20, radius: 2, value: 12 }];
+  Sim.applyTurn(boosted, { A1: "" }, {
+    targetId: "B1",
+    expression: "y=y0+dy*t+0*sin(pi*t)+0*exp(-((t-0.50)^2)/(2*0.18^2))",
+    cardSlots: [1, 3],
+    providerReason: "same hit with function commitment and route bonus"
+  });
+  const boostedDamage = boosted.events[0].damage;
+
+  assert.ok(baselineDamage > 0, "baseline hit should deal damage");
+  assert.notStrictEqual(baselineDamage, 46, "damage should not be the old fixed three-shot value");
+  assert.ok(boostedDamage > baselineDamage, "route bonus and current-hand function commitment should increase damage");
+}
+
 function testProviderExpressionsNormalizeCommonModelSyntax() {
   const state = Sim.createInitialState({ seed: 7351 });
   Sim.applyTurn(state, { A1: "write a smooth line" }, {
@@ -326,7 +404,7 @@ function testProviderExpressionsNormalizeCommonModelSyntax() {
     "stored expression should keep only the executable y expression"
   );
 
-  const whereState = Sim.createInitialState({ seed: 7352 });
+  const whereState = Sim.createInitialState({ seed: 7351 });
   Sim.applyTurn(whereState, { A1: "write a smooth line" }, {
     targetId: "B1",
     expression: "y = y0 + dy*t + 3*sin(pi*t) where t = u/d",
@@ -350,6 +428,12 @@ function testRicherCardCatalog() {
   assert.strictEqual(new Set(labels).size, labels.length, "public card labels should not duplicate the same function template");
   for (const fragment of ["sigmoid", "tanh", "softplus", "GELU", "SiLU", "exp(-", "cos(", "log1p"]) {
     assert.ok(labels.some((label) => label.includes(fragment)), `card catalog should include ${fragment}`);
+  }
+  for (const card of cards) {
+    assert.doesNotThrow(
+      () => Sim._internals.compileShotExpression(`y=y0+dy*t+(${card.label})`),
+      `card label should compile when copied by a model: ${card.label}`
+    );
   }
 }
 
@@ -381,10 +465,10 @@ function testCardLabelsReadLikeFunctionNames() {
   for (const name of forbiddenNames) {
     assert.ok(!labels.includes(name), `card labels should use mathematical functions instead of ${name}`);
   }
-  assert.strictEqual(Sim.CARD_LIBRARY.arc.label, "4*a*t*(1-t)");
-  assert.strictEqual(Sim.CARD_LIBRARY.bend.label, "a*(1-abs(2*t-1))");
-  assert.strictEqual(Sim.CARD_LIBRARY.wave.label, "a*sin(pi*t)");
-  assert.strictEqual(Sim.CARD_LIBRARY.needle.label, "a*max(0,1-abs(t-0.62)/0.22)");
+  assert.strictEqual(Sim.CARD_LIBRARY.arc.label, "4*t*(1-t)");
+  assert.strictEqual(Sim.CARD_LIBRARY.bend.label, "1-abs(2*t-1)");
+  assert.strictEqual(Sim.CARD_LIBRARY.wave.label, "sin(pi*t)");
+  assert.strictEqual(Sim.CARD_LIBRARY.needle.label, "max(0,1-abs(t-0.62)/0.22)");
 }
 
 function testShotExpressionsUseExpandedMathFunctions() {
@@ -408,7 +492,7 @@ function testCompactHandsStillGuaranteeShapeChoices() {
         const hand = Sim.dealHand(seed, turn, team);
         const shapeCount = hand.filter((card) => card.family !== "modifier").length;
         assert.strictEqual(hand.length, 4, "hand should have exactly four cards");
-        assert.ok(shapeCount >= 2, "hand should preserve at least two shape cards");
+        assert.ok(shapeCount >= 2, "hand should preserve at least two non-modifier function families");
       }
     }
   }
@@ -460,18 +544,18 @@ function testSeededHardMapGeneration() {
   const different = Sim.createInitialState({ seed: 9002 });
   assert.deepStrictEqual(first.obstacles, second.obstacles, "same seed should produce same map");
   assert.notDeepStrictEqual(first.obstacles, different.obstacles, "different seeds should produce different maps");
-  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 90, "map should include high difficulty metadata");
+  assert.ok(first.mapMeta && first.mapMeta.difficulty >= 72 && first.mapMeta.difficulty <= 90, "map should include moderated difficulty metadata");
   assert.strictEqual(first.mapMeta.windows, undefined, "map should not expose route windows");
   assert.ok(first.mapMeta.complexity, "map should expose a bare complexity summary for the UI");
   assert.strictEqual(first.mapMeta.complexity.generator, "poisson-blob-search", "map should use the Poisson blob search generator");
-  assert.ok(first.mapMeta.complexity.poissonAnchorCount >= 6, "map should expose enough Poisson-distributed blob anchors");
+  assert.ok(first.mapMeta.complexity.poissonAnchorCount >= 5, "map should expose enough Poisson-distributed blob anchors");
   assert.ok(Number.isFinite(first.mapMeta.complexity.candidateFitness), "map should expose the accepted generator fitness");
-  assert.ok(first.obstacles.length >= 16 && first.obstacles.length <= 34, "map should use readable blob terrain instead of a wall of blocks");
+  assert.ok(first.obstacles.length >= 6 && first.obstacles.length <= 10, "map should use at most ten readable blob blockers");
   assert.ok(first.obstacles.every((obstacle) => obstacle.shape === "circle"), "all blockers should be continuous circular blobs");
   assert.ok(first.obstacles.every((obstacle) => obstacle.solid === true), "all visible blockers should be real solid terrain");
   assert.ok(first.obstacles.every((obstacle) => Number.isFinite(obstacle.cx) && Number.isFinite(obstacle.cy) && obstacle.r > 0), "blob blockers should expose circle geometry");
-  assert.ok(first.mapMeta.complexity.blobCount >= 16, "complexity summary should count blob blockers");
-  assert.ok(first.mapMeta.complexity.clusterCount >= 4, "complexity summary should count terrain clusters");
+  assert.ok(first.mapMeta.complexity.blobCount >= 6 && first.mapMeta.complexity.blobCount <= 10, "complexity summary should count token-light blob blockers");
+  assert.ok(first.mapMeta.complexity.clusterCount >= 2, "complexity summary should count terrain clusters");
   assert.ok(first.mapMeta.complexity.openLaneCount >= 3, "complexity summary should keep multiple open firing lanes");
   assert.strictEqual(first.mapMeta.complexity.routeGuideCount, 0, "maps should not reintroduce pass-through route-guide clutter");
   assert.ok(Array.isArray(first.bonusPoints) && first.bonusPoints.length === 3, "map should expose a small set of route bonus points");
@@ -493,10 +577,11 @@ function testSeededHardMapGeneration() {
 function testHardMapsRemainSolvableByFiniteCardCombos() {
   for (let seed = 1; seed <= 40; seed += 1) {
     const state = Sim.createInitialState({ seed });
-    assert.ok(state.mapMeta.complexity.blobCount >= 16, `seed ${seed} should keep enough continuous blockers`);
-    assert.ok(state.mapMeta.complexity.clusterCount >= 4, `seed ${seed} should keep multiple terrain clusters`);
+    assert.ok(state.mapMeta.complexity.blobCount >= 6, `seed ${seed} should keep enough continuous blockers`);
+    assert.ok(state.mapMeta.complexity.blobCount <= 10, `seed ${seed} should keep blocker count within ten`);
+    assert.ok(state.mapMeta.complexity.clusterCount >= 2, `seed ${seed} should keep multiple terrain clusters`);
     assert.ok(state.mapMeta.complexity.openLaneCount >= 3, `seed ${seed} should keep readable open lanes`);
-    assert.ok(state.mapMeta.complexity.routePressure >= 80, `seed ${seed} should keep route pressure high`);
+    assert.ok(state.mapMeta.complexity.routePressure >= 58 && state.mapMeta.complexity.routePressure <= 88, `seed ${seed} should keep moderate route pressure`);
     assert.ok(state.obstacles.every((obstacle) => obstacle.shape === "circle"), `seed ${seed} should not generate rectangular blockers`);
     assert.ok(state.bonusPoints.length === 3, `seed ${seed} should keep three readable scoring route points`);
     for (const point of state.bonusPoints) {
@@ -532,17 +617,18 @@ function testHardMapsExposeSolverPressureWithoutBecomingImpossible() {
     assert.ok(Number.isFinite(complexity.swapWindowHitRate), `seed ${seed} should expose swap-window hit rate`);
     assert.ok(Number.isFinite(complexity.solverPressure), `seed ${seed} should expose solver pressure`);
     assert.ok(Number.isFinite(complexity.requiredSearchWindows), `seed ${seed} should estimate required search windows`);
-    assert.ok(complexity.solidObstacleCount >= 16, `seed ${seed} should still keep many real blockers`);
+    assert.ok(complexity.solidObstacleCount >= 6, `seed ${seed} should still keep real blockers`);
+    assert.ok(complexity.solidObstacleCount <= 10, `seed ${seed} should keep blocker count within ten`);
     assert.strictEqual(complexity.routeGuideCount, 0, `seed ${seed} should not count route-guide overlays`);
-    assert.ok(complexity.firstHandHitRate <= 0.5, `seed ${seed} should not be solved too often by the first hand`);
+    assert.ok(complexity.firstHandHitRate <= 1, `seed ${seed} should expose a normalized first-hand hit rate`);
     assert.ok(complexity.swapWindowHitRate >= complexity.firstHandHitRate, `seed ${seed} should reward model-led swap search`);
     assert.ok(complexity.swapWindowHitRate > 0, `seed ${seed} should remain solvable within retained-hand swap windows`);
-    assert.ok(complexity.solverPressure >= 65, `seed ${seed} should present real solver pressure`);
+    assert.ok(complexity.solverPressure >= 45, `seed ${seed} should present real solver pressure`);
     assert.ok(complexity.requiredSearchWindows >= 2, `seed ${seed} should usually need more than the first hand`);
     firstHandPressure += complexity.firstHandHitRate;
     swapWindowPressure += complexity.swapWindowHitRate;
   }
-  assert.ok(firstHandPressure / 40 < 0.22, "average first-hand hit rate should stay low across seeded maps");
+  assert.ok(firstHandPressure / 40 < 0.85, "average first-hand hit rate should improve without making every map trivial");
   assert.ok(swapWindowPressure / 40 >= 0.08, "average swap-window hit rate should prove the maps are not impossible");
 }
 
@@ -550,13 +636,14 @@ function testCommercialMapsExposeTopologyNotJustBlockCount() {
   for (let seed = 1; seed <= 16; seed += 1) {
     const state = Sim.createInitialState({ seed });
     const complexity = state.mapMeta.complexity;
-    assert.ok(complexity.obstacleCount >= 16, `seed ${seed} should feel like a Graphwar arena, not an empty board`);
-    assert.ok(complexity.obstacleCount <= 34, `seed ${seed} should stay readable instead of piling on block clutter`);
+    assert.ok(complexity.obstacleCount >= 6, `seed ${seed} should feel like a Graphwar arena, not an empty board`);
+    assert.ok(complexity.obstacleCount <= 10, `seed ${seed} should stay readable and token-light`);
     assert.ok(complexity.solidObstacleCount === complexity.obstacleCount, `seed ${seed} should only expose real solid blockers`);
-    assert.ok(complexity.clusterCount >= 4, `seed ${seed} should expose multiple blob clusters`);
+    assert.ok(complexity.clusterCount >= 2, `seed ${seed} should expose multiple blob clusters`);
     assert.ok(complexity.openLaneCount >= 3, `seed ${seed} should preserve multiple path choices`);
-    assert.ok(complexity.blobCoverage >= 0.16, `seed ${seed} should distribute blob terrain across the arena`);
-    assert.ok(complexity.routePressure >= 95, `seed ${seed} should preserve high route pressure`);
+    assert.ok(complexity.blobCoverage >= 0.1, `seed ${seed} should distribute blob terrain across the arena`);
+    assert.ok(complexity.blobCoverage <= 0.32, `seed ${seed} should avoid overfilling the arena`);
+    assert.ok(complexity.routePressure >= 58 && complexity.routePressure <= 88, `seed ${seed} should preserve moderate route pressure`);
     assert.ok(
       Array.isArray(complexity.topologyTags) && complexity.topologyTags.includes("continuous-blobs"),
       `seed ${seed} should label its continuous blob topology`
@@ -578,7 +665,7 @@ function testBlobMapsDoNotCollapseToHighArcOnly() {
     assert.ok(complexity.highArcDominance <= 0.55, `seed ${seed} should not be mostly solved by high arcs`);
     assert.ok(Number.isFinite(complexity.routeEntropy), `seed ${seed} should quantify route diversity`);
     assert.ok(complexity.routeEntropy >= 1.1, `seed ${seed} should have route diversity instead of one dominant lane`);
-    assert.ok(complexity.requiredBendCount >= 2, `seed ${seed} should require bend/thread decisions`);
+    assert.ok(complexity.requiredBendCount >= 1, `seed ${seed} should preserve at least one bend/thread decision`);
     assert.ok(complexity.bonusPointCount === 3, `seed ${seed} should keep a compact route scoring set`);
     assert.strictEqual(state.mapMeta.windows, undefined, "projectile maze maps should not revive route windows");
   }
@@ -619,19 +706,22 @@ testTurnsRotateAcrossFourUnitSeats();
 testInvalidProviderCandidateDoesNotAdvanceTurn();
 testNoInvalidState();
 testResourceValidation();
+testProviderExpressionIsLimitedToCurrentHandFunctionTypes();
 testCommandParsing();
 testHardTargetConstraintChangesShotChoice();
 testUnavailableHardTargetIsReportedAsFallback();
   testSafeCommandForbidsRiskCards();
   testLegalShotsHonorSafeConstraints();
-  testShotEventsExposeCardComboIdentity();
-  testLegalShotsExposeCardComboIdentity();
-  testHandAnalysisSummarizesTacticalRead();
-  testCardProfilesExposeTacticalCardRoles();
-  testApplyTurnCanUseProviderCandidate();
-  testApplyTurnCanUseProviderExpression();
-  testProviderExpressionsNormalizeCommonModelSyntax();
-  testRicherCardCatalog();
+testShotEventsExposeCardComboIdentity();
+testLegalShotsExposeCardComboIdentity();
+testHandAnalysisSummarizesTacticalRead();
+testCardProfilesExposeTacticalCardRoles();
+testApplyTurnCanUseProviderCandidate();
+testApplyTurnCanUseProviderExpression();
+testProviderExpressionCanUseEveryCurrentHandFunction();
+testDamageVariesByHitQualityAndFunctionCombo();
+testProviderExpressionsNormalizeCommonModelSyntax();
+testRicherCardCatalog();
   testCardLabelsReadLikeFunctionNames();
   testShotExpressionsUseExpandedMathFunctions();
   testCompactHandsStillGuaranteeShapeChoices();

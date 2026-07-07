@@ -396,7 +396,6 @@ function rulesSnapshot(state, activeUnitId, command) {
       action: "shot",
       candidateId: shot.candidateId,
       targetId: shot.targetId,
-      cost: shot.cost,
       combo: shot.combo?.name || "y0+dy*t"
     }))
   ];
@@ -426,8 +425,9 @@ function rulesSnapshot(state, activeUnitId, command) {
       retained: true,
       swapsUsed,
       swapsRemaining,
-      analysis: Sim.analyzeHand(hand, Sim.getEnergy(state.turn)),
-      cards: hand.map((card, index) => ({ slot: index + 1, function: card.label, label: card.label, family: card.family, cost: card.cost }))
+      analysis: Sim.analyzeHand(hand),
+      availableFunctionTypes: Sim.allowedFunctionNamesForHand ? Sim.allowedFunctionNamesForHand(hand) : [],
+      cards: hand.map((card, index) => ({ slot: index + 1, function: card.label, label: card.label, family: card.family, tags: card.tags }))
     },
     legalActions,
     recentFeedback
@@ -2466,7 +2466,7 @@ function AgentBattleMatrix({ state, match, activeTeam, activeUnitId, lastDecisio
             <div className="agent-hand-strip" aria-label={`${seat.unitId} retained hand`}>
               {hand.map((card) => (
                 <span key={`${seat.unitId}-${card.instanceId}`}>
-                  {card.label}<b>{card.cost}</b>
+                  {card.label}<b>{card.family}</b>
                 </span>
               ))}
             </div>
@@ -2689,7 +2689,7 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
   const event = latestEvent && (latestEvent.unitId === unitId || latestEvent.shooterId === unitId || latestEvent.team === team) ? latestEvent : null;
   const feedbackEvent = event || action?.event || latestEvent || null;
   const thinking = feedbackEvent?.thinking || {};
-  const handAnalysis = Sim.analyzeHand(activeHand || [], Sim.getEnergy(state.turn));
+  const handAnalysis = Sim.analyzeHand(activeHand || []);
   const modelThought = thinking.providerReason || action?.publicReason || thinking.publicReason || tx(locale, "waitingDecision");
   const expression = isSwap ? "swap_hand()" : feedbackEvent?.expression || action?.event?.expression || "";
   const usedFunctions = isSwap && swappedHand.length
@@ -2733,7 +2733,7 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
       <div className="thought-hand-read">
         <span>{tx(locale, "handRead")}</span>
         <strong>{usedFunctions}</strong>
-        <small>{handAnalysis.energyRead || `${activeHand?.length || 0} ${tx(locale, "cards")}`} · {handAnalysis.risk || "stable"}</small>
+        <small>{handAnalysis.functionRead || `${activeHand?.length || 0} ${tx(locale, "cards")}`} · {handAnalysis.risk || "stable"}</small>
       </div>
     </aside>
   );
@@ -2837,8 +2837,8 @@ function HandRack({ hand, activeTeam, activeUnitId, className = "", locale }) {
       <div className="card-grid">
         {hand.map((card) => (
           <article className={`battle-card ${card.rarity}`} key={card.instanceId}>
-            <span>{card.cost}E · {card.family}</span>
-            <h3><strong className="card-function-name">{functionCardName(card)}</strong><b>{card.cost}E</b></h3>
+            <span>{card.family}</span>
+            <h3><strong className="card-function-name">{functionCardName(card)}</strong></h3>
             <p>{card.tags.join(" / ")}</p>
             <div>{card.tags.map((tag) => <small key={tag}>{tag}</small>)}</div>
           </article>
@@ -2981,11 +2981,10 @@ function FunctionLibraryPanel() {
     .map(([id, card]) => ({
       id,
       label: card.label || id,
-      cost: card.cost,
       family: card.family || "function",
       tags: Array.isArray(card.tags) ? card.tags.slice(0, 2) : []
     }))
-    .sort((a, b) => Number(a.cost) - Number(b.cost) || a.label.localeCompare(b.label));
+    .sort((a, b) => String(a.family).localeCompare(String(b.family)) || a.label.localeCompare(b.label));
   return (
     <div className="function-library-panel" data-testid="function-library-panel">
       <div className="panel-title"><ListOrdered size={18} /> Function Cards</div>
@@ -2993,7 +2992,7 @@ function FunctionLibraryPanel() {
         {cards.map((card) => (
           <span key={card.id}>
             <b>{card.label}</b>
-            <small>{card.cost}E · {card.family}{card.tags.length ? ` · ${card.tags.join(" / ")}` : ""}</small>
+            <small>{card.family}{card.tags.length ? ` · ${card.tags.join(" / ")}` : ""}</small>
           </span>
         ))}
       </div>

@@ -1292,6 +1292,7 @@ function isModelDecisionError(err) {
   const message = err && err.message ? String(err.message) : "";
   if (!message) return false;
   if (err.status || err.body) return false;
+  if (/fetch failed|network|socket|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|aborted/i.test(message)) return false;
   return ![
     "provider_http_error",
     "provider_timeout",

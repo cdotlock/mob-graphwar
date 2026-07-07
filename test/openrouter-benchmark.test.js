@@ -160,6 +160,25 @@ async function testLeagueBattleCanPenalizeInvalidModelActions() {
   assert.strictEqual(battle.state.reason, "resolution_guard");
 }
 
+async function testLeagueBattleDoesNotPenalizeNetworkFailuresAsInvalidActions() {
+  const teamA = { id: "raw-a", label: "Raw A", provider: "openrouter", model: "openai/gpt-5.5", command: "", apiKey: "sk-test" };
+  const teamB = { id: "raw-b", label: "Raw B", provider: "openrouter", model: "anthropic/claude-opus-4.8", command: "", apiKey: "sk-test" };
+  await assert.rejects(
+    () =>
+      runLeagueBattle(
+        8123,
+        teamA,
+        teamB,
+        { GRAPHWAR_ALLOWED_PROVIDERS: "openrouter" },
+        async () => {
+          throw new TypeError("fetch failed");
+        },
+        { maxActions: 1, penalizeInvalidActions: true }
+      ),
+    /fetch failed/
+  );
+}
+
 async function testRunWithConcurrencyKeepsResultsInScheduleOrder() {
   const seen = [];
   const results = await runWithConcurrency(
@@ -305,6 +324,7 @@ async function testBenchmarkStopsOnProviderErrorByDefault() {
   await testLeagueBattleCanUseBenchmarkActionCap();
   await testLeagueBattleCannotExceedGlobalActionCap();
   await testLeagueBattleCanPenalizeInvalidModelActions();
+  await testLeagueBattleDoesNotPenalizeNetworkFailuresAsInvalidActions();
   await testRunWithConcurrencyKeepsResultsInScheduleOrder();
   await testConcurrentBenchmarkDoesNotDoubleScore();
   await testBenchmarkCanResumeExistingTraceFiles();

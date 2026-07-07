@@ -379,6 +379,18 @@ function testNormalizeDecision() {
     candidateId: undefined,
     publicReason: "Legacy action."
   });
+  assert.deepStrictEqual(
+    normalizeProviderDecision(
+      '{"action":"shot","targetId":"B2","expression":"y=y0+dy*t+12*sin(pi*t)","cardSlots":[1,3],"publicReason":"clear arc"}'
+    ),
+    {
+      action: "shot",
+      targetId: "B2",
+      expression: "y=y0+dy*t+12*sin(pi*t)",
+      cardSlots: [1, 3],
+      publicReason: "clear arc"
+    }
+  );
   assert.throws(() => normalizeProviderDecision("not json"), /invalid_provider_json/);
 }
 
@@ -438,7 +450,10 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
   assert.strictEqual(request.body.messages.length, 1, "OpenRouter should receive only the public rules payload");
   const userPayload = JSON.parse(request.body.messages[0].content);
   assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"));
-  assert.ok(userPayload.legalActions.some((action) => action.action === "shot"));
+  const shotAction = userPayload.legalActions.find((action) => action.action === "shot");
+  assert.ok(shotAction, "provider should receive a shot action contract");
+  assert.ok(!JSON.stringify(userPayload).includes("candidateId"), "provider prompt should not include precomputed shot candidates");
+  assert.ok(shotAction.output.expression.includes("y="), "provider prompt should ask the model to write a function expression");
 }
 
 function testOpenRouterCanEnableReasoningForBenchmark() {
@@ -488,7 +503,13 @@ function testOpenRouterBenchmarkCanRequireStrictDecisionJson() {
   assert.strictEqual(request.body.response_format.type, "json_schema");
   assert.strictEqual(request.body.response_format.json_schema.name, "graphwar_agent_decision");
   assert.strictEqual(request.body.response_format.json_schema.strict, true);
-  assert.deepStrictEqual(request.body.response_format.json_schema.schema.required, ["action", "candidateId", "publicReason"]);
+  assert.deepStrictEqual(request.body.response_format.json_schema.schema.required, [
+    "action",
+    "targetId",
+    "expression",
+    "cardSlots",
+    "publicReason"
+  ]);
   assert.deepStrictEqual(request.body.reasoning, { enabled: true, effort: "high", exclude: false });
   assert.deepStrictEqual(request.body.plugins, [{ id: "response-healing" }]);
   assert.strictEqual(request.body.provider, undefined);
@@ -596,8 +617,6 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
   const openrouter = getProvider("openrouter");
   const state = Sim.createInitialState({ seed: 7351 });
   const rulesPayload = Contract.buildRulesPayload(state, "A1", "");
-  const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
-  assert.ok(candidates.length > 0, "test needs at least one legal shot candidate");
   const fetchMock = async () => ({
     ok: true,
     status: 200,
@@ -608,8 +627,11 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
             reasoning: "I compare the legal function candidates before selecting the first shot.",
             reasoning_details: [{ type: "reasoning.text", text: "Detailed model thought trace." }],
             content: JSON.stringify({
-              candidateId: candidates[0].candidateId,
-              publicReason: "The first candidate is legal."
+              action: "shot",
+              targetId: "B2",
+              expression: "y=y0+dy*t+12*sin(pi*t)",
+              cardSlots: [1],
+              publicReason: "The function clears the first obstacle."
             })
           }
         }
@@ -622,7 +644,7 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
     {
       apiKey: "sk-redacted",
       command: "",
-      candidates,
+      candidates: [],
       stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
       rulesPayload,
       model: "google/gemini-3.5-flash",
@@ -634,7 +656,7 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
   assert.strictEqual(result.decision.action, "shot");
   assert.ok(result.reasoningText.includes("compare the legal function candidates"), "reasoning text should be preserved for benchmark traces");
   assert.deepStrictEqual(result.reasoningDetails, [{ type: "reasoning.text", text: "Detailed model thought trace." }]);
-  assert.ok(result.rawText.includes(candidates[0].candidateId), "raw JSON model output should be preserved separately");
+  assert.ok(result.rawText.includes("sin(pi*t)"), "raw JSON model output should be preserved separately");
 }
 
 async function testExecuteProviderDecisionAttachesFailedRawOutput() {

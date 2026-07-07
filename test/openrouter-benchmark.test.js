@@ -46,7 +46,10 @@ function testResolveTargetModelsUsesCurrentOpenRouterIds() {
   assert.ok(resolved.contestants.every((contestant) => contestant.provider === "openrouter"));
   assert.ok(resolved.contestants.every((contestant) => contestant.command === ""), "raw benchmark should not add standing orders");
   const gpt = resolved.contestants.find((contestant) => contestant.model === "openai/gpt-5.5");
-  assert.deepStrictEqual(gpt.reasoning, { enabled: true, exclude: false, effort: "high" }, "reasoning-capable models should run with high thinking visible in traces");
+  assert.strictEqual(gpt.reasoning, null, "raw benchmark should default to reasoning off for cost control");
+  const highResolved = resolveTargetModels(catalog, { reasoning: "high" });
+  const highGpt = highResolved.contestants.find((contestant) => contestant.model === "openai/gpt-5.5");
+  assert.deepStrictEqual(highGpt.reasoning, { enabled: true, exclude: false, effort: "high" }, "reasoning can still be enabled explicitly for thinking traces");
   assert.strictEqual(gpt.strictDecisionSchema, true, "raw benchmark should enforce the tiny decision JSON schema");
   assert.ok(resolved.contestants.some((contestant) => contestant.model === "google/gemini-3.1-pro-preview"), "requested Gemini 3.1 Pro should map to the live preview model id");
   assert.deepStrictEqual(resolved.missing, []);
@@ -118,7 +121,6 @@ async function testConcurrentBenchmarkDoesNotDoubleScore() {
     fetch: async (_url, options) => {
       const payload = JSON.parse(options.body);
       const rules = JSON.parse(payload.messages[0].content);
-      const shot = rules.legalActions.find((action) => action.action === "shot");
       return {
         ok: true,
         status: 200,
@@ -126,8 +128,14 @@ async function testConcurrentBenchmarkDoesNotDoubleScore() {
           choices: [
             {
               message: {
-                reasoning: "Pick the first legal shot.",
-                content: JSON.stringify({ action: "shot", candidateId: shot.candidateId, publicReason: "first legal shot" })
+                reasoning: "Write a simple function shot.",
+                content: JSON.stringify({
+                  action: "shot",
+                  targetId: rules.opponentIds[0],
+                  expression: "y=y0+dy*t+8*sin(pi*t)",
+                  cardSlots: [1],
+                  publicReason: "simple function shot"
+                })
               }
             }
           ]
@@ -139,6 +147,27 @@ async function testConcurrentBenchmarkDoesNotDoubleScore() {
   assert.ok(result.leaderboard.every((row) => row.games === 2), "each contestant should be scored once per scheduled match, not once per worker plus summary");
 }
 
+async function testBenchmarkStopsOnProviderErrorByDefault() {
+  await assert.rejects(
+    () =>
+      runBenchmark({
+        apiKey: "sk-test",
+        catalog: [
+          fakeModel("openai/gpt-5.5", "OpenAI: GPT-5.5", 10),
+          fakeModel("anthropic/claude-opus-4.8", "Anthropic: Claude Opus 4.8", 20)
+        ],
+        limitModels: 2,
+        gamesPerPair: 1,
+        maxActions: 1,
+        concurrency: 1,
+        outDir: "artifacts/openrouter-benchmark/test-stop-on-error",
+        allowMissing: true,
+        fetch: async () => ({ ok: false, status: 402, text: async () => "no credits" })
+      }),
+    /provider_http_error/
+  );
+}
+
 (async () => {
   testResolveTargetModelsUsesCurrentOpenRouterIds();
   testBenchmarkScheduleAlternatesSidesForEveryPair();
@@ -146,6 +175,7 @@ async function testConcurrentBenchmarkDoesNotDoubleScore() {
   await testLeagueBattleCanUseBenchmarkActionCap();
   await testRunWithConcurrencyKeepsResultsInScheduleOrder();
   await testConcurrentBenchmarkDoesNotDoubleScore();
+  await testBenchmarkStopsOnProviderErrorByDefault();
   console.log("openrouter benchmark tests passed");
 })().catch((err) => {
   console.error(err);

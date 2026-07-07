@@ -69,22 +69,34 @@
       tags: card.tags,
       description: card.description
     }));
-    const allShotCandidates = Sim.listLegalShots(state, activeUnitId, command);
-    const shotActions = allShotCandidates.slice(0, MAX_PUBLIC_CANDIDATES).map(publicShotCandidate);
     const swapsUsed = handState ? Number(handState.swapsUsed ?? handState.rerollsUsed) || 0 : 0;
     const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+    const opponentIds = units.filter((unit) => unit.team !== team && unit.hp > 0).map((unit) => unit.id);
+    const shotAction = {
+      action: "shot",
+      allowedTargetIds: opponentIds,
+      output: {
+        action: "shot",
+        targetId: "one allowedTargetIds value",
+        expression: "y=<math expression using t,u,d,x,y0,y1,dy>; t=(u/d)",
+        cardSlots: "array of 1-based hand card slots used",
+        publicReason: "short visible explanation"
+      }
+    };
     const legalActions = swapsRemaining > 0
-      ? [{ action: "swap_hand", swapsUsed, swapsRemaining }].concat(shotActions)
-      : shotActions;
+      ? [{ action: "swap_hand", swapsUsed, swapsRemaining }].concat([shotAction])
+      : [shotAction];
     return {
       rules: {
         turnOrder: "A1, B1, A2, B2 rotate as separate AI seats",
-        actionLimit: "choose exactly one legal action: swap_hand or shot",
+        actionLimit: "choose exactly one legal action: swap_hand or shot; for shot, write your own function expression instead of choosing a precomputed candidate",
         handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
         swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
         cardUse: `${Sim.CONFIG.maxCardsPerShot} cards max, ${Sim.CONFIG.maxShapeCards} shape cards max, ${Sim.CONFIG.maxModifierCards} modifier max`,
+        expressionVariables: "t is normalized 0..1, u is horizontal travel, d is shooter-target horizontal distance, x is board x, y0/y1 are shooter/target y, dy=y1-y0",
+        expressionFunctions: "allowed functions include sin, cos, tan, abs, min, max, exp, log, log1p, sqrt, pow, atan, tanh, sigmoid, softplus, GELU, SiLU",
         promptPolicy: "this JSON packet is the full public model contract; no hidden tactical hints are provided",
-        output: "return JSON only"
+        output: "return JSON only with action,targetId,expression,cardSlots,publicReason; swap_hand uses empty targetId/expression and [] cardSlots"
       },
       objective: "eliminate opposing team while avoiding allied units",
       team,
@@ -94,7 +106,7 @@
         : { id: activeUnitId, team },
       command: String(command || "").slice(0, Sim.CONFIG.maxCommandLength),
       allyIds: units.filter((unit) => unit.team === team && unit.hp > 0).map((unit) => unit.id),
-      opponentIds: units.filter((unit) => unit.team !== team && unit.hp > 0).map((unit) => unit.id),
+      opponentIds,
       state: {
         seed: state.seed,
         turn: state.turn,
@@ -113,9 +125,10 @@
         cards
       },
       actionSpace: {
-        shotCandidateCount: allShotCandidates.length,
-        publicShotCandidateCount: shotActions.length,
-        capped: allShotCandidates.length > shotActions.length
+        mode: "model_written_expression",
+        shotCandidateCount: 0,
+        publicShotCandidateCount: 0,
+        capped: false
       },
       legalActions
     };
@@ -124,7 +137,8 @@
   function validateAgentDecision(decision, legalActions) {
     if (!decision || typeof decision !== "object") return { ok: false, reason: "missing_decision" };
     const actions = Array.isArray(legalActions) ? legalActions : [];
-    const candidates = actions.filter((item) => item.action === "shot" || !item.action);
+    const shotContract = actions.find((item) => item.action === "shot") || {};
+    const candidates = actions.filter((item) => item.action === "shot" && item.candidateId);
     if (decision.action === "swap_hand" || decision.action === "reroll") {
       if (!actions.some((item) => item.action === "swap_hand")) return { ok: false, reason: "reroll_limit_reached" };
       return {
@@ -132,6 +146,26 @@
         action: "swap_hand",
         publicReason:
           typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider chose to swap hand."
+      };
+    }
+    if (typeof decision.expression === "string") {
+      const allowedTargets = Array.isArray(shotContract.allowedTargetIds) ? shotContract.allowedTargetIds : [];
+      if (typeof decision.targetId !== "string" || !decision.targetId.trim()) return { ok: false, reason: "missing_target_id" };
+      if (allowedTargets.length && !allowedTargets.includes(decision.targetId)) return { ok: false, reason: "unknown_target_id" };
+      const expression = decision.expression.trim();
+      if (!expression) return { ok: false, reason: "missing_expression" };
+      if (expression.length > 600) return { ok: false, reason: "expression_too_long" };
+      const cardSlots = Array.isArray(decision.cardSlots)
+        ? decision.cardSlots.map((slot) => Number(slot)).filter((slot) => Number.isInteger(slot) && slot >= 1 && slot <= Sim.CONFIG.handSize)
+        : [];
+      return {
+        ok: true,
+        action: "shot",
+        targetId: decision.targetId,
+        expression,
+        cardSlots: Array.from(new Set(cardSlots)).slice(0, Sim.CONFIG.maxCardsPerShot),
+        publicReason:
+          typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider wrote a function shot."
       };
     }
     if (typeof decision.candidateId !== "string") return { ok: false, reason: "missing_candidate_id" };

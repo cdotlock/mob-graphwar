@@ -61,12 +61,20 @@ function testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames() {
     payload.hand.cards.every((card) => typeof card.function === "string" && card.function.includes("t")),
     "hand cards should expose math function expressions"
   );
-  assert.ok(
-    payload.legalActions
-      .filter((action) => action.action === "shot")
-      .every((action) => action.cards.every((card) => typeof card.function === "string" && card.function.length > 0)),
-    "shot candidates should expose math functions for every card"
-  );
+  const shotAction = payload.legalActions.find((action) => action.action === "shot");
+  assert.ok(shotAction.output.expression.includes("math expression"), "shot action should ask the model to write math");
+}
+
+function testRulesPayloadDoesNotExposeShotCandidates() {
+  const state = Sim.createInitialState({ seed: 7351 });
+  const payload = Contract.buildRulesPayload(state, "A1", "hit B2 high");
+  const serialized = JSON.stringify(payload);
+  assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should still expose the shot action");
+  assert.ok(payload.legalActions.some((action) => action.action === "swap_hand"), "payload should still expose swap_hand");
+  assert.ok(!serialized.includes("candidateId"), "model prompt should not include precomputed shot candidates");
+  const shotAction = payload.legalActions.find((action) => action.action === "shot");
+  assert.deepStrictEqual(shotAction.allowedTargetIds.sort(), ["B1", "B2"], "shot action should list target ids, not candidate ids");
+  assert.ok(shotAction.output.expression.includes("y="), "shot action should tell the model to write an expression");
 }
 
 function testDecisionValidation() {
@@ -111,6 +119,7 @@ function testSecretRedaction() {
 testCandidateExportIsSafe();
 testRulesPayloadIsBareGameStateAndLegalActions();
 testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames();
+testRulesPayloadDoesNotExposeShotCandidates();
 testDecisionValidation();
 testSecretRedaction();
 

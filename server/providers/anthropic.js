@@ -4,15 +4,26 @@ function buildAnthropicRequest(provider, payload, apiKey) {
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
-        actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot",
+        actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot; for shot write your own function expression",
         handRetention: "cards persist until the active model chooses swap_hand",
         output: "return JSON only"
       },
       command: payload.command,
       state: payload.stateSummary,
-      legalActions: [{ action: "swap_hand", swapsRemaining: 3 }].concat(
-        (payload.candidates || []).map((candidate) => ({ action: "shot", ...candidate }))
-      )
+      legalActions: [
+        { action: "swap_hand", swapsRemaining: 3 },
+        {
+          action: "shot",
+          allowedTargetIds: [],
+          output: {
+            action: "shot",
+            targetId: "target unit id",
+            expression: "y=<math expression>",
+            cardSlots: [],
+            publicReason: "short explanation"
+          }
+        }
+      ]
     };
   return {
     url: "https://api.anthropic.com/v1/messages",

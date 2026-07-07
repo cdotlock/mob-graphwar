@@ -711,7 +711,7 @@ function configuredSeatProvider(seat, env) {
       model: seat.model || source[provider.modelEnv] || provider.defaultModel
     };
   }
-  if (!player || !apiKey) return null;
+  if (!player || (!apiKey && !envKey)) return null;
   const model = providerConfig.model || seat.model || source[provider.modelEnv] || provider.defaultModel;
   return { player, provider, providerConfig, apiKey, model };
 }
@@ -724,8 +724,8 @@ function createProviderBudget(env) {
     calls: 0,
     failures: 0,
     disabled: false,
-    maxCalls: Number.isFinite(maxCalls) && maxCalls >= 0 ? maxCalls : 6,
-    maxFailures: Number.isFinite(maxFailures) && maxFailures >= 0 ? maxFailures : 2
+    maxCalls: Number.isFinite(maxCalls) && maxCalls >= 0 ? maxCalls : Infinity,
+    maxFailures: Number.isFinite(maxFailures) && maxFailures >= 0 ? maxFailures : Infinity
   };
 }
 
@@ -747,14 +747,8 @@ async function autoResolveDecisionForTurn(match, turn, options) {
   const rulesPayload = Contract.buildRulesPayload(match.state, turn.unitId || turn.team, turn.command);
   const rulesDigest = buildRulesDigest(rulesPayload);
   const configured = configuredSeatProvider(turn.seat, opts.env);
-  if (!configured || !budgetAllowsProvider(opts.providerBudget)) {
-    return {
-      command: turn.command,
-      providerLabel: localAutoProviderLabel(turn.team),
-      decision: localDecisionFromRules(rulesPayload),
-      rulesDigest
-    };
-  }
+  if (!configured) throw new Error("provider_not_configured");
+  if (!budgetAllowsProvider(opts.providerBudget)) throw new Error("provider_budget_exhausted");
 
   const providerLabel = `${turn.seat.displayName || configured.player?.displayName || configured.provider.label} / ${configured.model}`;
   try {
@@ -779,12 +773,7 @@ async function autoResolveDecisionForTurn(match, turn, options) {
     };
   } catch (err) {
     recordProviderFailure(opts.providerBudget, err);
-    return {
-      command: turn.command,
-      providerLabel: localAutoProviderLabel(turn.team),
-      decision: localDecisionFromRules(rulesPayload),
-      rulesDigest
-    };
+    throw err;
   }
 }
 
@@ -822,6 +811,9 @@ async function advanceMatchToResolution(match, options) {
       { [turn.unitId || turn.team]: resolved.command },
       {
         candidateId: resolved.decision.candidateId || undefined,
+        targetId: resolved.decision.targetId || undefined,
+        expression: resolved.decision.expression || undefined,
+        cardSlots: resolved.decision.cardSlots || undefined,
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
       }
@@ -834,6 +826,9 @@ async function advanceMatchToResolution(match, options) {
       provider: resolved.providerLabel,
       publicReason: resolved.decision.publicReason,
       candidateId: resolved.decision.candidateId || null,
+      targetId: resolved.decision.targetId || null,
+      expression: resolved.decision.expression || null,
+      cardSlots: resolved.decision.cardSlots || [],
       resultLabel: event ? event.resultLabel : match.state.reason || null,
       event: publicEventSummary(event),
       rulesDigest: resolved.rulesDigest
@@ -1164,12 +1159,27 @@ function localDecisionFromRules(rulesPayload) {
         : "Local baseline swapped a weak retained hand before firing."
     };
   }
-  const shot = shotActions[0];
+  const shot = shotActions.find((action) => action.candidateId);
   if (shot) {
     return {
       action: "shot",
       candidateId: shot.candidateId,
       publicReason: "Local baseline selected the first legal shot."
+    };
+  }
+  const shotContract = actions.find((action) => action.action === "shot");
+  const targetId = Array.isArray(shotContract?.allowedTargetIds) && shotContract.allowedTargetIds.length
+    ? shotContract.allowedTargetIds[0]
+    : Array.isArray(rulesPayload.opponentIds) && rulesPayload.opponentIds.length
+    ? rulesPayload.opponentIds[0]
+    : "";
+  if (targetId) {
+    return {
+      action: "shot",
+      targetId,
+      expression: "y=y0+dy*t",
+      cardSlots: [],
+      publicReason: "Local baseline wrote a direct line function."
     };
   }
   if (actions.some((action) => action.action === "reroll")) {
@@ -1188,14 +1198,17 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
   const rulesPayload = Contract.buildRulesPayload(state, unit ? unit.id : team, command);
   const provider = getProvider(contestant.provider);
   const allowedProviders = listProviders(env).map((item) => item.id);
-  const apiKey = contestant.apiKey.trim();
-  if (!provider || contestant.provider === "local" || !allowedProviders.includes(provider.id) || (!apiKey && !providerEnvKey(provider, env))) {
+  const apiKey = String(contestant.apiKey || "").trim();
+  if (contestant.provider === "local") {
     return {
       command,
       providerLabel: `${contestant.label} / local`,
       decision: localDecisionFromRules(rulesPayload),
       rawText: ""
     };
+  }
+  if (!provider || !allowedProviders.includes(provider.id) || (!apiKey && !providerEnvKey(provider, env))) {
+    throw new Error("provider_not_configured");
   }
   const result = await executeProviderDecision(
     provider,
@@ -1277,6 +1290,9 @@ function publicLeagueAction(state, action, beforeEventCount) {
     provider: action.provider,
     action: action.action,
     candidateId: action.candidateId || null,
+    targetId: action.targetId || null,
+    expression: action.expression || "",
+    cardSlots: Array.isArray(action.cardSlots) ? action.cardSlots : [],
     publicReason: action.publicReason || "",
     modelOutput: action.modelOutput || "",
     reasoning: action.reasoning || "",
@@ -1307,8 +1323,8 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
     try {
       resolved = await contestantDecision(contestant, state, unitId, env, fetchFn);
     } catch (err) {
-      if (opts.continueOnProviderError === false) throw err;
-      resolved = contestantFailureDecision(contestant, state, unitId, err, failures);
+      contestantFailureDecision(contestant, state, unitId, err, failures);
+      throw err;
     }
     const actionBase = {
       index: actions.length,
@@ -1345,6 +1361,9 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
       { [unitId || team]: resolved.command },
       {
         candidateId: resolved.decision.candidateId || undefined,
+        targetId: resolved.decision.targetId || undefined,
+        expression: resolved.decision.expression || undefined,
+        cardSlots: resolved.decision.cardSlots || undefined,
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
       }
@@ -1352,7 +1371,10 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
     actions.push(publicLeagueAction(state, {
       ...actionBase,
       action: "shot",
-      candidateId: resolved.decision.candidateId || null
+      candidateId: resolved.decision.candidateId || null,
+      targetId: resolved.decision.targetId || null,
+      expression: resolved.decision.expression || null,
+      cardSlots: resolved.decision.cardSlots || []
     }, beforeEventCount));
   }
   if (!state.winner) {
@@ -1663,7 +1685,11 @@ function createServer(options) {
           return;
         }
         const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
-        sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command }, fetchFn));
+        try {
+          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command }, fetchFn));
+        } catch (err) {
+          sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
+        }
         return;
       }
       const resolveMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/resolve$/);
@@ -1681,7 +1707,11 @@ function createServer(options) {
           sendJson(res, 403, { error: "player_not_in_match" });
           return;
         }
-        sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve" }, fetchFn));
+        try {
+          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve" }, fetchFn));
+        } catch (err) {
+          sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
+        }
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/simulations/league") {

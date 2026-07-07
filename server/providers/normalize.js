@@ -29,6 +29,17 @@ function normalizeProviderDecision(raw) {
     throw new Error("invalid_provider_json");
   }
   const wantsSwap = parsed && (parsed.action === "swap_hand" || parsed.action === "reroll");
+  if (parsed && !wantsSwap && typeof parsed.expression === "string") {
+    return {
+      action: "shot",
+      targetId: typeof parsed.targetId === "string" ? parsed.targetId.trim() : "",
+      expression: stripReasoning(parsed.expression).slice(0, 600),
+      cardSlots: Array.isArray(parsed.cardSlots)
+        ? parsed.cardSlots.map((slot) => Number(slot)).filter((slot) => Number.isInteger(slot))
+        : [],
+      publicReason: stripReasoning(parsed.publicReason || "Provider wrote a function shot.").slice(0, 240)
+    };
+  }
   if (!parsed || (!wantsSwap && typeof parsed.candidateId !== "string")) {
     throw new Error("missing_candidate_id");
   }

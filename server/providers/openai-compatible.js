@@ -12,18 +12,27 @@ function decisionResponseFormat() {
           action: {
             type: "string",
             enum: ["shot", "swap_hand"],
-            description: "Use shot when choosing a listed candidateId; use swap_hand to replace the retained hand."
+            description: "Use shot when writing a function expression; use swap_hand to replace the retained hand."
           },
-          candidateId: {
+          targetId: {
             type: "string",
-            description: "When action is shot, this must exactly match one legalActions candidateId. When action is swap_hand, use an empty string."
+            description: "When action is shot, this must exactly match one allowedTargetIds value. When action is swap_hand, use an empty string."
+          },
+          expression: {
+            type: "string",
+            description: "When action is shot, write y=<math expression> using t,u,d,x,y0,y1,dy. When action is swap_hand, use an empty string."
+          },
+          cardSlots: {
+            type: "array",
+            items: { type: "integer" },
+            description: "1-based hand card slots used by the expression. Use [] for swap_hand."
           },
           publicReason: {
             type: "string",
             description: "One concise sentence explaining the selected legal action."
           }
         },
-        required: ["action", "candidateId", "publicReason"],
+        required: ["action", "targetId", "expression", "cardSlots", "publicReason"],
         additionalProperties: false
       }
     }
@@ -37,15 +46,26 @@ function buildOpenAICompatibleRequest(provider, payload, apiKey) {
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
-        actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot",
+        actionLimit: "choose exactly one legal action from legalActions: swap_hand or shot; for shot write your own function expression",
         handRetention: "cards persist until the active model chooses swap_hand",
         output: "return JSON only"
       },
       command: payload.command,
       state: payload.stateSummary,
-      legalActions: [{ action: "swap_hand", swapsRemaining: 3 }].concat(
-        (payload.candidates || []).map((candidate) => ({ action: "shot", ...candidate }))
-      )
+      legalActions: [
+        { action: "swap_hand", swapsRemaining: 3 },
+        {
+          action: "shot",
+          allowedTargetIds: [],
+          output: {
+            action: "shot",
+            targetId: "target unit id",
+            expression: "y=<math expression>",
+            cardSlots: [],
+            publicReason: "short explanation"
+          }
+        }
+      ]
     };
   const body = {
     model: payload.model || provider.defaultModel,

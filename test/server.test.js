@@ -34,6 +34,44 @@ function providerRulesPayload(requestBody) {
   return JSON.parse(userMessage.content);
 }
 
+function expressionShotFetchMock(captured) {
+  return async (url, options) => {
+    const requestBody = JSON.parse(options.body);
+    const prompt = String(url).includes("anthropic.com")
+      ? JSON.parse(requestBody.messages[0].content)
+      : providerRulesPayload(requestBody);
+    if (Array.isArray(captured)) captured.push({ url, options, requestBody, prompt });
+    const targetId = prompt.opponentIds && prompt.opponentIds[0] ? prompt.opponentIds[0] : "";
+    const content = JSON.stringify({
+      action: "shot",
+      targetId,
+      expression: "y=y0+dy*t+10*sin(pi*t)",
+      cardSlots: [1],
+      publicReason: "Provider wrote a function shot."
+    });
+    if (String(url).includes("anthropic.com")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: "text", text: content }] })
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content
+            }
+          }
+        ]
+      })
+    };
+  };
+}
+
 async function testHealthAndProviders() {
   const fetchMock = async () => ({
     ok: true,
@@ -154,7 +192,30 @@ async function testLoginMatchmakingAndRankLoop() {
   assert.strictEqual(match.json.match.state.mapMeta.complexity.generator, "poisson-blob-search", "ranked match should expose the map generator");
   assert.strictEqual(match.json.match.state.bonusPoints.length, 3, "ranked match should expose a small set of route bonus points to spectators");
 
-  const result = await request(createServer({ env: {} }), `/api/match/${match.json.match.id}/resolve`, {
+  const fetchMock = async (_url, options) => {
+    const payload = JSON.parse(options.body);
+    const prompt = providerRulesPayload(payload);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                action: "shot",
+                targetId: prompt.opponentIds[0],
+                expression: "y=y0+dy*t+10*sin(pi*t)",
+                cardSlots: [1],
+                publicReason: "Provider wrote a function shot."
+              })
+            }
+          }
+        ]
+      })
+    };
+  };
+  const result = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: fetchMock }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
@@ -202,7 +263,8 @@ function freshCreateServer() {
 async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-store-"));
   const dataFile = path.join(dataDir, "store.json");
-  const env = { GRAPHWAR_DATA_FILE: dataFile };
+  const env = { GRAPHWAR_DATA_FILE: dataFile, OPENROUTER_API_KEY: "sk-router-env" };
+  const fetchMock = expressionShotFetchMock();
   const createPersistentServer = freshCreateServer();
 
   const session = await request(createPersistentServer({ env }), "/api/session", {
@@ -227,7 +289,7 @@ async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   });
   assert.strictEqual(match.status, 200);
 
-  const resolved = await request(createPersistentServer({ env }), `/api/match/${match.json.match.id}/resolve`, {
+  const resolved = await request(createPersistentServer({ env, fetch: fetchMock }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId })
@@ -417,11 +479,15 @@ async function testSessionTokenProtectsRankedAndProviderRoutes() {
   assert.strictEqual(noDuelSession.status, 401);
   assert.strictEqual(noDuelSession.json.error, "missing_session");
 
-  const autoDuel = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
+  const autoDuel = await request(
+    createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: expressionShotFetchMock() }),
+    `/api/match/${joined.json.match.id}/auto-duel`,
+    {
     method: "POST",
     headers: authHeaders(registered, { "content-type": "application/json" }),
     body: JSON.stringify({ command: "safe arc" })
-  });
+    }
+  );
   assert.strictEqual(autoDuel.status, 200);
   assert.strictEqual(autoDuel.json.match.status, "resolved");
   assert.ok(!autoDuel.text.includes("sk-provider-session"), "auto duel should not leak stored provider keys");
@@ -480,8 +546,8 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
   const fetchMock = async (url, options) => {
     const requestBody = JSON.parse(options.body);
     const prompt = providerRulesPayload(requestBody);
-    const candidates = prompt.legalActions.filter((action) => action.action === "shot");
     capturedPrompts.push({ url, options, requestBody, prompt });
+    const targetId = prompt.opponentIds && prompt.opponentIds[0] ? prompt.opponentIds[0] : "";
     return {
       ok: true,
       status: 200,
@@ -489,16 +555,13 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
         choices: [
           {
             message: {
-              content: JSON.stringify(candidates[0]
-                ? {
-                    action: "shot",
-                    candidateId: candidates[0].candidateId,
-                    publicReason: "Provider followed the launch order."
-                  }
-                : {
-                    action: "swap_hand",
-                    publicReason: "Provider needed a legal firing hand."
-                  })
+              content: JSON.stringify({
+                action: "shot",
+                targetId,
+                expression: "y=y0+dy*t+12*sin(pi*t)",
+                cardSlots: [1],
+                publicReason: "Provider followed the launch order."
+              })
             }
           }
         ]
@@ -635,7 +698,7 @@ async function testRankedMatchRejectsMidDuelManualActions() {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ displayName: "Commander", providers: { deepseek: { apiKey: "", model: "local" } } })
+    body: JSON.stringify({ displayName: "Commander", providers: { deepseek: { apiKey: "sk-commander", model: "deepseek-v4-flash" } } })
   });
   assert.strictEqual(session.status, 200);
 
@@ -675,7 +738,7 @@ async function testRankedMatchRejectsMidDuelManualActions() {
   assert.strictEqual(fetched.json.match.state.turn, 0, "rejected manual actions must not consume turns");
   assert.strictEqual(fetched.json.match.state.events.length, 0, "rejected manual actions must not create events");
 
-  const autoDuel = await request(createServer({ env: {} }), `/api/match/${matchId}/auto-duel`, {
+  const autoDuel = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: expressionShotFetchMock() }), `/api/match/${matchId}/auto-duel`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
@@ -691,7 +754,7 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       displayName: "AutoDuelist",
-      providers: { deepseek: { apiKey: "", model: "local" } }
+      providers: { deepseek: { apiKey: "sk-auto", model: "deepseek-v4-flash" } }
     })
   });
   assert.strictEqual(session.status, 200);
@@ -703,7 +766,7 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   });
   assert.strictEqual(joined.status, 200);
 
-  const autoDuel = await request(createServer({ env: {} }), `/api/match/${joined.json.match.id}/auto-duel`, {
+  const autoDuel = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: expressionShotFetchMock() }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
@@ -729,8 +792,8 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   assert.strictEqual(autoDuel.json.autoBattle.finalTurn, autoDuel.json.match.state.events.length);
   assert.ok(autoDuel.json.autoBattle.resolvedTurns >= 1);
   assert.ok(autoDuel.json.autoBattle.finalEvent && autoDuel.json.autoBattle.finalEvent.resultLabel);
-  assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve A"));
-  assert.ok(autoDuel.json.autoBattle.providers.includes("Auto Resolve B"));
+  assert.ok(autoDuel.json.autoBattle.providers.some((provider) => provider.includes("deepseek-v4-flash")));
+  assert.ok(autoDuel.json.autoBattle.providers.some((provider) => provider.includes("openrouter/free")));
   assert.ok(Array.isArray(autoDuel.json.autoBattle.frames), "auto duel should return replayable battle frames");
   assert.ok(autoDuel.json.autoBattle.frames.length >= autoDuel.json.autoBattle.resolvedTurns + 1, "frames should include the starting state and every model action");
   assert.strictEqual(autoDuel.json.autoBattle.frames[0].action.action, "start", "first frame should represent the pre-duel state");
@@ -812,13 +875,13 @@ async function testMatchRulesEndpointExposesBareModelContract() {
   assert.ok(!rules.text.includes("system"), "rules endpoint should expose environment rules, not hidden prompt scaffolding");
 }
 
-async function testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel() {
+async function testAutoDuelThrowsWhenProviderIsNotConfigured() {
   const createIsolatedServer = freshCreateServer();
   const session = await request(createIsolatedServer({ env: {} }), "/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      displayName: "Local Swap",
+      displayName: "Missing Provider",
       providers: { deepseek: { apiKey: "", model: "local" } }
     })
   });
@@ -836,27 +899,14 @@ async function testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel() {
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ playerId: session.json.player.id })
   });
-  assert.strictEqual(autoDuel.status, 200);
-  const swapFrames = autoDuel.json.autoBattle.frames.filter((frame) => frame.action.action === "swap_hand");
-  assert.ok(swapFrames.length > 0, "local fallback models should sometimes choose swap_hand on hard maps");
-  assert.ok(
-    swapFrames.every((frame) => frame.action.swapsRemaining >= 0 && frame.action.swapsRemaining < 3),
-    "swap frames should expose decreasing swap economy"
-  );
-  assert.ok(
-    swapFrames.every((frame) => Array.isArray(frame.action.hand) && frame.action.hand.length === 4),
-    "swap frames should expose the newly retained hand so spectators see what changed"
-  );
-  assert.ok(
-    autoDuel.json.autoBattle.frames.some((frame) => frame.action.action === "shot"),
-    "auto duel should still fire shots after model-selected swaps"
-  );
+  assert.strictEqual(autoDuel.status, 400);
+  assert.strictEqual(autoDuel.json.error, "provider_not_configured");
 }
 
-function testLocalFallbackSwapPolicyUsesSolverPressure() {
+function testProviderErrorsAreNotSilentlyFallbacked() {
   const source = fs.readFileSync(path.join(__dirname, "..", "server", "index.js"), "utf8");
-  assert.ok(source.includes("solverPressure"), "local fallback swap policy should use map solver pressure");
-  assert.ok(source.includes("swapWindowHitRate"), "local fallback swap policy should use retained-hand swap-window metadata");
+  assert.ok(!source.includes("providerLabel: localAutoProviderLabel"), "provider errors should not return local fallback decisions");
+  assert.ok(source.includes('throw new Error("provider_not_configured")'), "missing providers should throw explicit errors");
 }
 
 async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
@@ -864,9 +914,9 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   const fetchMock = async (url, options) => {
     const requestBody = JSON.parse(options.body);
     const prompt = providerRulesPayload(requestBody);
-    const candidates = prompt.legalActions.filter((action) => action.action === "shot");
     capturedPrompts.push({ url, options, requestBody, prompt });
     const firstCall = capturedPrompts.length === 1;
+    const targetId = prompt.opponentIds && prompt.opponentIds[0] ? prompt.opponentIds[0] : "";
     return {
       ok: true,
       status: 200,
@@ -881,8 +931,10 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
                   }
                 : {
                     action: "shot",
-                    candidateId: candidates[0].candidateId,
-                    publicReason: "Provider chose a listed legal shot."
+                    targetId,
+                    expression: "y=y0+dy*t+12*sin(pi*t)",
+                    cardSlots: [1],
+                    publicReason: "Provider wrote a legal function shot."
                   })
             }
           }
@@ -908,7 +960,7 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
   });
   assert.strictEqual(joined.status, 200);
 
-  const autoDuel = await request(createServer({ env: {}, fetch: fetchMock }), `/api/match/${joined.json.match.id}/auto-duel`, {
+  const autoDuel = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: fetchMock }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
@@ -949,8 +1001,8 @@ async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
   const fetchMock = async (url, options) => {
     const requestBody = JSON.parse(options.body);
     const prompt = providerRulesPayload(requestBody);
-    const candidates = prompt.legalActions.filter((action) => action.action === "shot");
     captured.push({ url, options, requestBody, prompt });
+    const targetId = prompt.opponentIds && prompt.opponentIds[0] ? prompt.opponentIds[0] : "";
     return {
       ok: true,
       status: 200,
@@ -958,16 +1010,13 @@ async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
         choices: [
           {
             message: {
-              content: JSON.stringify(candidates[0]
-                ? {
-                    action: "shot",
-                    candidateId: candidates[0].candidateId,
-                    publicReason: "OpenRouter free opponent picked a listed legal shot."
-                  }
-                : {
-                    action: "swap_hand",
-                    publicReason: "OpenRouter free opponent searched another hand."
-                  })
+              content: JSON.stringify({
+                action: "shot",
+                targetId,
+                expression: "y=y0+dy*t+10*sin(pi*t)",
+                cardSlots: [1],
+                publicReason: "OpenRouter free opponent wrote a function shot."
+              })
             }
           }
         ]
@@ -1015,7 +1064,7 @@ async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
   assert.ok(!autoDuel.text.includes("sk-router-env"), "auto duel should not leak OpenRouter env key");
 }
 
-async function testAutoDuelCapsSlowProviderCallsAndFallsBackLocally() {
+async function testAutoDuelPropagatesSlowProviderTimeout() {
   let providerCalls = 0;
   const env = {
     OPENROUTER_API_KEY: "sk-router-env",
@@ -1058,13 +1107,9 @@ async function testAutoDuelCapsSlowProviderCallsAndFallsBackLocally() {
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ command: "safe arc" })
   });
-  assert.strictEqual(autoDuel.status, 200);
-  assert.strictEqual(autoDuel.json.match.status, "resolved");
-  assert.ok(providerCalls <= 2, "slow providers should be capped by the per-duel provider call budget");
-  assert.ok(
-    autoDuel.json.autoBattle.providers.some((provider) => provider === "Auto Resolve B"),
-    "provider timeout should fall back to the local AI resolver for the slow side"
-  );
+  assert.strictEqual(autoDuel.status, 504);
+  assert.strictEqual(autoDuel.json.error, "provider_timeout");
+  assert.ok(providerCalls >= 1, "slow provider should be called before timeout is propagated");
 }
 
 async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
@@ -1136,8 +1181,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   const fetchMock = async (url, options) => {
     captured = { url, options };
     const payload = JSON.parse(options.body);
-    const legalActions = providerRulesPayload(payload).legalActions;
-    const candidates = legalActions.filter((action) => action.action === "shot");
+    const prompt = providerRulesPayload(payload);
     return {
       ok: true,
       status: 200,
@@ -1146,8 +1190,11 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
           {
             message: {
               content: JSON.stringify({
-                candidateId: candidates[0].candidateId,
-                publicReason: "Provider chose a listed legal combo."
+                action: "shot",
+                targetId: prompt.opponentIds[0],
+                expression: "y=y0+dy*t+12*sin(pi*t)",
+                cardSlots: [1],
+                publicReason: "Provider wrote a legal function."
               })
             }
           }
@@ -1170,14 +1217,15 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
 
   assert.strictEqual(result.status, 200);
   assert.strictEqual(result.json.provider, "openai");
-  assert.ok(result.json.decision.candidateId, "response should include selected candidate id");
-  assert.ok(result.json.candidate.combo.name, "response should include selected combo");
+  assert.strictEqual(result.json.decision.targetId, "B1");
+  assert.ok(result.json.decision.expression.includes("sin(pi*t)"), "response should include model-written expression");
+  assert.strictEqual(result.json.candidate, null);
   assert.ok(captured.url.endsWith("/chat/completions"), "OpenAI-compatible adapter should call chat completions");
   assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
   const prompt = providerRulesPayload(JSON.parse(captured.options.body));
   assert.strictEqual(JSON.parse(captured.options.body).messages.length, 1, "provider request should not include hidden system prompt scaffolding");
   assert.strictEqual(prompt.state.map.windows, undefined, "provider prompt should not include route windows");
-  assert.ok(prompt.legalActions.every((action) => action.mapFit === undefined), "provider candidates should not leak simulated map fit");
+  assert.ok(!JSON.stringify(prompt).includes("candidateId"), "provider prompt should not include precomputed candidates");
   assert.ok(prompt.legalActions.some((action) => action.action === "swap_hand"), "provider prompt should expose swap_hand as a legal action");
   assert.ok(!prompt.legalActions.some((action) => action.action === "reroll"), "provider prompt should not expose old reroll wording");
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
@@ -1195,7 +1243,6 @@ async function testProviderShotUsesCurrentTurnOrder() {
   const fetchMock = async (url, options) => {
     const payload = JSON.parse(options.body);
     capturedPrompt = providerRulesPayload(payload);
-    const candidates = capturedPrompt.legalActions.filter((action) => action.action === "shot");
     return {
       ok: true,
       status: 200,
@@ -1204,7 +1251,10 @@ async function testProviderShotUsesCurrentTurnOrder() {
           {
             message: {
               content: JSON.stringify({
-                candidateId: candidates[0].candidateId,
+                action: "shot",
+                targetId: capturedPrompt.opponentIds[0],
+                expression: "y=y0+dy*t+8*sin(pi*t)",
+                cardSlots: [1],
                 publicReason: "Provider followed the locked order."
               })
             }
@@ -1298,11 +1348,11 @@ async function testProviderShotRequiresKey() {
   await testRankedMatchRejectsMidDuelManualActions();
   await testAutoDuelResolvesRankedMatchWithBattleSummary();
   await testMatchRulesEndpointExposesBareModelContract();
-  await testLocalFallbackModelsCanSwapWeakHandsDuringAutoDuel();
-  testLocalFallbackSwapPolicyUsesSolverPressure();
+  await testAutoDuelThrowsWhenProviderIsNotConfigured();
+  testProviderErrorsAreNotSilentlyFallbacked();
   await testAutoDuelUsesConfiguredProviderWithoutLeakingKeys();
   await testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists();
-  await testAutoDuelCapsSlowProviderCallsAndFallsBackLocally();
+  await testAutoDuelPropagatesSlowProviderTimeout();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testModelLeagueRoundRobinCanExportCompleteTraces();
   await testProviderShotUsesByokAndValidatesCandidate();

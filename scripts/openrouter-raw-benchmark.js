@@ -225,6 +225,7 @@ function findModelForSpec(catalog, spec) {
 
 function resolveTargetModels(catalog, options) {
   const opts = options || {};
+  const reasoningMode = String(opts.reasoning || "off").toLowerCase();
   const specs = opts.includeRoutes ? TARGET_MODEL_SPECS.concat(ROUTE_MODEL_SPECS) : TARGET_MODEL_SPECS;
   const missing = [];
   const resolutions = specs.map((spec) => {
@@ -246,7 +247,7 @@ function resolveTargetModels(catalog, options) {
       modelName: resolution.model.name || resolution.model.id,
       command: "",
       apiKey: "",
-      reasoning: reasoningConfigForModel(resolution.model),
+      reasoning: reasoningMode === "high" ? reasoningConfigForModel(resolution.model) : null,
       strictDecisionSchema: true,
       meta: publicModelMeta(resolution.model)
     }));
@@ -491,7 +492,7 @@ async function runBenchmark(options) {
   ensureDir(path.join(outputDir, "traces"));
 
   const catalog = opts.catalog || await fetchOpenRouterModels(apiKey, opts.fetch);
-  const resolved = resolveTargetModels(catalog, { includeRoutes: opts.includeRoutes });
+  const resolved = resolveTargetModels(catalog, { includeRoutes: opts.includeRoutes, reasoning: opts.reasoning });
   if (resolved.missing.length && !opts.allowMissing) {
     const err = new Error(`missing_models:${resolved.missing.map((item) => item.requested).join(",")}`);
     err.missing = resolved.missing;
@@ -561,7 +562,7 @@ async function runBenchmark(options) {
     }
     try {
       const battle = await runLeagueBattle(entry.seed, entry.teamA, entry.teamB, env, opts.fetch || globalThis.fetch, {
-        continueOnProviderError: true,
+        continueOnProviderError: Boolean(opts.continueOnError),
         maxActions
       });
       const endedAt = new Date().toISOString();
@@ -595,6 +596,7 @@ async function runBenchmark(options) {
         trace: path.relative(outputDir, traceFile)
       };
     } catch (err) {
+      if (!opts.continueOnError) throw err;
       const endedAt = new Date().toISOString();
       const trace = {
         id,
@@ -684,6 +686,8 @@ async function main() {
     includeRoutes: Boolean(args["include-routes"]),
     dryRun: Boolean(args["dry-run"]),
     allowMissing: Boolean(args["allow-missing"]),
+    continueOnError: Boolean(args["continue-on-error"]),
+    reasoning: args.reasoning || "off",
     quiet: Boolean(args.quiet)
   });
   console.log(JSON.stringify({

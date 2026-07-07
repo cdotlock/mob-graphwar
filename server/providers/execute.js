@@ -190,6 +190,21 @@ async function executeProviderDecision(provider, payload, options) {
         reasoningDetails
       };
     }
+    if (validation.expression) {
+      return {
+        decision: {
+          action: "shot",
+          targetId: validation.targetId,
+          expression: validation.expression,
+          cardSlots: validation.cardSlots || [],
+          publicReason: validation.publicReason
+        },
+        candidate: null,
+        rawText: stripReasoning(rawText),
+        reasoningText,
+        reasoningDetails
+      };
+    }
     return {
       decision: {
         action: "shot",

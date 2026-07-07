@@ -290,6 +290,26 @@ function testApplyTurnCanUseProviderCandidate() {
   assert.strictEqual(event.thinking.providerReason, "Provider picked a stable legal shot.");
 }
 
+function testApplyTurnCanUseProviderExpression() {
+  const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
+  const state = Sim.createInitialState({ seed: 7351 });
+  const selected = Sim.listLegalShots(state, "A1", command)[0];
+  assert.ok(selected && selected.expression, "test needs a generated expression to replay");
+
+  Sim.applyTurn(state, { A1: command }, {
+    targetId: selected.targetId,
+    expression: selected.expression,
+    cardSlots: selected.cards.map((card) => card.slot),
+    providerReason: "Provider wrote its own function."
+  });
+  const event = state.events[0];
+  assert.strictEqual(event.targetId, selected.targetId);
+  assert.strictEqual(event.expression, selected.expression);
+  assert.strictEqual(event.candidateId, null, "provider-written functions should not need candidate ids");
+  assert.ok(state.paths[0].points.length > 10, "provider expression should be sampled into a replay path");
+  assert.strictEqual(event.thinking.providerReason, "Provider wrote its own function.");
+}
+
 function testRicherCardCatalog() {
   const cards = Object.values(Sim.CARD_LIBRARY);
   assert.ok(cards.length >= 28, "card catalog should contain a broader mathematical function pool");
@@ -582,6 +602,7 @@ testUnavailableHardTargetIsReportedAsFallback();
   testHandAnalysisSummarizesTacticalRead();
   testCardProfilesExposeTacticalCardRoles();
   testApplyTurnCanUseProviderCandidate();
+  testApplyTurnCanUseProviderExpression();
   testRicherCardCatalog();
   testCardLabelsReadLikeFunctionNames();
   testShotExpressionsUseExpandedMathFunctions();

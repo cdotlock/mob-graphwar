@@ -1772,11 +1772,269 @@
 
   function evalShotY(shot, u) {
     const tau = clamp(u / shot.distance, 0, 1);
+    if (shot.expressionFn) {
+      const direction = shot.target.x >= shot.shooter.x ? 1 : -1;
+      const vars = {
+        t: tau,
+        u,
+        d: shot.distance,
+        x: shot.shooter.x + direction * u,
+        y0: shot.shooter.y,
+        y1: shot.target.y,
+        dy: shot.deltaY
+      };
+      try {
+        return shot.expressionFn(vars);
+      } catch (err) {
+        return NaN;
+      }
+    }
     let y = shot.shooter.y + shot.deltaY * tau;
     for (const component of shot.components) {
       y += componentValue(component, tau);
     }
     return y;
+  }
+
+  function normalizeShotExpression(expression) {
+    let source = String(expression || "").trim();
+    const semicolon = source.indexOf(";");
+    if (semicolon >= 0) source = source.slice(0, semicolon).trim();
+    const equals = source.indexOf("=");
+    if (/^y\s*=/.test(source) && equals >= 0) source = source.slice(equals + 1).trim();
+    return source.replace(/\*\*/g, "^");
+  }
+
+  function tokenizeExpression(source) {
+    const tokens = [];
+    let index = 0;
+    const text = normalizeShotExpression(source);
+    while (index < text.length) {
+      const char = text[index];
+      if (/\s/.test(char)) {
+        index += 1;
+        continue;
+      }
+      const two = text.slice(index, index + 2);
+      if ([">=", "<=", "==", "!=", "&&", "||"].includes(two)) {
+        tokens.push({ type: "op", value: two });
+        index += 2;
+        continue;
+      }
+      if (/[0-9.]/.test(char)) {
+        const match = text.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?/i);
+        if (!match) throw new Error("invalid_number");
+        tokens.push({ type: "number", value: Number(match[0]) });
+        index += match[0].length;
+        continue;
+      }
+      if (/[A-Za-z_]/.test(char)) {
+        const match = text.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+        tokens.push({ type: "id", value: match[0] });
+        index += match[0].length;
+        continue;
+      }
+      if ("+-*/^(),?:<>".includes(char)) {
+        tokens.push({ type: "op", value: char });
+        index += 1;
+        continue;
+      }
+      throw new Error("invalid_character");
+    }
+    tokens.push({ type: "eof", value: "" });
+    return tokens;
+  }
+
+  function compileShotExpression(expression) {
+    const tokens = tokenizeExpression(expression);
+    let index = 0;
+    let nodes = 0;
+    const peek = () => tokens[index];
+    const take = (value) => {
+      if (peek().value === value) {
+        index += 1;
+        return true;
+      }
+      return false;
+    };
+    const expect = (value) => {
+      if (!take(value)) throw new Error(`expected_${value}`);
+    };
+    const markNode = () => {
+      nodes += 1;
+      if (nodes > 180) throw new Error("expression_too_complex");
+    };
+    const toBool = (value) => (Number(value) ? 1 : 0);
+    const safeNumber = (value) => {
+      const number = Number(value);
+      if (!Number.isFinite(number) || Math.abs(number) > 1_000_000) throw new Error("expression_out_of_range");
+      return number;
+    };
+    const functions = {
+      abs: Math.abs,
+      sin: Math.sin,
+      cos: Math.cos,
+      tan: Math.tan,
+      min: Math.min,
+      max: Math.max,
+      exp: Math.exp,
+      log: Math.log,
+      ln: Math.log,
+      log1p: Math.log1p,
+      sqrt: (value) => Math.sqrt(Math.max(0, value)),
+      pow: Math.pow,
+      atan: Math.atan,
+      tanh: Math.tanh,
+      sigmoid: (value) => 1 / (1 + Math.exp(-value)),
+      softplus: (value) => Math.log1p(Math.exp(value)),
+      relu: (value) => Math.max(0, value),
+      gelu: (value) => 0.5 * value * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (value + 0.044715 * value ** 3))),
+      silu: (value) => value / (1 + Math.exp(-value))
+    };
+    const parseExpression = () => parseTernary();
+    const parseTernary = () => {
+      let test = parseOr();
+      if (take("?")) {
+        const consequent = parseExpression();
+        expect(":");
+        const alternate = parseExpression();
+        const current = test;
+        markNode();
+        test = (vars) => (current(vars) ? consequent(vars) : alternate(vars));
+      }
+      return test;
+    };
+    const parseOr = () => {
+      let left = parseAnd();
+      while (take("||")) {
+        const current = left;
+        const right = parseAnd();
+        markNode();
+        left = (vars) => toBool(current(vars) || right(vars));
+      }
+      return left;
+    };
+    const parseAnd = () => {
+      let left = parseCompare();
+      while (take("&&")) {
+        const current = left;
+        const right = parseCompare();
+        markNode();
+        left = (vars) => toBool(current(vars) && right(vars));
+      }
+      return left;
+    };
+    const parseCompare = () => {
+      let left = parseAdd();
+      while ([">", "<", ">=", "<=", "==", "!="].includes(peek().value)) {
+        const op = peek().value;
+        index += 1;
+        const current = left;
+        const right = parseAdd();
+        markNode();
+        left = (vars) => {
+          const a = current(vars);
+          const b = right(vars);
+          if (op === ">") return toBool(a > b);
+          if (op === "<") return toBool(a < b);
+          if (op === ">=") return toBool(a >= b);
+          if (op === "<=") return toBool(a <= b);
+          if (op === "==") return toBool(a === b);
+          return toBool(a !== b);
+        };
+      }
+      return left;
+    };
+    const parseAdd = () => {
+      let left = parseMul();
+      while (peek().value === "+" || peek().value === "-") {
+        const op = peek().value;
+        index += 1;
+        const current = left;
+        const right = parseMul();
+        markNode();
+        left = op === "+"
+          ? (vars) => current(vars) + right(vars)
+          : (vars) => current(vars) - right(vars);
+      }
+      return left;
+    };
+    const parseMul = () => {
+      let left = parsePower();
+      while (peek().value === "*" || peek().value === "/") {
+        const op = peek().value;
+        index += 1;
+        const current = left;
+        const right = parsePower();
+        markNode();
+        left = op === "*"
+          ? (vars) => current(vars) * right(vars)
+          : (vars) => current(vars) / right(vars);
+      }
+      return left;
+    };
+    const parsePower = () => {
+      let left = parseUnary();
+      if (take("^")) {
+        const current = left;
+        const right = parsePower();
+        markNode();
+        left = (vars) => current(vars) ** right(vars);
+      }
+      return left;
+    };
+    const parseUnary = () => {
+      if (take("+")) return parseUnary();
+      if (take("-")) {
+        const inner = parseUnary();
+        markNode();
+        return (vars) => -inner(vars);
+      }
+      return parsePrimary();
+    };
+    const parsePrimary = () => {
+      const token = peek();
+      if (token.type === "number") {
+        index += 1;
+        markNode();
+        return () => token.value;
+      }
+      if (token.type === "id") {
+        index += 1;
+        const name = token.value;
+        const lower = name.toLowerCase();
+        if (take("(")) {
+          const args = [];
+          if (!take(")")) {
+            do {
+              args.push(parseExpression());
+            } while (take(","));
+            expect(")");
+          }
+          const fn = functions[lower];
+          if (!fn) throw new Error("unknown_function");
+          markNode();
+          return (vars) => safeNumber(fn(...args.map((arg) => arg(vars))));
+        }
+        markNode();
+        return (vars) => {
+          if (lower === "pi") return Math.PI;
+          if (lower === "e") return Math.E;
+          if (Object.prototype.hasOwnProperty.call(vars, name)) return vars[name];
+          if (Object.prototype.hasOwnProperty.call(vars, lower)) return vars[lower];
+          throw new Error("unknown_variable");
+        };
+      }
+      if (take("(")) {
+        const inner = parseExpression();
+        expect(")");
+        return inner;
+      }
+      throw new Error("unexpected_token");
+    };
+    const compiled = parseExpression();
+    if (peek().type !== "eof") throw new Error("trailing_tokens");
+    return (vars) => safeNumber(compiled(vars));
   }
 
   function pointInsideObstacle(point, obstacle) {
@@ -2391,12 +2649,101 @@
   }
 
   function chooseShot(state, owner, command, options) {
+    if (options && options.expression) {
+      return buildExpressionShotChoice(state, owner, command, options);
+    }
     const choices = buildShotChoices(state, owner, command);
     if (!choices.length) return null;
     if (options && options.candidateId) {
       return choices.find((choice) => choice.candidateId === options.candidateId) || null;
     }
     return choices[0];
+  }
+
+  function buildExpressionShotChoice(state, owner, command, options) {
+    const shooter = chooseShooter(state, owner);
+    if (!shooter) return null;
+    const targetId = String(options.targetId || "").toUpperCase();
+    const target = (state.units || []).find((unit) => unit.id === targetId && unit.hp > 0);
+    if (!target || target.team === shooter.team) return null;
+    const directive = parseDirective(command);
+    const hand = getCurrentHand(state, shooter.id);
+    const energy = getEnergy(state.turn);
+    const requestedSlots = Array.isArray(options.cardSlots) ? options.cardSlots : [];
+    const slotSet = new Set(
+      requestedSlots
+        .map((slot) => Number(slot))
+        .filter((slot) => Number.isInteger(slot) && slot >= 1 && slot <= hand.length)
+        .slice(0, CONFIG.maxCardsPerShot)
+    );
+    const selectedCards = hand.filter((card, index) => slotSet.has(index + 1));
+    const components = selectedCards.map((card) => ({
+      id: card.id,
+      cardId: card.instanceId,
+      component: card.component,
+      label: card.label,
+      family: card.family,
+      tags: card.tags || [],
+      effect: card.effect || {},
+      amp: 0
+    }));
+    const validation = validateResourceUse(hand, components, energy);
+    const expression = String(options.expression || "").trim().slice(0, 600);
+    let expressionFn = null;
+    let invalidExpressionReason = null;
+    try {
+      expressionFn = compileShotExpression(expression);
+    } catch (err) {
+      invalidExpressionReason = err && err.message ? err.message : "invalid_expression";
+      expressionFn = () => NaN;
+    }
+    const shot = {
+      shooter: clone(shooter),
+      target: clone(target),
+      distance: Math.max(1, Math.abs(target.x - shooter.x)),
+      deltaY: target.y - shooter.y,
+      components,
+      cost: validation.cost,
+      usedCardIds: selectedCards.map((card) => card.instanceId),
+      expression: /^y\s*=/.test(expression) ? expression : `y=${expression}`,
+      expressionFn,
+      invalidExpressionReason
+    };
+    const sim = validation.ok ? simulateShot(state, shot) : {
+      kind: "invalid",
+      reason: validation.reason,
+      points: [],
+      maxY: -Infinity,
+      closestTargetDistance: Infinity,
+      closestEnemyDistance: Infinity
+    };
+    const comboIdentity = assessCombo(components, directive);
+    const routeBonus = scoreRouteBonus(sim.points, state.bonusPoints);
+    const score = scoreSimulation(sim, shot, directive, routeBonus);
+    return {
+      score,
+      team: shooter.team,
+      owner: shooter.id,
+      unitId: shooter.id,
+      state,
+      shooter,
+      target,
+      targetPriority: rankTargets(state, shooter, directive).map((rankedTarget, index) => ({
+        id: rankedTarget.id,
+        hp: rankedTarget.hp,
+        priority: index + 1
+      })),
+      hand,
+      energy,
+      directive,
+      ruleSummary: ["model wrote function expression"],
+      combo: comboIdentity,
+      routeBonus,
+      shot,
+      sim,
+      validation,
+      candidateId: null
+    };
   }
 
   function listLegalShots(state, owner, command) {
@@ -2455,6 +2802,7 @@
   }
 
   function formatExpression(shot) {
+    if (shot.expression) return shot.expression;
     const base = `y=${round(shot.shooter.y, 1)}+${round(shot.deltaY, 1)}*t`;
     if (!shot.components.length) return base;
     return `${base}+${shot.components.map(formatComponent).join("+")}; t=(u/d)`;
@@ -2707,6 +3055,7 @@
       mulberry32,
       distance,
       evalShotY,
+      compileShotExpression,
       generateComponentCombos
     }
   };

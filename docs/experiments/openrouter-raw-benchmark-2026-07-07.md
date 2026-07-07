@@ -61,7 +61,7 @@ The runner now proves the full pipeline:
 - It can resolve the requested OpenRouter model IDs.
 - It can schedule a full round-robin.
 - It can run concurrent games and write per-game traces.
-- It records model reasoning, raw outputs, HTTP status, provider error bodies, and fallback outcomes.
+- It records model reasoning, raw outputs, HTTP status, provider error bodies, and failure outcomes.
 - It writes a local benchmark leaderboard with `(raw)` model names.
 
 The game result quality is still weak because most games hit the action cap after provider failures. A more trustworthy ladder needs either enough OpenRouter credits for high-reasoning calls or a cheaper staged run:
@@ -70,4 +70,3 @@ The game result quality is still weak because most games hit the action cap afte
 2. Run a smaller high-reasoning semifinal on the top models.
 3. Raise the per-game action cap after provider failures fall below 10%.
 4. Keep the raw `(raw)` ladder separate from player-prompt ladders.
-

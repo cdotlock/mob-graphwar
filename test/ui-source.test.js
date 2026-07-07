@@ -120,7 +120,7 @@ function testStaticEntrypointLoadsSimBeforeReactBundle() {
 
 function testUiKeepsRankedDuelSpectatorOnly() {
   assert.ok(!main.includes("submitMatchAction"), "ranked UI should not expose per-turn manual action submission");
-  assert.ok(!main.includes("/action"), "ranked UI should not post reroll or shot actions during the duel");
+  assert.ok(!main.includes("/action"), "ranked UI should not post manual actions during the duel");
   assert.ok(!main.includes("CommandConsole"), "ranked battle surface should not include a mid-duel command console");
   assert.ok(!main.includes("Watch Auto Duel"), "ranked battle surface should not expose a manual duel-start button after matchmaking");
   assert.ok(!main.includes("Start Auto Duel"), "ranked launch bay should not require a manual auto-duel start after matchmaking");
@@ -507,7 +507,7 @@ function testUiExplainsRetainedHandsAndSwapAction() {
   assert.ok(css.includes("overflow-wrap: anywhere"), "long mathematical function names should be allowed to wrap");
   assert.ok(!css.includes(".card-function-name {\n  min-width: 0;\n  overflow: hidden;"), "function card names should not be clipped like short code labels");
   assert.ok(!css.includes(".function-library-grid b {\n  overflow: hidden;"), "function library should not hide long mathematical expressions");
-  assert.ok(!main.includes("choose rerolls and shots"), "model feed should not use old reroll wording");
+  assert.ok(main.includes("swap_hand"), "model feed should use the current hand-swap wording");
 }
 
 function testUiAutoStartsRankedAutoDuel() {

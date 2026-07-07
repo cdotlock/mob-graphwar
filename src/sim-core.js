@@ -11,11 +11,10 @@
     width: 100,
     height: 60,
     viewPadding: 0,
-    maxTurns: 16,
     maxResolutionActions: 96,
     handSize: 4,
     localSearchComboCap: 360,
-    maxRerollsPerTurn: 3,
+    maxSwapsPerTurn: 3,
     maxCommandLength: 80,
     sampleStep: 0.35,
     unitRadius: 2.4,
@@ -82,10 +81,9 @@
       label: "(2*t-1)*(1-abs(2*t-1))",
       family: "bend",
       rarity: "rare",
-      tags: ["corner", "volatile", "damage"],
+      tags: ["corner", "sharp"],
       component: "chevron",
       amplitudes: [26, 34, -26, -34],
-      effect: { damageBonus: 8, volatility: 16 },
       description: "Signed triangular chevron for late directional bends."
     },
     tunnel: {
@@ -113,7 +111,7 @@
       label: "sin(2*pi*t)",
       family: "wave",
       rarity: "common",
-      tags: ["weave", "volatile"],
+      tags: ["weave", "oscillation"],
       component: "sway",
       amplitudes: [9, 15, 21, -15, -21],
       description: "Full sine oscillation for over-under routing."
@@ -131,12 +129,11 @@
     wobble: {
       id: "wobble",
       label: "sinc(10*(t-0.5))*4*t*(1-t)",
-      family: "risk",
+      family: "wave",
       rarity: "common",
-      tags: ["volatile", "compact"],
+      tags: ["oscillation", "compact"],
       component: "sinc",
       amplitudes: [14, 20, -14, -20],
-      effect: { volatility: 12 },
       description: "Windowed sinc correction with side lobes."
     },
     cubic: {
@@ -173,23 +170,21 @@
     late_dive: {
       id: "late_dive",
       label: "t*t*(1.35-0.35*t)",
-      family: "risk",
+      family: "control",
       rarity: "common",
-      tags: ["dive", "volatile"],
+      tags: ["dive", "late"],
       component: "dive",
       amplitudes: [-8, -14, -20, 10],
-      effect: { volatility: 10 },
       description: "Quadratic late ramp."
     },
     booster: {
       id: "booster",
       label: "max(0,t-0.45)*(1-t)",
-      family: "risk",
+      family: "control",
       rarity: "rare",
-      tags: ["damage", "volatile"],
+      tags: ["hinge", "late"],
       component: "relu",
       amplitudes: [22, 32, -22],
-      effect: { damageBonus: 12, volatility: 18 },
       description: "ReLU-style hinge that only activates late."
     },
     needle: {
@@ -228,12 +223,11 @@
     mortar: {
       id: "mortar",
       label: "exp(-((t-0.68)^2)/(2*0.08^2))",
-      family: "risk",
+      family: "lift",
       rarity: "rare",
-      tags: ["high", "damage", "volatile"],
+      tags: ["high", "late", "localized"],
       component: "narrow_gaussian",
       amplitudes: [24, 34, 44],
-      effect: { damageBonus: 10, volatility: 22 },
       description: "Late narrow Gaussian pulse."
     },
     glide: {
@@ -271,12 +265,11 @@
     gelu_gate: {
       id: "gelu_gate",
       label: "GELU(2*t-1)*4*t*(1-t)",
-      family: "risk",
+      family: "control",
       rarity: "rare",
-      tags: ["damage", "smooth", "volatile"],
+      tags: ["smooth", "activation"],
       component: "gelu",
       amplitudes: [18, 26, -18],
-      effect: { damageBonus: 8, volatility: 12 },
       description: "Transformer-style GELU activation, windowed for shots."
     },
     silu_gate: {
@@ -334,12 +327,11 @@
     elu_gate: {
       id: "elu_gate",
       label: "ELU(4*(t-0.5))*4*t*(1-t)",
-      family: "risk",
+      family: "control",
       rarity: "common",
-      tags: ["volatile", "smooth"],
+      tags: ["smooth", "activation"],
       component: "elu",
       amplitudes: [14, 20, -14, -20],
-      effect: { volatility: 10 },
       description: "ELU activation with a negative soft tail."
     }
   };
@@ -527,17 +519,17 @@
     return deck.slice(0, 32);
   }
 
-  function dealHand(seed, turn, owner, reroll) {
-    const rerollIndex = Number.isFinite(Number(reroll)) ? Number(reroll) : 0;
+  function dealHand(seed, turn, owner, swap) {
+    const swapIndex = Number.isFinite(Number(swap)) ? Number(swap) : 0;
     const deck = createTeamDeck(seed, owner);
-    const shuffleSeed = rerollIndex > 0 ? `${seed}:${turn}:${owner}:hand:${rerollIndex}` : `${seed}:${turn}:${owner}:hand`;
+    const shuffleSeed = swapIndex > 0 ? `${seed}:${turn}:${owner}:hand:${swapIndex}` : `${seed}:${turn}:${owner}:hand`;
     const pile = shuffle(
       deck.map((id, index) => ({ id, instanceId: `${id}-${index}` })),
       shuffleSeed
     );
     const hand = pile.slice(0, CONFIG.handSize).map((item, slot) => ({
       ...CARD_LIBRARY[item.id],
-      instanceId: rerollIndex > 0 ? `${owner}${turn}r${rerollIndex}-${slot}-${item.id}` : `${owner}${turn}-${slot}-${item.id}`
+      instanceId: swapIndex > 0 ? `${owner}${turn}s${swapIndex}-${slot}-${item.id}` : `${owner}${turn}-${slot}-${item.id}`
     }));
     const shapeCount = hand.filter((card) => card.family !== "modifier").length;
     if (shapeCount < 2) {
@@ -584,7 +576,6 @@
       owner: normalizedOwner,
       team: teamFromOwner(normalizedOwner),
       turn,
-      rerollsUsed: 0,
       swapsUsed: 0,
       cards: dealHand(seed, 0, normalizedOwner, 0)
     };
@@ -606,14 +597,11 @@
       }
       if (state.hands[owner].turn !== state.turn) {
         state.hands[owner].turn = state.turn;
-        state.hands[owner].rerollsUsed = 0;
         state.hands[owner].swapsUsed = 0;
       }
       if (!state.hands[owner].owner) state.hands[owner].owner = owner;
       if (!state.hands[owner].team) state.hands[owner].team = teamFromOwner(owner);
-      if (!Number.isFinite(Number(state.hands[owner].swapsUsed))) {
-        state.hands[owner].swapsUsed = Number(state.hands[owner].rerollsUsed) || 0;
-      }
+      if (!Number.isFinite(Number(state.hands[owner].swapsUsed))) state.hands[owner].swapsUsed = 0;
     }
     return state.hands;
   }
@@ -651,33 +639,26 @@
     return clone(getHandState(state, owner).cards);
   }
 
-  function rerollHand(state, owner) {
+  function swapHand(state, owner) {
     const hands = ensureHands(state);
     const handOwner = normalizeHandOwner(state, owner);
     const handState = hands[handOwner];
     if (!handState) throw new Error("unknown_hand_owner");
-    const used = Math.max(Number(handState.rerollsUsed) || 0, Number(handState.swapsUsed) || 0);
-    if (used >= CONFIG.maxRerollsPerTurn) {
-      throw new Error("reroll_limit_reached");
+    const used = Number(handState.swapsUsed) || 0;
+    if (used >= CONFIG.maxSwapsPerTurn) {
+      throw new Error("swap_limit_reached");
     }
-    handState.rerollsUsed = used + 1;
-    handState.swapsUsed = handState.rerollsUsed;
-    handState.cards = dealHand(state.seed, state.turn, handOwner, handState.rerollsUsed);
+    handState.swapsUsed = used + 1;
+    handState.cards = dealHand(state.seed, state.turn, handOwner, handState.swapsUsed);
     return {
       action: "swap_hand",
       owner: handOwner,
       unitId: getUnitById(state, handOwner) ? handOwner : null,
       team: handState.team || teamFromOwner(handOwner),
-      rerollsUsed: handState.rerollsUsed,
-      rerollsRemaining: CONFIG.maxRerollsPerTurn - handState.rerollsUsed,
       swapsUsed: handState.swapsUsed,
-      swapsRemaining: CONFIG.maxRerollsPerTurn - handState.swapsUsed,
+      swapsRemaining: CONFIG.maxSwapsPerTurn - handState.swapsUsed,
       cards: clone(handState.cards)
     };
-  }
-
-  function swapHand(state, owner) {
-    return rerollHand(state, owner);
   }
 
   function parseDirective(command) {
@@ -688,23 +669,15 @@
     const hardTarget =
       has(["must", "only", "exact", "lock", "force target"]) || /必须|只打|只瞄|仅打|锁定|指定|就打/.test(raw);
     const safe = has(["safe", "avoid", "careful", "conservative"]) || /安全|避|绕开|避免|小心|别误伤|保守|稳/.test(raw);
-    const forbidRisk =
-      safe ||
-      has(["no risk", "no volatile", "avoid volatile", "no risky", "no gamble"]) ||
-      /不冒险|别冒险|不要冒险|不用冒险|禁止冒险|禁用冒险|不要高危|不用高危|禁用高危|不要volatile|不用volatile|禁用volatile/i.test(
-        raw
-      );
     const requiredTargetIds = hardTarget ? targetIds : [];
     const ruleSummary = [];
     if (requiredTargetIds.length) ruleSummary.push(`hard target ${requiredTargetIds.join(" then ")}`);
-    if (forbidRisk) ruleSummary.push("no volatile/risk cards");
     if (safe) ruleSummary.push("avoid ally hits");
     return {
       raw,
       targetIds,
       requiredTargetIds,
       hardTarget,
-      forbidRisk,
       avoidAllyHits: safe,
       ruleSummary: ruleSummary.length ? ruleSummary : ["soft guidance only"],
       safe,
@@ -858,8 +831,8 @@
 
       let windowHit = firstHit;
       const swapProbe = createSolverProbeState(seed, obstacles, units, unitId, bonusPoints);
-      for (let swap = 0; swap < CONFIG.maxRerollsPerTurn && !windowHit; swap += 1) {
-        rerollHand(swapProbe, unitId);
+      for (let swap = 0; swap < CONFIG.maxSwapsPerTurn && !windowHit; swap += 1) {
+        swapHand(swapProbe, unitId);
         const swapShots = listLegalShots(swapProbe, unitId, command);
         windowHit = hasEnemyHit(swapShots);
         if (swapShots.some((shot) => !["invalid", "out"].includes(shot.result))) boundedWindows += 1;
@@ -870,8 +843,8 @@
 
     const firstHandHitRate = round(firstHandHits / totalWindows, 3);
     const swapWindowHitRate = round(swapWindowHits / totalWindows, 3);
-    const boundedWindowRate = round(boundedWindows / (totalWindows * (CONFIG.maxRerollsPerTurn + 1)), 3);
-    const requiredSearchWindows = clamp(Math.ceil(1 / Math.max(0.01, swapWindowHitRate)), 2, CONFIG.maxRerollsPerTurn + 1);
+    const boundedWindowRate = round(boundedWindows / (totalWindows * (CONFIG.maxSwapsPerTurn + 1)), 3);
+    const requiredSearchWindows = clamp(Math.ceil(1 / Math.max(0.01, swapWindowHitRate)), 2, CONFIG.maxSwapsPerTurn + 1);
     const solverPressure = clamp(
       Math.round(68 + (1 - firstHandHitRate) * 20 + (1 - swapWindowHitRate) * 12 + requiredSearchWindows * 3),
       65,
@@ -1590,7 +1563,6 @@
     } else if (directive.requiredTargetIds && directive.requiredTargetIds.length) {
       ruleSummary.push(`hard target ${directive.requiredTargetIds.join(" then ")}`);
     }
-    if (directive.forbidRisk) ruleSummary.push("no volatile/risk cards");
     if (directive.avoidAllyHits) ruleSummary.push("avoid ally hits");
     return ruleSummary.length ? ruleSummary : ["soft guidance only"];
   }
@@ -1610,19 +1582,12 @@
       targets,
       ruleSummary: summarizeRules(
         directive,
-        `requested target ${directive.requiredTargetIds.join(" then ")} unavailable; fallback to live targets`
+        `requested target ${directive.requiredTargetIds.join(" then ")} unavailable; using live targets`
       )
     };
   }
 
-  function componentIsRisk(component) {
-    return component.family === "risk" || (component.tags || []).includes("volatile");
-  }
-
   function comboViolatesDirective(combo, directive) {
-    if (directive.forbidRisk && combo.components.some(componentIsRisk)) {
-      return "forbidden_risk";
-    }
     return null;
   }
 
@@ -2210,18 +2175,16 @@
     const accuracy = Number.isFinite(hitMetrics.proximityAccuracy) ? hitMetrics.proximityAccuracy : 0;
     const functionCount = expressionFunctionNames(shot.expression || "").length;
     const functionCommitment = clamp(functionCount * 4 + (shot.components || []).length * 2, 0, 18);
-    const effects = sumEffects(shot.components || []);
-    const volatilityDamage = clamp((effects.damageBonus || 0) + (effects.volatility || 0) * 0.18, 0, 14);
     const routeDamage = clamp((routeBonus?.value || 0) * 0.4, 0, 12);
     if (sim.kind === "hitAlly") {
       return clamp(
-        Math.round(CONFIG.allyDamageBase + accuracy * 8 + functionCommitment * 0.35 + volatilityDamage * 0.2),
+        Math.round(CONFIG.allyDamageBase + accuracy * 8 + functionCommitment * 0.35),
         8,
         CONFIG.allyDamageMax
       );
     }
     return clamp(
-      Math.round(CONFIG.enemyDamageBase + accuracy * 20 + functionCommitment + volatilityDamage + routeDamage),
+      Math.round(CONFIG.enemyDamageBase + accuracy * 20 + functionCommitment + routeDamage),
       20,
       CONFIG.enemyDamageMax
     );
@@ -2291,12 +2254,10 @@
     return components.reduce(
       (totals, component) => {
         const effect = component.effect || {};
-        totals.damageBonus += effect.damageBonus || 0;
         totals.precisionBonus += effect.precisionBonus || 0;
-        totals.volatility += effect.volatility || 0;
         return totals;
       },
-      { damageBonus: 0, precisionBonus: 0, volatility: 0 }
+      { precisionBonus: 0 }
     );
   }
 
@@ -2335,27 +2296,10 @@
     const families = componentFamilies(parts);
     const has = (tag) => tags.includes(tag);
     const usesFamily = (family) => families.includes(family);
-    const volatileCount = parts.filter((component) => (component.tags || []).includes("volatile")).length;
     const precisionCount = parts.filter((component) => (component.tags || []).includes("precision")).length;
     const clearanceCount = parts.filter((component) => (component.tags || []).includes("clearance")).length;
     const cornerCount = parts.filter((component) => (component.tags || []).includes("corner")).length;
 
-    if (usesFamily("risk") && precisionCount > 0) {
-      return {
-        name: comboName,
-        traits: uniqueValues(["damage", "precision", "volatile"].concat(directive.aggressive ? ["finisher"] : [])),
-        scoreBonus: directive.aggressive ? 42 : 26,
-        note: "precision support reins in a volatile damage card."
-      };
-    }
-    if (usesFamily("risk")) {
-      return {
-        name: comboName,
-        traits: uniqueValues(["damage", "volatile"].concat(volatileCount > 1 ? ["overheat"] : [])),
-        scoreBonus: directive.aggressive ? 24 : -10,
-        note: "Damage pressure without stabilization."
-      };
-    }
     if (clearanceCount > 0 && precisionCount > 0) {
       return {
         name: comboName,
@@ -2367,9 +2311,9 @@
     if (clearanceCount >= 2) {
       return {
         name: comboName,
-        traits: ["clearance", "height", "ceiling-risk"],
+        traits: ["clearance", "height"],
         scoreBonus: directive.high ? 26 : 10,
-        note: "Stacked lift can clear brutal cover but may overcook."
+        note: "Stacked lift can clear brutal cover."
       };
     }
     if (cornerCount > 0 && (has("thread") || usesFamily("modifier"))) {
@@ -2391,7 +2335,7 @@
     if (has("weave")) {
       return {
         name: comboName,
-        traits: uniqueValues(["weave"].concat(has("precision") ? ["precision"] : volatileCount > 0 ? ["volatile"] : ["drift"])),
+        traits: uniqueValues(["weave"].concat(has("precision") ? ["precision"] : ["drift"])),
         scoreBonus: has("precision") ? 16 : 4,
         note: "Oscillation searches for a side-door angle."
       };
@@ -2422,10 +2366,7 @@
 
     let role = "Curve";
     let tableText = "Flexible curve ingredient.";
-    if (has("volatile") || (card && card.family === "risk")) {
-      role = "Risk";
-      tableText = "High payoff tool with unstable flight.";
-    } else if (has("precision")) {
+    if (has("precision")) {
       role = "Aim";
       tableText = "Stabilizes tight lanes and near misses.";
     } else if (has("clearance") || has("high")) {
@@ -2440,20 +2381,15 @@
     } else if (has("compact")) {
       role = "Tempo";
       tableText = "Compact ingredient for readable shots.";
-    } else if (has("damage")) {
-      role = "Burst";
-      tableText = "Adds pressure when a hit is available.";
     }
 
     const playable = true;
     const functionAccess = "allowed";
-    const riskText = has("volatile") ? "volatile" : card && card.family === "risk" ? "risky" : "stable";
 
     return {
       role,
       playable,
       functionAccess,
-      riskText,
       tableText
     };
   }
@@ -2468,37 +2404,25 @@
     const clearanceCount = countTag(cards, "clearance");
     const cornerCount = countTag(cards, "corner");
     const compactCount = countTag(cards, "compact");
-    const volatileCount = countTag(cards, "volatile");
 
     let commandRead = "Flexible hand with no single dominant lane.";
     if (clearanceCount > 0 && precisionCount > 0) {
       commandRead = "High clearance and precision are available.";
     } else if (clearanceCount >= 2) {
-      commandRead = "High lift is available, with ceiling risk.";
+      commandRead = "High lift is available.";
     } else if (cornerCount > 0 && (has("thread") || precisionCount > 0)) {
       commandRead = "Corner and threading tools are available.";
     } else if (has("shelf") && precisionCount > 0) {
       commandRead = "Shelf control can stabilize mid-curve shots.";
-    } else if (usesFamily("risk") && precisionCount > 0) {
-      commandRead = "Damage pressure has precision support.";
-    } else if (usesFamily("risk") || has("damage")) {
-      commandRead = "Damage pressure is available without much stability.";
     } else if (has("weave")) {
       commandRead = "Oscillation can search for side-door angles.";
     } else if (compactCount >= 2) {
       commandRead = "Compact functions support low-commitment shots.";
     }
 
-    const traitPriority = ["clearance", "precision", "thread", "corner", "shelf", "weave", "damage", "compact", "volatile"];
+    const traitPriority = ["clearance", "precision", "thread", "corner", "shelf", "weave", "compact", "smooth", "activation"];
     const traits = traitPriority.filter((tag) => has(tag)).slice(0, 3);
-    const risk =
-      volatileCount > 0 && precisionCount > 0
-        ? "volatile option"
-        : volatileCount > 0
-          ? "volatile pressure"
-          : usesFamily("risk")
-            ? "damage option"
-            : "stable";
+    const precisionRead = precisionCount > 0 ? `${precisionCount} precision function${precisionCount === 1 ? "" : "s"}` : "no precision function";
     const functionRead = `${cards.length} current functions; unrestricted composition`;
 
     return {
@@ -2507,7 +2431,7 @@
       playableCount: cards.length,
       handSize: cards.length,
       functionCount: cards.length,
-      risk,
+      precisionRead,
       functionRead,
       commandRead
     };
@@ -2519,17 +2443,15 @@
     const combo = assessCombo(shot.components, directive);
     if (sim.kind === "hitEnemy") {
       score += sim.unitId === shot.target.id ? 1000 : 720;
-      score += effects.damageBonus * 3;
       if (directive.aggressive) score += 80;
     } else if (sim.kind === "hitAlly") {
       score -= directive.safe ? 1300 : 850;
-      score -= effects.volatility * 8;
     } else if (sim.kind === "blocked") {
-      score -= 360 + effects.volatility * 5;
+      score -= 360;
     } else if (sim.kind === "ground") {
-      score -= 260 + effects.volatility * 4;
+      score -= 260;
     } else if (sim.kind === "out" || sim.kind === "invalid") {
-      score -= 420 + effects.volatility * 5;
+      score -= 420;
     } else {
       score -= 140;
     }
@@ -2571,20 +2493,18 @@
     if (directive.targetIds.length) parts.push(`priority ${directive.targetIds.join(" then ")}`);
     if (directive.high) parts.push("high clearance");
     if (directive.safe) parts.push("avoid allies");
-    if (directive.aggressive) parts.push("finish damage");
+    if (directive.aggressive) parts.push("finish low HP");
     if (directive.low) parts.push("low path");
     return parts.length ? parts.join(", ") : "balanced shot";
   }
 
-  function riskNote(shot, sim, directive) {
-    const volatile = shot.components.filter((component) => component.tags.includes("volatile")).length;
-    if (sim.kind === "hitAlly") return "ally path risk materialized";
+  function trajectoryFeedback(shot, sim) {
+    if (sim.kind === "hitAlly") return "hit allied unit";
     if (sim.kind === "blocked") return "cover was still too tight";
     if (sim.kind === "ground") return "curve dropped into terrain";
     if (sim.kind === "out") return "curve overcooked above the board";
-    if (volatile) return directive.safe ? "volatile card accepted despite safe command" : "volatile card used for payoff";
     if (sim.closestTargetDistance <= CONFIG.unitRadius + 1) return "clean firing line";
-    return "miss distance was the main risk";
+    return "miss distance was the main issue";
   }
 
   function buildThinking(decision) {
@@ -2600,25 +2520,12 @@
       comboTraits: combo.traits,
       comboNote: combo.note,
       providerReason: decision.providerReason || null,
-      risk: riskNote(decision.shot, decision.sim, decision.directive),
+      trajectoryFeedback: trajectoryFeedback(decision.shot, decision.sim),
       projectedResult: resultLabel(decision.sim),
       publicReason: `${decision.shooter.id} aimed at ${decision.target.id} with ${
         usedLabels.length ? usedLabels.join(" + ") : "baseline"
       } as ${combo.name} because ${describeIntent(decision.directive)}.`
     };
-  }
-
-  function makeCandidateId(owner, turn, index, shot) {
-    return `${owner}-${turn}-${index}-${shot.target.id}`;
-  }
-
-  function assignCandidateIds(choices, owner, turn) {
-    return choices
-      .sort((a, b) => b.score - a.score)
-      .map((choice, index) => ({
-        ...choice,
-        candidateId: makeCandidateId(owner, turn, index, choice.shot)
-      }));
   }
 
   function buildShotChoices(state, owner, command) {
@@ -2671,7 +2578,7 @@
       }
     }
 
-    return assignCandidateIds(choices, handOwner, state.turn);
+    return choices.sort((a, b) => b.score - a.score);
   }
 
   function chooseShot(state, owner, command, options) {
@@ -2680,9 +2587,6 @@
     }
     const choices = buildShotChoices(state, owner, command);
     if (!choices.length) return null;
-    if (options && options.candidateId) {
-      return choices.find((choice) => choice.candidateId === options.candidateId) || null;
-    }
     return choices[0];
   }
 
@@ -2769,14 +2673,12 @@
       routeBonus,
       shot,
       sim,
-      validation: validation.ok ? functionValidation : validation,
-      candidateId: null
+      validation: validation.ok ? functionValidation : validation
     };
   }
 
   function listLegalShots(state, owner, command) {
     return buildShotChoices(state, owner, command).map((choice) => ({
-      candidateId: choice.candidateId,
       targetId: choice.target.id,
       cards: choice.shot.components.map((component, index) => ({
         slot: index + 1,
@@ -2928,15 +2830,14 @@
     const team = activeUnit.team;
     const unitId = activeUnit.id;
     ensureHands(state);
-    if (opts.action === "swap_hand" || opts.action === "reroll") {
-      return rerollHand(state, unitId);
+    if (opts.action === "swap_hand") {
+      return swapHand(state, unitId);
     }
     const orders = state.lockedOrders ? normalizeBattleOrders(state.lockedOrders) : normalizeBattleOrders(commands);
     const command = orders[unitId] || orders[team] || "";
     const decision = chooseShot(state, unitId, command, opts);
 
     if (!decision) {
-      if (opts.candidateId) throw new Error("unknown_candidate");
       state.winner = team === "A" ? "B" : "A";
       state.reason = "no_alive_shooter";
       return state;
@@ -2962,7 +2863,6 @@
       command: decision.directive.raw,
       shooterId: decision.shooter.id,
       targetId: decision.target.id,
-      candidateId: decision.candidateId,
       provider: decision.provider,
       hand: decision.hand.map((card) => ({
         id: card.id,
@@ -3059,7 +2959,6 @@
     applyTurn,
     getCurrentHand,
     swapHand,
-    rerollHand,
     runBattle,
     forceResolveByHp,
     exportTrace,

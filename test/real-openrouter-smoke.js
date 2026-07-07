@@ -49,7 +49,6 @@ async function runCase(provider, apiKey, model, index) {
       {
         apiKey,
         command,
-        candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
         stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
         rulesPayload,
         model
@@ -69,7 +68,8 @@ async function runCase(provider, apiKey, model, index) {
       unitId,
       ms: Date.now() - started,
       action: result.decision.action,
-      candidateId: result.decision.candidateId || null,
+      targetId: result.decision.targetId || null,
+      expression: result.decision.expression || "",
       reasonChars: String(result.decision.publicReason || "").length,
       legalActions: rulesPayload.legalActions.length,
       legalShots: rulesPayload.legalActions.filter((action) => action.action === "shot").length

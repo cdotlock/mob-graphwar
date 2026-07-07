@@ -1,255 +1,176 @@
-# Mob Graphwar Resource Card Duel Design
+# Mob Graphwar Current Game Design
 
 Date: 2026-07-05
+Updated: 2026-07-07
 
 ## Product Goal
 
-Mob Graphwar is a two-player AI command game inspired by Graphwar. Players do
-not directly write functions. Before the first shot, each player may write one
-short battle order for their AI, or leave the order blank and let the AI solve
-from the visible environment. That order is locked for the whole battle; each
-turn the AI receives the same order plus a new hand, energy value, shooter, map
-state, and target state, then fires a single shot. There is no movement, fog,
-scouting, counterspell phase, or reward drafting in this prototype.
+Mob Graphwar is a watch-only AI command game inspired by Graphwar. A player
+chooses a model, optionally writes one short standing order, enters A-vs-B
+ranked matchmaking, and then watches models fight by writing math functions.
 
-The point of the game is not to make math hard for an AI. A strong model can
-usually find a function through any passable field. The point is to make the AI
-operate inside a compact card economy and a hard generated map, so human
-wording, card luck, model interpretation, map shape, and risk appetite produce
-visible differences.
+The product is not raw Graphwar solved directly by a script. The interesting
+part is the model receiving a compact game-state packet, current function hand,
+recent feedback, and imperfect human wording, then deciding whether to swap the
+hand or write a function shot.
 
-## Non-Goals
+## Current Non-Goals
 
-- No movement system.
-- No fog of war or hidden enemy coordinates.
-- No scouting action.
-- No candidate function edit phase.
-- No between-game reward cards yet.
-- No direct arbitrary code or free-form function execution from a model.
+- No movement, fog, scouting, or hidden coordinates.
+- No manual mid-duel control after launch.
+- No energy, cost, draft, or card-count budget.
+- No high-risk or high-damage function categories.
+- No precomputed model-facing shot candidates.
+- No silent local fallback for hosted provider failures.
 
-## Core Turn Loop
+## Match Structure
 
-1. A deterministic map is generated from the seed.
-2. The active player sees their hand, energy, current units, and terrain.
-3. Before the first shot, both players may write one 80-character battle order.
-4. The first lock-in freezes both battle orders for the rest of the battle.
-5. On every turn, the AI interprets the locked order against the current hand,
-   energy, shooter, map, and living targets, then produces one shot. A blank
-   order is valid. The player cannot revise the current battle.
-6. The UI reveals the AI's concise thinking trace:
-   - interpreted intent
-   - target priority
-   - hand constraints
-   - selected combo
-   - risk note
-7. The shot animates along the generated curve.
-8. The result is logged: hit, ally hit, blocked, ground, out, or miss.
+1. A deterministic 2D blob map is generated from the seed.
+2. Team A has A1/A2 and Team B has B1/B2.
+3. One commander controls both units on a team with one provider/model/prompt.
+4. If no human opponent is available, the server may fill Team B with an
+   OpenRouter free-model commander when configured.
+5. Units act in rotating seat order: A1, B1, A2, B2, skipping dead units.
+6. The duel continues until one team is eliminated.
+7. Long automated runs use a resolution guard only to settle pathological loops
+   by remaining HP for ranking.
 
-## Card System
+## Hand And Function Rules
 
-Cards are not raw math templates; they are tactical shot ingredients. Every
-card still maps to a deterministic component so the shot remains inspectable.
+- Each active unit has a retained hand of 4 function cards.
+- The hand persists after shots.
+- The active unit may choose `swap_hand` up to 3 times before firing.
+- `swap_hand` replaces the retained hand and does not consume the shot turn.
+- Every card is shown as a mathematical expression, not a fantasy move name.
+- The current hand is the function whitelist. Models may call only function
+  names present in the current hand expressions.
+- Numeric coefficients are free; cards limit function types, not amplitudes.
+- Arithmetic, variables, constants, comparisons, and ternary expressions are
+  allowed by the expression parser.
 
-Card fields:
+Allowed expression variables:
 
-- `id`: stable card id
-- `label`: UI name
-- `family`: `lift`, `bend`, `wave`, `control`, `risk`, or `modifier`
-- `cost`: energy cost
-- `rarity`: `basic`, `common`, `rare`
-- `tags`: short mechanical tags, such as `clearance`, `precision`, `volatile`
-- `description`: player-facing text
-- `component`: deterministic shot component id
-- `amplitudes`: candidate amplitudes the AI can try
-- `effect`: optional scoring modifier, such as precision bonus or volatility
+- `t`: normalized travel from 0 to 1
+- `u`: horizontal travel distance
+- `d`: shooter-target horizontal distance
+- `x`: absolute board x
+- `y0`: shooter y
+- `y1`: target y
+- `dy`: `y1 - y0`
 
-The prototype should include about 18 cards, with a 12-card deck per team
-sampled from a seeded starter pool. Cards should make different-looking curves:
-high arcs, shelves, dives, bends, narrow threading, overcorrection, and risky
-power boosts.
+The shot expression must be one absolute board-y expression, usually anchored
+on `y0 + dy*t`.
 
-Energy starts at 4, caps at 8, and increases slowly. A shot can use at most
-three cards: two shape/control cards plus one modifier. This keeps rules
-readable while allowing card-battler-style payoff.
+## Model Contract
 
-## Randomness
+The model receives one JSON packet containing:
 
-All randomness is seeded. The same seed and commands must reproduce the same
-map, hands, trace, outcome, rank, and event list.
+- objective and team
+- active unit and visible units
+- map metadata, obstacles, and bonus points
+- current retained hand and available function names
+- recent public shot feedback
+- recent feedback for the active unit
+- legal actions: `swap_hand` and/or `shot`
+- output schema
 
-Per-turn hand generation:
+The model returns JSON only:
 
-- Use a team-specific deterministic 24-card deck generated from the seed.
-- Shuffle using `seed + team + turn`.
-- Draw 4 cards.
-- Repair the hand if needed so at least two non-modifier shape cards are
-  available.
-- No persistent deck mutation in this prototype, so replay is simple.
+```json
+{
+  "action": "shot",
+  "targetId": "B2",
+  "expression": "y=y0+dy*t+18*sin(pi*t)",
+  "cardSlots": [1],
+  "publicReason": "Use a sine lift over the center blockers."
+}
+```
 
-Map generation:
+or:
 
-- Pick one of several hard layouts by seed.
-- Add base obstacles plus procedural obstacles, targeting 5-8 total blockers.
-- Include multiple tall obstructions and at least one elevated shelf/floater
-  that punishes mid-height shots.
-- Do not expose route windows, golden gates, target lanes, or map-fit hints.
-- Position units so direct fire is usually blocked.
-- Keep all units above ground and targetable with some available finite card
-  combos. The generator should avoid impossible maps, but it does not need to
-  show the player the intended solution.
+```json
+{
+  "action": "swap_hand",
+  "targetId": "",
+  "expression": "",
+  "cardSlots": [],
+  "publicReason": "Current hand has no useful lane."
+}
+```
 
-## AI Decision Model
+The server validates target IDs, expression syntax, allowed functions, numeric
+range, and collision outcome. It does not give the model hidden hit predictions
+or a list of pre-solved curves.
 
-The local AI is deterministic and transparent. It is not a real LLM yet.
+## Map And Difficulty
 
-The player order is battle-level, not turn-level. This makes the AI feel more
-autonomous: it can keep obeying, overfitting, or creatively interpreting the
-same instruction as the tactical state changes. The player may also provide no
-order at all; in that case, the AI receives only the environment, legal hand,
-units, map, and target state. The difficulty should come from limited hands,
-finite card combinations, hard terrain, model interpretation, and imperfect
-language, not from asking the player to rewrite an optimal prompt every turn.
+Maps use seeded continuous blob obstacles rather than rectangular wall stacks.
+The current target is readability with real pressure:
 
-For each legal one- or two-card combo, it simulates candidate amplitudes and
-scores the result using:
+- blockers stay below 10 visible obstacles
+- terrain forms continuous Graphwar-like silhouettes
+- maps expose multiple possible lanes
+- route bonus points are optional and must not spawn inside obstacles
+- direct lines are often blocked, but swap windows should make maps solvable
 
-- strong reward for enemy hit
-- penalty for ally hit
-- penalty for blocked/ground/out
-- distance-to-target penalty on misses
-- command keyword influence:
-  - high / over / 上缘 / 越塔 prefer high clearance
-  - safe / 避 / 别误伤 penalize ally risk
-  - aggressive / 收割 prefer damage and low HP targets
-  - explicit target ids like `B2` or `A1` bias target selection
-- card tag influence:
-  - precision helps near misses
-  - volatile improves damage but increases risk penalty
-  - clearance helps high maps
-- no hidden route-window score. Clean hits, resource use, target pressure, and
-  risk should explain the result.
+Difficulty is tested by measuring first-hand hit rate, swap-window hit rate,
+solver pressure, open lanes, blob coverage, and topology tags across seeds.
 
-The AI thinking trace is derived from this scoring and must not expose chain of
-thought. It is a compact explanation of the selected inputs and outcome.
+## Damage
 
-## Rank Score
+Damage is based on hit quality and function commitment, not hidden risk classes.
 
-Each finished battle receives a rank:
+Enemy hit damage:
 
-- `S`: decisive win with high remaining HP and few blocked shots
-- `A`: win with reasonable efficiency
-- `B`: win with heavy damage or many misses
-- `C`: draw or low-quality win
-- `D`: loss
+```text
+clamp(round(24 + proximityAccuracy * 20 + functionCommitment + routeDamage), 20, 72)
+```
 
-Score formula:
+Ally hit damage:
 
-- +600 for win, +250 for draw
-- +sum allied remaining HP
-- +35 per enemy hit
-- -25 per blocked/ground/out/miss
-- -45 per ally hit
-- -6 per turn used
-- +difficulty bonus from map layout
+```text
+clamp(round(14 + proximityAccuracy * 8 + functionCommitment * 0.35), 8, 34)
+```
 
-The UI should display numeric score and rank at the end.
+Where:
+
+- `proximityAccuracy` is 1.0 at the target center and falls toward 0.0 at the
+  unit edge.
+- `functionCommitment = clamp(functionCount * 4 + cardSlotsUsed * 2, 0, 18)`.
+- `routeDamage = clamp(routeBonusValue * 0.4, 0, 12)`.
+
+Precision metadata means a card is useful for fine correction or tight lanes.
+It is not a direct damage bonus and not a required tactic.
 
 ## UI Direction
 
-The page is the game surface, not a landing page. Use a dark tactical board
-with tactile card controls and readable command panels.
+The Play screen should fit the core game into one dense view:
 
-Layout:
+- left: account, provider, model, API key, prompt, idle rounds
+- center: 2D battlefield and result banner
+- right: active model thought, expression, result, and hand read
+- secondary details in drawers, not always-open walls of text
 
-- Top command/status bar: seed, round, active team, score/rank.
-- Left or center: large fixed-coordinate battlefield.
-- Middle command row: two battle-order boxes, editable only before the first
-  shot of a battle.
-- Bottom: current hand as cards, with used cards highlighted after a shot.
-- Right: shot inspector with AI thinking trace, expression, result, and log.
+The player should be able to answer three questions at a glance:
 
-Visual style:
+- Which team is winning?
+- What function did the current model write?
+- Why did that shot hit, miss, collide, or swap?
 
-- Deep board background.
-- Team A: electric blue.
-- Team B: ember red.
-- Accents: green/gold for resources and rank.
-- Cards use compact tactical text and visible tags.
-- Motion is simple: latest path draws in, hit ring pulses, cards press subtly.
+## Benchmark Direction
 
-Responsive:
+The benchmark path runs raw model-vs-model leagues through the same model
+contract. Contestants are named as `<model> (raw)` when no standing prompt is
+provided. Benchmark exports should include complete public action trajectories,
+raw provider outputs, reasoning fields when available, failures, and rank table
+updates.
 
-- Desktop uses board + inspector side by side.
-- Mobile stacks command, board, hand, inspector without overlapping text.
+## Acceptance Criteria
 
-## LLM/API-Key Architecture
-
-The offline deterministic AI remains the default. The future hosted version
-adds an optional provider adapter layer:
-
-- `src/providers/catalog.js`: provider metadata and model defaults.
-- `src/providers/prompt.js`: prompt assembly from battle state, hand, and
-  command.
-- `src/providers/local-agent.js`: current deterministic AI wrapper.
-- `src/providers/http-agent.js`: browser-to-server client for hosted play.
-- `server/index.js`: minimal Railway-ready Node server.
-- `server/providers/*.js`: OpenAI-compatible, Anthropic, DeepSeek, Minimax,
-  and Zhipu request adapters.
-
-Security:
-
-- The browser may accept a user API key for local direct calls only when the
-  provider supports browser CORS and the user explicitly opts in.
-- Hosted Railway mode should proxy requests server-side. User keys are used
-  only for the request and not persisted.
-- Never log API keys or include them in exported traces.
-
-The current implementation can ship without live LLM calls if the interfaces
-and provider catalog are present and documented. Model selection must not be
-limited to one API key or one default model: the UI and server should keep a
-provider id plus an editable model string in the request.
-
-## Future Multiplayer And Simulation Direction
-
-This stage keeps the battle local, but the intended online game is:
-
-- simple login so rank and match history can be attached to a player
-- 2v2 matchmaking where each human controls one AI
-- no communication between the two teammate AIs inside a match
-- AI-filled teammate or opponent seats when matchmaking cannot fill a lobby
-- rank points gained or lost from match outcome and quality
-- rank-aware matchmaking once enough players or model bots exist
-- model selection per controlled AI, including provider and model name
-- simulation API for automated model-vs-model and prompt-vs-prompt ladders
-
-The simulation API should accept seeded match parameters, provider/model
-configuration, player prompts, and bot fill policy, then return a deterministic
-trace and rank delta. This lets us run many automated matches and observe which
-models or prompt styles climb fastest.
-
-## Open Source Requirements
-
-The repo should be ready for `cdotlock/mob-graphwar`:
-
-- clear README with concept, run commands, scope, roadmap
-- MIT or explicit project license
-- contribution notes
-- deterministic tests
-- no secrets committed
-- remote configured and pushed when GitHub access works
-
-## Acceptance Criteria For This Stage
-
-- The demo has no movement, fog, scouting, or reward draft.
-- Every turn displays the current hand.
-- Default battle-order boxes are empty.
-- Each turn is one-shot: once run, no candidate revision phase appears.
-- The event inspector shows AI thinking trace for the selected shot.
-- The card system has richer cards and tags beyond six function templates.
-- Maps are generated from seed and are harder than the initial fixed map.
-- Maps do not expose route windows or map-fit hints.
-- Finished battles show numeric score and rank.
-- Same seed and commands reproduce identical exported traces.
-- Tests cover determinism, resource validation, command parsing, generated map
-  validity, rank scoring, and trace shape.
-- The UI is polished enough to be judged as a game prototype, not a debugger.
+- Model prompts contain no API keys, local scores, hidden hit predictions, or
+  precomputed shot IDs.
+- Public UI and docs do not mention removed energy/cost/risk mechanics.
+- Every shot displays the exact expression the model wrote.
+- Finished battles show win/loss/draw clearly.
+- Same seed and model decisions replay deterministically.
+- Tests prove maps are non-trivial but solvable within swap windows.

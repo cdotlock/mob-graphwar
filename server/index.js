@@ -553,7 +553,7 @@ function queueRankedPlayer(player, preferredProvider, standingOrder) {
   return null;
 }
 
-function createAiFallbackMatch(player, preferredProvider, standingOrder) {
+function createAiFillMatch(player, preferredProvider, standingOrder) {
   removeQueuedPlayer(player.id);
   if (matchmakingQueue.length >= MATCH_COMMANDER_COUNT - 1) {
     const entries = matchmakingQueue.splice(0, MATCH_COMMANDER_COUNT - 1).concat({
@@ -594,31 +594,7 @@ function getActiveUnitId(state) {
 }
 
 function isSwapAction(action) {
-  return action === "swap_hand" || action === "reroll";
-}
-
-function buildActionSummary(match, action, team, unitId, rerollResult, beforeEventCount) {
-  if (isSwapAction(action)) {
-    return {
-      action: "swap_hand",
-      team,
-      unitId,
-      rerollsUsed: rerollResult.rerollsUsed,
-      rerollsRemaining: rerollResult.rerollsRemaining,
-      swapsUsed: rerollResult.swapsUsed,
-      swapsRemaining: rerollResult.swapsRemaining,
-      hand: rerollResult.cards
-    };
-  }
-  const event = match.state.events[beforeEventCount] || match.state.events[match.state.events.length - 1] || null;
-  return {
-    action,
-    team,
-    unitId: event ? event.unitId || event.shooterId : unitId,
-    event,
-    result: event ? event.result : match.state.reason,
-    winner: match.state.winner
-  };
+  return action === "swap_hand";
 }
 
 function autoResolveCommandsForTurn(match, options) {
@@ -704,10 +680,6 @@ function buildPublicRulesPacket(match, player, command) {
   };
 }
 
-function localAutoProviderLabel(team) {
-  return team === "A" ? "Auto Resolve A" : "Auto Resolve B";
-}
-
 function providerEnvKey(provider, env) {
   const source = env || process.env;
   if (!provider) return "";
@@ -782,7 +754,6 @@ async function autoResolveDecisionForTurn(match, turn, options) {
       {
         apiKey: configured.apiKey,
         command: turn.command,
-        candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
         stateSummary: summarizeState(match.state),
         rulesPayload,
         model: configured.model
@@ -806,13 +777,13 @@ async function advanceMatchToResolution(match, options) {
   opts.providerBudget = opts.providerBudget || createProviderBudget(opts.env);
   let guard = 0;
   const configuredMaxActions = normalizeActionCap(opts.maxActions);
-  const maxActions = configuredMaxActions || Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
+  const maxActions = configuredMaxActions || Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxSwapsPerTurn + 1));
   while (!match.state.winner && guard < maxActions) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
     const resolved = await autoResolveDecisionForTurn(match, turn, opts);
     if (isSwapAction(resolved.decision.action)) {
-      const rerollResult = Sim.applyTurn(match.state, {}, {
+      const swapResult = Sim.applyTurn(match.state, {}, {
         action: "swap_hand",
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
@@ -823,9 +794,9 @@ async function advanceMatchToResolution(match, options) {
         unitId: turn.unitId,
         provider: resolved.providerLabel,
         publicReason: resolved.decision.publicReason,
-        swapsUsed: rerollResult.swapsUsed,
-        swapsRemaining: rerollResult.swapsRemaining,
-        hand: rerollResult.cards,
+        swapsUsed: swapResult.swapsUsed,
+        swapsRemaining: swapResult.swapsRemaining,
+        hand: swapResult.cards,
         rulesDigest: resolved.rulesDigest
       });
       continue;
@@ -835,7 +806,6 @@ async function advanceMatchToResolution(match, options) {
       match.state,
       { [turn.unitId || turn.team]: resolved.command },
       {
-        candidateId: resolved.decision.candidateId || undefined,
         targetId: resolved.decision.targetId || undefined,
         expression: resolved.decision.expression || undefined,
         cardSlots: resolved.decision.cardSlots || undefined,
@@ -850,7 +820,6 @@ async function advanceMatchToResolution(match, options) {
       unitId: event ? event.unitId || event.shooterId : turn.unitId,
       provider: resolved.providerLabel,
       publicReason: resolved.decision.publicReason,
-      candidateId: resolved.decision.candidateId || null,
       targetId: resolved.decision.targetId || null,
       expression: resolved.decision.expression || null,
       cardSlots: resolved.decision.cardSlots || [],
@@ -890,7 +859,6 @@ function publicEventSummary(event) {
     provider: event.provider || "Local AI",
     shooterId: event.shooterId,
     targetId: event.targetId,
-    candidateId: event.candidateId || null,
     result: event.result,
     resultLabel: event.resultLabel,
     combo: event.combo ? clonePublic(event.combo) : { name: "y0+dy*t" },
@@ -960,7 +928,6 @@ function buildPlaybackFrame(match, action) {
       provider: publicAction.provider || "Battle Engine",
       publicReason: publicAction.publicReason || "",
       resultLabel: publicAction.resultLabel || null,
-      candidateId: publicAction.candidateId || null,
       swapsUsed: Number.isFinite(Number(publicAction.swapsUsed)) ? Number(publicAction.swapsUsed) : null,
       swapsRemaining: Number.isFinite(Number(publicAction.swapsRemaining)) ? Number(publicAction.swapsRemaining) : null,
       hand: Array.isArray(publicAction.hand) ? clonePublic(publicAction.hand) : null,
@@ -1205,15 +1172,12 @@ function simulationApiContract() {
 function localDecisionFromRules(rulesPayload) {
   const actions = Array.isArray(rulesPayload.legalActions) ? rulesPayload.legalActions : [];
   const swap = actions.find((action) => action.action === "swap_hand");
-  const shotActions = actions.filter((action) => action.action === "shot");
   const complexity = rulesPayload.state && rulesPayload.state.map && rulesPayload.state.map.complexity
     ? rulesPayload.state.map.complexity
     : {};
   const hand = rulesPayload.hand || {};
   const analysis = hand.analysis || {};
   const swapsUsed = Number(swap ? swap.swapsUsed : hand.swapsUsed) || 0;
-  const totalShotCandidates = Number(rulesPayload.actionSpace && rulesPayload.actionSpace.shotCandidateCount) || shotActions.length;
-  const lowActionSpace = totalShotCandidates > 0 && totalShotCandidates < 96;
   const solverPressure = Number(complexity.solverPressure) || 0;
   const swapWindowHitRate = Number(complexity.swapWindowHitRate) || 0;
   const highPressure =
@@ -1222,23 +1186,13 @@ function localDecisionFromRules(rulesPayload) {
     Number(complexity.obstacleCount) >= 40;
   const searchMap = swapWindowHitRate > 0 && swapWindowHitRate <= 0.5;
   const underPlayable = Number(analysis.playableCount) < Math.min(Number(analysis.handSize) || 4, 3);
-  const unstableHand = String(analysis.risk || "").includes("volatile") && !(analysis.traits || []).includes("precision");
-  if (swap && swapsUsed < Sim.CONFIG.maxRerollsPerTurn && highPressure && (searchMap || lowActionSpace || underPlayable || unstableHand)) {
+  const lowPrecisionSupport = !(analysis.traits || []).includes("precision");
+  if (swap && swapsUsed < Sim.CONFIG.maxSwapsPerTurn && highPressure && (searchMap || underPlayable || lowPrecisionSupport)) {
     return {
       action: "swap_hand",
       publicReason: searchMap
         ? `Local baseline searched another retained hand because solver pressure is ${solverPressure} and swap-window hit rate is ${Math.round(swapWindowHitRate * 100)}%.`
-        : lowActionSpace
-        ? `Local baseline swapped because only ${totalShotCandidates} legal shots fit this high-pressure map.`
         : "Local baseline swapped a weak retained hand before firing."
-    };
-  }
-  const shot = shotActions.find((action) => action.candidateId);
-  if (shot) {
-    return {
-      action: "shot",
-      candidateId: shot.candidateId,
-      publicReason: "Local baseline selected the first legal shot."
     };
   }
   const shotContract = actions.find((action) => action.action === "shot");
@@ -1256,13 +1210,10 @@ function localDecisionFromRules(rulesPayload) {
       publicReason: "Local baseline wrote a direct line function."
     };
   }
-  if (actions.some((action) => action.action === "reroll")) {
-    return { action: "swap_hand", publicReason: "Local baseline swapped hand because no shot was legal." };
-  }
   if (actions.some((action) => action.action === "swap_hand")) {
     return { action: "swap_hand", publicReason: "Local baseline swapped hand because no shot was legal." };
   }
-  return { action: "shot", candidateId: null, publicReason: "No legal action available." };
+  return { action: "shot", targetId: "", expression: "", cardSlots: [], publicReason: "No legal action available." };
 }
 
 async function contestantDecision(contestant, state, unitId, env, fetchFn) {
@@ -1289,7 +1240,6 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
     {
       apiKey,
       command,
-      candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
       stateSummary: summarizeState(state),
       rulesPayload,
       model: contestant.model,
@@ -1363,7 +1313,6 @@ function publicLeagueAction(state, action, beforeEventCount) {
     model: action.model,
     provider: action.provider,
     action: action.action,
-    candidateId: action.candidateId || null,
     targetId: action.targetId || null,
     expression: action.expression || "",
     cardSlots: Array.isArray(action.cardSlots) ? action.cardSlots : [],
@@ -1387,7 +1336,7 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
   const configuredMaxActions = Number(opts.maxActions);
   const maxActions = Number.isFinite(configuredMaxActions) && configuredMaxActions > 0
     ? Math.max(1, Math.floor(configuredMaxActions))
-    : Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxRerollsPerTurn + 1));
+    : Math.max(32, Number(Sim.CONFIG.maxResolutionActions || 96) * (Sim.CONFIG.maxSwapsPerTurn + 1));
   while (!state.winner && guard < maxActions) {
     guard += 1;
     const unitId = getActiveUnitId(state);
@@ -1416,7 +1365,7 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
       publicReason: resolved.decision.publicReason || ""
     };
     if (isSwapAction(resolved.decision.action)) {
-      const rerollResult = Sim.applyTurn(state, {}, {
+      const swapResult = Sim.applyTurn(state, {}, {
         action: "swap_hand",
         provider: resolved.providerLabel,
         providerReason: resolved.decision.publicReason
@@ -1424,8 +1373,8 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
       actions.push(publicLeagueAction(state, {
         ...actionBase,
         action: "swap_hand",
-        swapsUsed: rerollResult.swapsUsed,
-        swapsRemaining: rerollResult.swapsRemaining
+        swapsUsed: swapResult.swapsUsed,
+        swapsRemaining: swapResult.swapsRemaining
       }, state.events.length));
       continue;
     }
@@ -1434,7 +1383,6 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
       state,
       { [unitId || team]: resolved.command },
       {
-        candidateId: resolved.decision.candidateId || undefined,
         targetId: resolved.decision.targetId || undefined,
         expression: resolved.decision.expression || undefined,
         cardSlots: resolved.decision.cardSlots || undefined,
@@ -1445,7 +1393,6 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
     actions.push(publicLeagueAction(state, {
       ...actionBase,
       action: "shot",
-      candidateId: resolved.decision.candidateId || null,
       targetId: resolved.decision.targetId || null,
       expression: resolved.decision.expression || null,
       cardSlots: resolved.decision.cardSlots || []
@@ -1549,12 +1496,11 @@ async function runLeagueSimulation(body, env, fetchFn) {
 
 function providerErrorStatus(error) {
   if (error.message === "missing_api_key") return 400;
-  if (error.message === "unknown_candidate") return 422;
-  if (error.message === "missing_candidate_id") return 502;
+  if (error.message === "missing_expression") return 502;
   if (error.message === "invalid_provider_json") return 502;
   if (error.message === "provider_http_error") return 502;
   if (error.message === "provider_timeout") return 504;
-  if (error.message === "reroll_limit_reached") return 409;
+  if (error.message === "swap_limit_reached") return 409;
   return 400;
 }
 
@@ -1585,12 +1531,17 @@ function createServer(options) {
           sendJson(res, 400, { error: "unknown_provider" });
           return;
         }
-        const models = await listProviderModels(provider.id, env, {
-          fetch: fetchFn,
-          apiKey: body.apiKey,
-          noCache: true
-        });
-        sendJson(res, 200, { provider: provider.id, models: models || [] });
+        try {
+          const models = await listProviderModels(provider.id, env, {
+            fetch: fetchFn,
+            apiKey: body.apiKey,
+            noCache: true,
+            strict: true
+          });
+          sendJson(res, 200, { provider: provider.id, models: models || [] });
+        } catch (err) {
+          sendJson(res, providerErrorStatus(err), { error: err.message || "model_list_failed" });
+        }
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/session/me") {
@@ -1740,7 +1691,7 @@ function createServer(options) {
           sendJson(res, 200, { match: publicMatch(queuedMatch), queueSize: matchmakingQueue.length });
           return;
         }
-        const match = createAiFallbackMatch(player, body.preferredProvider, standingOrder);
+        const match = createAiFillMatch(player, body.preferredProvider, standingOrder);
         sendJson(res, 200, { match: publicMatch(match) });
         return;
       }
@@ -1824,7 +1775,6 @@ function createServer(options) {
         }
         const command = String(body.command || "").slice(0, 80);
         const rulesPayload = Contract.buildRulesPayload(body.state, requestedOwner, command);
-        const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
         if (!rulesPayload.legalActions.length) {
           sendJson(res, 409, { error: "no_legal_actions" });
           return;
@@ -1835,7 +1785,6 @@ function createServer(options) {
             {
               apiKey: body.apiKey,
               command,
-              candidates,
               stateSummary: summarizeState(body.state),
               rulesPayload,
               model: body.model
@@ -1846,8 +1795,7 @@ function createServer(options) {
             provider: provider.id,
             model: body.model || env[provider.modelEnv] || provider.defaultModel,
             decision: result.decision,
-            candidate: result.candidate,
-            candidatesConsidered: candidates.length
+            contractMode: "model_written_expression"
           });
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });

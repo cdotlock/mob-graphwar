@@ -132,6 +132,23 @@ async function testProviderModelsEndpointUsesByokForLiveCatalog() {
   assert.ok(!result.text.includes("sk-user-models"), "model refresh response should not leak the BYOK key");
 }
 
+async function testProviderModelsEndpointSurfacesRefreshErrors() {
+  const fetchMock = async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ error: "unavailable" })
+  });
+  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/providers/openai/models", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ apiKey: "sk-user-models" })
+  });
+  assert.strictEqual(result.status, 400);
+  assert.strictEqual(result.json.error, "openai_models_503");
+  assert.ok(!result.text.includes("gpt-5.5"), "failed refresh should not silently return static curated models");
+  assert.ok(!result.text.includes("sk-user-models"), "failed refresh response should not leak the BYOK key");
+}
+
 async function testStaticServerOnlyServesMainEntrypoint() {
   const main = await request(createServer({ env: {} }), "/index.html");
   assert.strictEqual(main.status, 200);
@@ -226,7 +243,7 @@ async function testLoginMatchmakingAndRankLoop() {
   assert.ok(Number.isFinite(result.json.player.rank.rating), "resolved ranked match should return updated rank");
 }
 
-async function testAiFallbackSeatsDefaultToOpenRouterFreePrompts() {
+async function testAiFillSeatsDefaultToOpenRouterFreePrompts() {
   const session = await request(createServer({ env: {} }), "/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -711,13 +728,13 @@ async function testRankedMatchRejectsMidDuelManualActions() {
   assert.strictEqual(joined.status, 200);
   const matchId = joined.json.match.id;
 
-  const rerolled = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
+  const manualSwap = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ playerId: session.json.player.id, action: "swap_hand" })
   });
-  assert.strictEqual(rerolled.status, 410);
-  assert.strictEqual(rerolled.json.error, "manual_actions_disabled");
+  assert.strictEqual(manualSwap.status, 410);
+  assert.strictEqual(manualSwap.json.error, "manual_actions_disabled");
 
   const fired = await request(createServer({ env: {} }), `/api/match/${matchId}/action`, {
     method: "POST",
@@ -1273,7 +1290,7 @@ async function testModelLeagueRoundRobinCanExportCompleteTraces() {
   assert.ok(!result.text.includes("raw-c-secret"), "round-robin trace should not echo contestant keys");
 }
 
-async function testProviderShotUsesByokAndValidatesCandidate() {
+async function testProviderShotUsesByokAndValidatesExpression() {
   let captured;
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
   const fetchMock = async (url, options) => {
@@ -1309,7 +1326,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
       apiKey: "sk-live-user",
       state,
       team: "A",
-      command: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。"
+      command: "只打B2，安全高抛越塔，别误伤队友。"
     })
   });
 
@@ -1317,7 +1334,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.strictEqual(result.json.provider, "openai");
   assert.strictEqual(result.json.decision.targetId, "B1");
   assert.ok(result.json.decision.expression.includes("sin(pi*t)"), "response should include model-written expression");
-  assert.strictEqual(result.json.candidate, null);
+  assert.strictEqual(result.json.contractMode, "model_written_expression");
   assert.ok(captured.url.endsWith("/chat/completions"), "OpenAI-compatible adapter should call chat completions");
   assert.strictEqual(captured.options.headers.authorization, "Bearer sk-live-user");
   const prompt = providerRulesPayload(JSON.parse(captured.options.body));
@@ -1325,7 +1342,7 @@ async function testProviderShotUsesByokAndValidatesCandidate() {
   assert.strictEqual(prompt.state.map.windows, undefined, "provider prompt should not include route windows");
   assert.ok(!JSON.stringify(prompt).includes("candidateId"), "provider prompt should not include precomputed candidates");
   assert.ok(prompt.legalActions.some((action) => action.action === "swap_hand"), "provider prompt should expose swap_hand as a legal action");
-  assert.ok(!prompt.legalActions.some((action) => action.action === "reroll"), "provider prompt should not expose old reroll wording");
+  assert.ok(prompt.legalActions.every((action) => ["shot", "swap_hand"].includes(action.action)), "provider prompt should expose the current action set");
   assert.ok(!result.text.includes("sk-live-user"), "server response should never echo BYOK key");
 }
 
@@ -1370,12 +1387,12 @@ async function testProviderShotUsesCurrentTurnOrder() {
       apiKey: "sk-live-user",
       state,
       team: "B",
-      command: "must target A1, low risky direct shot"
+      command: "must target A1, low direct shot"
     })
   });
 
   assert.strictEqual(result.status, 200);
-  assert.strictEqual(capturedPrompt.command, "must target A1, low risky direct shot", "server should use the current turn command");
+  assert.strictEqual(capturedPrompt.command, "must target A1, low direct shot", "server should use the current turn command");
 }
 
 async function testProviderCanChooseSwapHand() {
@@ -1411,7 +1428,7 @@ async function testProviderCanChooseSwapHand() {
 
   assert.strictEqual(result.status, 200);
   assert.strictEqual(result.json.decision.action, "swap_hand");
-  assert.strictEqual(result.json.candidate, null);
+  assert.strictEqual(result.json.contractMode, "model_written_expression");
 }
 
 async function testProviderShotRequiresKey() {
@@ -1433,10 +1450,11 @@ async function testProviderShotRequiresKey() {
 (async () => {
   await testHealthAndProviders();
   await testProviderModelsEndpointUsesByokForLiveCatalog();
+  await testProviderModelsEndpointSurfacesRefreshErrors();
   await testStaticServerOnlyServesMainEntrypoint();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
-  await testAiFallbackSeatsDefaultToOpenRouterFreePrompts();
+  await testAiFillSeatsDefaultToOpenRouterFreePrompts();
   await testProfileRankAndLeaderboardPersistAcrossRestart();
   await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
   await testSessionTokenProtectsRankedAndProviderRoutes();
@@ -1454,7 +1472,7 @@ async function testProviderShotRequiresKey() {
   await testAutoDuelPropagatesSlowProviderTimeout();
   await testModelLeagueSimulationRanksContestantsWithoutLeakingKeys();
   await testModelLeagueRoundRobinCanExportCompleteTraces();
-  await testProviderShotUsesByokAndValidatesCandidate();
+  await testProviderShotUsesByokAndValidatesExpression();
   await testProviderShotUsesCurrentTurnOrder();
   await testProviderCanChooseSwapHand();
   await testProviderShotRequiresKey();

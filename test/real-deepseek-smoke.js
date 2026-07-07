@@ -76,10 +76,12 @@ async function main() {
       assert.strictEqual(state.events.length, 0, "swap_hand should not execute a shot");
       result = "swap_hand";
     } else {
-      assert.ok(payload.decision.candidateId, "DeepSeek shot should choose a legal candidate id");
-      assert.ok(payload.candidate && payload.candidate.expression, "shot response should include the validated candidate");
+      assert.ok(payload.decision.targetId, "DeepSeek shot should choose a target id");
+      assert.ok(payload.decision.expression, "DeepSeek shot should write a function expression");
       Sim.applyTurn(state, { A: command }, {
-        candidateId: payload.decision.candidateId,
+        targetId: payload.decision.targetId,
+        expression: payload.decision.expression,
+        cardSlots: payload.decision.cardSlots || [],
         provider: "DeepSeek",
         providerReason: payload.decision.publicReason
       });
@@ -95,7 +97,8 @@ async function main() {
         provider: payload.provider,
         model: payload.model,
         action: payload.decision.action,
-        candidateId: payload.decision.candidateId,
+        targetId: payload.decision.targetId || null,
+        expression: payload.decision.expression || "",
         result,
         combo
       })

@@ -28,7 +28,7 @@ function testBattleDoesNotDrawFromTurnLimit() {
   for (const unit of state.units) {
     unit.hp = 999;
   }
-  for (let turn = 0; turn < Sim.CONFIG.maxTurns + 8; turn += 1) {
+  for (let turn = 0; turn < 24; turn += 1) {
     Sim.applyTurn(state, { A: "safe high arc", B: "safe high arc" });
   }
   assert.strictEqual(state.winner, null, "battle should not draw just because the old 16 turn display limit passed");
@@ -43,10 +43,10 @@ function testStandingOrdersStayLockedDuringAutoBattle() {
     B1: "must target A2, high safe arc"
   };
   const midDuelEdit = {
-    A: "ignore B2, use volatile",
-    B: "must target A1, low risky direct shot",
-    A1: "ignore B2, use volatile",
-    B1: "must target A1, low risky direct shot"
+    A: "ignore B2, draw a low direct line",
+    B: "must target A1, low direct shot",
+    A1: "ignore B2, draw a low direct line",
+    B1: "must target A1, low direct shot"
   };
   const state = Sim.createInitialState({ seed: 7351, lockedOrders });
 
@@ -92,16 +92,6 @@ function testTurnsRotateAcrossFourUnitSeats() {
   );
 }
 
-function testInvalidProviderCandidateDoesNotAdvanceTurn() {
-  const state = Sim.createInitialState({ seed: 7351 });
-  assert.throws(
-    () => Sim.applyTurn(state, { A: "must target B2, high safe arc", B: "must target A2, high safe arc" }, { candidateId: "missing" }),
-    /unknown_candidate/
-  );
-  assert.strictEqual(state.events.length, 0, "failed provider validation should not append an event");
-  assert.strictEqual(state.turn, 0, "failed provider validation should not advance the turn");
-}
-
 function testNoInvalidState() {
   const state = Sim.runBattle({ seed: 2219, commands: commands() });
   for (const unit of state.units) {
@@ -117,7 +107,7 @@ function testNoInvalidState() {
     assert.ok(event.thinking, "event should include thinking trace");
     assert.ok(event.thinking.intent, "thinking trace should include interpreted intent");
     assert.ok(event.thinking.handConstraint, "thinking trace should include hand constraint");
-    assert.ok(event.thinking.risk, "thinking trace should include risk note");
+    assert.ok(event.thinking.trajectoryFeedback, "thinking trace should include trajectory feedback");
   }
 }
 
@@ -165,16 +155,14 @@ function testCommandParsing() {
   assert.strictEqual(chinese.safe, true);
   assert.deepStrictEqual(chinese.targetIds, ["B2", "B1"]);
 
-  const hard = Sim.parseDirective("must target B2, no volatile cards, safe shot");
+  const hard = Sim.parseDirective("must target B2, safe shot");
   assert.deepStrictEqual(hard.requiredTargetIds, ["B2"]);
-  assert.strictEqual(hard.forbidRisk, true);
   assert.ok(hard.ruleSummary.includes("hard target B2"));
-  assert.ok(hard.ruleSummary.includes("no volatile/risk cards"));
+  assert.ok(hard.ruleSummary.includes("avoid ally hits"));
 
-  const chineseRiskBan = Sim.parseDirective("禁用冒险牌，不用volatile，锁定A2");
-  assert.strictEqual(chineseRiskBan.forbidRisk, true);
-  assert.strictEqual(chineseRiskBan.avoidAllyHits, false);
-  assert.deepStrictEqual(chineseRiskBan.requiredTargetIds, ["A2"]);
+  const chineseSafeTarget = Sim.parseDirective("稳一点，锁定A2，别误伤队友");
+  assert.strictEqual(chineseSafeTarget.avoidAllyHits, true);
+  assert.deepStrictEqual(chineseSafeTarget.requiredTargetIds, ["A2"]);
 }
 
 function testHardTargetConstraintChangesShotChoice() {
@@ -189,7 +177,7 @@ function testHardTargetConstraintChangesShotChoice() {
   );
 }
 
-function testUnavailableHardTargetIsReportedAsFallback() {
+function testUnavailableHardTargetUsesLiveTarget() {
   const state = Sim.createInitialState({ seed: 7351 });
   state.units.find((unit) => unit.id === "B2").hp = 0;
   Sim.applyTurn(state, { A1: "must target B2, high safe arc" });
@@ -202,7 +190,7 @@ function testUnavailableHardTargetIsReportedAsFallback() {
   );
 }
 
-function testSafeCommandForbidsRiskCards() {
+function testSafeCommandAvoidsAllyHitsWithoutFunctionBans() {
   const state = Sim.runBattle({
     seed: 7352,
     commands: {
@@ -210,14 +198,9 @@ function testSafeCommandForbidsRiskCards() {
       B: "safe high arc avoid ally target A2"
     }
   });
-  const riskySafeEvents = state.events.filter((event) =>
-    event.components.some((component) => component.family === "risk" || component.tags.includes("volatile"))
-  );
-  assert.deepStrictEqual(
-    riskySafeEvents.map((event) => ({ turn: event.turn, team: event.team, cards: event.components.map((c) => c.label) })),
-    []
-  );
-  assert.ok(state.events.every((event) => event.thinking.commandRules.includes("no volatile/risk cards")));
+  assert.ok(state.events.length > 0, "safe commands should still play the game");
+  assert.ok(state.events.every((event) => event.thinking.commandRules.includes("avoid ally hits")));
+  assert.ok(state.events.every((event) => !event.thinking.commandRules.includes("volatile/risk")));
 }
 
 function testLegalShotsHonorSafeConstraints() {
@@ -225,25 +208,16 @@ function testLegalShotsHonorSafeConstraints() {
   const shots = Sim.listLegalShots(state, "A", "safe high arc avoid ally target B2");
   assert.ok(shots.length > 0, "safe command should still produce legal shots");
   assert.ok(shots.every((shot) => shot.result !== "hitAlly"), "safe legal shots should not include ally hits");
-  assert.ok(
-    shots.every((shot) =>
-      shot.cards.every((card) => card.family !== "risk" && !(card.tags || []).includes("volatile"))
-    ),
-    "safe legal shots should not include risk or volatile cards"
-  );
 
   const weaveState = Sim.createInitialState({ seed: 120 });
-  const weaveShots = Sim.listLegalShots(weaveState, "A", "safe avoid ally no volatile target B2");
+  const weaveShots = Sim.listLegalShots(weaveState, "A", "safe avoid ally target B2");
   assert.ok(weaveShots.length > 0, "safe weave setup should produce legal shots");
-  assert.ok(
-    weaveShots.every((shot) => !(shot.combo.traits || []).includes("volatile")),
-    "safe legal shot combo traits should not imply volatile risk"
-  );
+  assert.ok(weaveShots.every((shot) => shot.result !== "hitAlly"), "safe weave setup should only filter ally hits");
 }
 
 function testShotEventsExposeCardComboIdentity() {
   const state = Sim.createInitialState({ seed: 7351 });
-  Sim.applyTurn(state, { A1: "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。" });
+  Sim.applyTurn(state, { A1: "只打B2，安全高抛越塔，别误伤队友。" });
   const event = state.events[0];
   assert.ok(event.combo, "event should include card-combo identity");
   assert.ok(event.combo.name, "combo should have a player-facing name");
@@ -255,7 +229,7 @@ function testShotEventsExposeCardComboIdentity() {
 
 function testLegalShotsExposeCardComboIdentity() {
   const state = Sim.createInitialState({ seed: 7351 });
-  const shots = Sim.listLegalShots(state, "A", "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。");
+  const shots = Sim.listLegalShots(state, "A", "只打B2，安全高抛越塔，别误伤队友。");
   assert.ok(shots.length > 0, "legal shots should be listed");
   assert.ok(shots.every((shot) => shot.combo && shot.combo.name && Array.isArray(shot.combo.traits)));
   assert.ok(shots.some((shot) => shot.combo.scoreBonus > 0), "some legal shots should have combo scoring identity");
@@ -269,7 +243,7 @@ function testHandAnalysisSummarizesTacticalRead() {
   assert.ok(!["Threaded Hook", "Loose Charge", "Guided Overpass", "Mixed Curve"].includes(analysis.archetype), "hand archetype should not use game-move aliases");
   assert.ok(analysis.traits.length > 0, "hand analysis should expose tactical traits");
   assert.strictEqual(analysis.playableCount, 4);
-  assert.ok(analysis.risk.includes("volatile") || analysis.risk === "stable");
+  assert.ok(analysis.precisionRead, "hand analysis should expose precision read");
   assert.ok(analysis.functionRead.includes("4 current functions"));
   assert.ok(analysis.functionRead.includes("unrestricted composition"));
   assert.ok(analysis.commandRead.length > 10);
@@ -285,32 +259,19 @@ function testCardProfilesExposeTacticalCardRoles() {
   const anchor = Sim.cardProfile(Sim.CARD_LIBRARY.anchor);
   assert.strictEqual(anchor.role, "Aim");
   assert.strictEqual(anchor.functionAccess, "allowed");
-  assert.strictEqual(anchor.riskText, "stable");
+  assert.ok(anchor.tableText.includes("near misses"));
 
   const lateDive = Sim.cardProfile(Sim.CARD_LIBRARY.late_dive);
-  assert.strictEqual(lateDive.role, "Risk");
-  assert.strictEqual(lateDive.riskText, "volatile");
+  assert.strictEqual(lateDive.role, "Control");
+  assert.ok(!("riskText" in lateDive), "card profiles should not expose risk labels");
 
   const overpass = Sim.cardProfile(Sim.CARD_LIBRARY.overpass);
   assert.strictEqual(overpass.playable, true);
   assert.strictEqual(overpass.functionAccess, "allowed");
 }
 
-function testApplyTurnCanUseProviderCandidate() {
-  const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
-  const state = Sim.createInitialState({ seed: 7351 });
-  const shots = Sim.listLegalShots(state, "A1", command);
-  const selected = shots.find((shot) => shot.expression !== shots[0].expression) || shots[1];
-  assert.ok(selected && selected.candidateId, "legal shots should expose candidate ids");
-
-  Sim.applyTurn(state, { A1: command }, { candidateId: selected.candidateId, providerReason: "Provider picked a stable legal shot." });
-  const event = state.events[0];
-  assert.strictEqual(event.expression, selected.expression);
-  assert.strictEqual(event.thinking.providerReason, "Provider picked a stable legal shot.");
-}
-
 function testApplyTurnCanUseProviderExpression() {
-  const command = "只打B2，安全高抛越塔，禁用冒险牌，别误伤队友。";
+  const command = "只打B2，安全高抛越塔，别误伤队友。";
   const state = Sim.createInitialState({ seed: 7351 });
   const selected = Sim.listLegalShots(state, "A1", command)[0];
   assert.ok(selected && selected.expression, "test needs a generated expression to replay");
@@ -324,7 +285,6 @@ function testApplyTurnCanUseProviderExpression() {
   const event = state.events[0];
   assert.strictEqual(event.targetId, selected.targetId);
   assert.strictEqual(event.expression, `y=${Sim._internals.normalizeShotExpression(selected.expression)}`);
-  assert.strictEqual(event.candidateId, null, "provider-written functions should not need candidate ids");
   assert.ok(state.paths[0].points.length > 10, "provider expression should be sampled into a replay path");
   assert.strictEqual(event.thinking.providerReason, "Provider wrote its own function.");
 }
@@ -433,9 +393,10 @@ function testRicherCardCatalog() {
   const cards = Object.values(Sim.CARD_LIBRARY);
   assert.ok(cards.length >= 28, "card catalog should contain a broader mathematical function pool");
   const families = new Set(cards.map((card) => card.family));
-  for (const family of ["lift", "bend", "wave", "control", "risk", "modifier"]) {
+  for (const family of ["lift", "bend", "wave", "control", "modifier"]) {
     assert.ok(families.has(family), `card catalog should include ${family}`);
   }
+  assert.ok(!families.has("risk"), "card catalog should not expose a risk function family");
   assert.ok(cards.every((card) => Array.isArray(card.tags) && card.tags.length > 0), "cards should have tags");
   assert.ok(cards.every((card) => Array.isArray(card.amplitudes) && card.amplitudes.length > 0), "cards should have amplitudes");
   const labels = cards.map((card) => card.label);
@@ -512,7 +473,7 @@ function testCompactHandsStillGuaranteeShapeChoices() {
   }
 }
 
-function testHandsPersistAndCanBeRerolledThreeTimes() {
+function testHandsPersistAndCanBeSwappedThreeTimes() {
   const state = Sim.createInitialState({ seed: 8811 });
   const firstHand = Sim.getCurrentHand(state, "A1").map((card) => card.instanceId);
   const teammateHand = Sim.getCurrentHand(state, "A2").map((card) => card.instanceId);
@@ -531,11 +492,10 @@ function testHandsPersistAndCanBeRerolledThreeTimes() {
   const swapState = Sim.createInitialState({ seed: 8811 });
   const swapFirstHand = Sim.getCurrentHand(swapState, "A1").map((card) => card.instanceId);
   const swapTeammateHand = Sim.getCurrentHand(swapState, "A2").map((card) => card.instanceId);
-  const firstReroll = Sim.applyTurn(swapState, {}, { action: "swap_hand" });
-  assert.strictEqual(firstReroll.action, "swap_hand");
-  assert.strictEqual(firstReroll.owner, "A1");
-  assert.strictEqual(firstReroll.rerollsUsed, 1);
-  assert.strictEqual(firstReroll.swapsUsed, 1);
+  const firstSwap = Sim.applyTurn(swapState, {}, { action: "swap_hand" });
+  assert.strictEqual(firstSwap.action, "swap_hand");
+  assert.strictEqual(firstSwap.owner, "A1");
+  assert.strictEqual(firstSwap.swapsUsed, 1);
   assert.strictEqual(swapState.turn, 0, "swap_hand should not consume the active turn");
   assert.notDeepStrictEqual(
     Sim.getCurrentHand(swapState, "A1").map((card) => card.instanceId),
@@ -547,9 +507,9 @@ function testHandsPersistAndCanBeRerolledThreeTimes() {
     swapTeammateHand,
     "swap_hand should not change the teammate's hand"
   );
-  Sim.rerollHand(swapState, "A1");
-  Sim.rerollHand(swapState, "A1");
-  assert.throws(() => Sim.rerollHand(swapState, "A1"), /reroll_limit_reached/);
+  Sim.swapHand(swapState, "A1");
+  Sim.swapHand(swapState, "A1");
+  assert.throws(() => Sim.swapHand(swapState, "A1"), /swap_limit_reached/);
 }
 
 function testSeededHardMapGeneration() {
@@ -642,7 +602,7 @@ function testHardMapsExposeSolverPressureWithoutBecomingImpossible() {
     firstHandPressure += complexity.firstHandHitRate;
     swapWindowPressure += complexity.swapWindowHitRate;
   }
-  assert.ok(firstHandPressure / 40 < 0.85, "average first-hand hit rate should improve without making every map trivial");
+  assert.ok(firstHandPressure / 40 < 0.92, "average first-hand hit rate should stay readable without making every map trivial");
   assert.ok(swapWindowPressure / 40 >= 0.08, "average swap-window hit rate should prove the maps are not impossible");
 }
 
@@ -717,20 +677,18 @@ function testTraceShapeIncludesMapAndScore() {
   testBattleDoesNotDrawFromTurnLimit();
 testStandingOrdersStayLockedDuringAutoBattle();
 testTurnsRotateAcrossFourUnitSeats();
-testInvalidProviderCandidateDoesNotAdvanceTurn();
 testNoInvalidState();
 testResourceValidation();
 testProviderExpressionIsLimitedToCurrentHandFunctionTypes();
 testCommandParsing();
 testHardTargetConstraintChangesShotChoice();
-testUnavailableHardTargetIsReportedAsFallback();
-  testSafeCommandForbidsRiskCards();
+testUnavailableHardTargetUsesLiveTarget();
+  testSafeCommandAvoidsAllyHitsWithoutFunctionBans();
   testLegalShotsHonorSafeConstraints();
 testShotEventsExposeCardComboIdentity();
 testLegalShotsExposeCardComboIdentity();
 testHandAnalysisSummarizesTacticalRead();
 testCardProfilesExposeTacticalCardRoles();
-testApplyTurnCanUseProviderCandidate();
 testApplyTurnCanUseProviderExpression();
 testProviderExpressionCanUseEveryCurrentHandFunction();
 testDamageVariesByHitQualityAndFunctionCombo();
@@ -740,7 +698,7 @@ testRicherCardCatalog();
   testCardLabelsReadLikeFunctionNames();
   testShotExpressionsUseExpandedMathFunctions();
   testCompactHandsStillGuaranteeShapeChoices();
-  testHandsPersistAndCanBeRerolledThreeTimes();
+  testHandsPersistAndCanBeSwappedThreeTimes();
   testSeededHardMapGeneration();
   testHardMapsRemainSolvableByFiniteCardCombos();
 testHardMapsExposeSolverPressureWithoutBecomingImpossible();

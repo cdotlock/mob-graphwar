@@ -9,15 +9,18 @@ models do not submit arbitrary functions.
 
 1. The game creates a bare rules payload for the active turn.
 2. The provider receives rules, map, unit positions, retained hand, swap count,
-   command text, and legal actions. Shot actions include target, cards, cost,
-   combo identity, and expression. They do not include local simulation score or
-   final hit/miss result.
+   command text, recent feedback, current hand functions, and legal actions.
+   Shot actions include allowed target IDs and an output schema. They do not
+   include local simulation score, hidden hit/miss prediction, or precomputed
+   shot candidates.
 3. The provider returns JSON:
 
 ```json
 {
   "action": "shot",
-  "candidateId": "A-3-0-B2-card.card",
+  "targetId": "B2",
+  "expression": "y=y0+dy*t+18*sin(pi*t)",
+  "cardSlots": [1],
   "publicReason": "Selected a legal curve."
 }
 ```
@@ -31,12 +34,13 @@ or:
 }
 ```
 
-4. The server validates the action against the legal list.
+4. The server validates the action against the legal list, target IDs, function
+   whitelist, expression parser, and collision simulation.
 5. The auto-duel resolver executes the already-known legal shot or applies the
    legal hand swap without consuming the active shot turn.
 
-Models never output arbitrary functions, JavaScript, or card IDs that were not
-offered by the game.
+Models write math expressions directly, but they cannot call functions outside
+the current hand whitelist and cannot execute JavaScript or helper definitions.
 
 ## Hosted Server
 
@@ -56,11 +60,11 @@ rank settlement.
 
 OpenAI-compatible providers use JSON mode. OpenRouter defaults to
 `openrouter/free` and is the default model for AI-filled ally/rival seats when
-`OPENROUTER_API_KEY` is available on the server. If that key is missing or a
-provider call fails, those seats fall back to the local baseline so demos still
-resolve offline. DeepSeek defaults to `deepseek-v4-flash`, caps output tokens
-for the candidate-selection response, and disables thinking mode for this
-narrow JSON selection task.
+`OPENROUTER_API_KEY` is available on the server. If a required provider key is
+missing or a provider call fails, the server returns an error rather than
+silently falling back. DeepSeek defaults to `deepseek-v4-flash`, caps output
+tokens for the JSON expression response, and disables thinking mode for the
+smoke-test path.
 
 The UI lets the player choose provider and model during session creation. A
 user-supplied key is sent only with the provider request and is never returned

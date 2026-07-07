@@ -68,7 +68,7 @@ const I18N = {
     model: "Model",
     room: "Room",
     control: "Control",
-    localFallback: "API key needed",
+    apiKeyNeeded: "API key needed",
     watchOnly: "Watch-only after launch",
     signInRequired: "sign in required",
     roomArmed: "room armed",
@@ -95,7 +95,7 @@ const I18N = {
     createAccount: "Create Account",
     noAccount: "No active ranked account",
     providerReady: "API key armed",
-    providerFallback: "API key required",
+    apiKeyRequired: "API key required",
     randomMatch: "Random Match",
     autoRounds: "Games",
     swapHandRead: "Swap hand",
@@ -139,7 +139,7 @@ const I18N = {
     model: "模型",
     room: "房间",
     control: "控制",
-    localFallback: "需要 API Key",
+    apiKeyNeeded: "需要 API Key",
     watchOnly: "开战后只能观看",
     signInRequired: "需要登录",
     roomArmed: "房间已就绪",
@@ -166,7 +166,7 @@ const I18N = {
     createAccount: "创建账号",
     noAccount: "未登录排位账号",
     providerReady: "API key 已就绪",
-    providerFallback: "需要 API Key",
+    apiKeyRequired: "需要 API Key",
     randomMatch: "随机匹配",
     autoRounds: "挂机局数",
     swapHandRead: "换牌结果",
@@ -310,7 +310,7 @@ function teamBattleStats(state, team) {
   const damage = events.reduce((sum, event) => sum + (Number(event.damage) || 0), 0);
   const swapsUsed = Object.entries(state.hands || {})
     .filter(([unitId]) => String(unitId).startsWith(team))
-    .reduce((sum, [, handState]) => sum + (Number(handState?.swapsUsed ?? handState?.rerollsUsed) || 0), 0);
+    .reduce((sum, [, handState]) => sum + (Number(handState?.swapsUsed) || 0), 0);
   const accuracy = events.length ? Math.round((hits / events.length) * 100) : 0;
   return {
     shots: events.length,
@@ -379,7 +379,7 @@ function frameDecision(frame) {
     swapsRemaining: frame.action.swapsRemaining,
     event: frame.action.event,
     result: frame.action.resultLabel,
-    publicReason: frame.action.publicReason || frame.action.event?.resultLabel || frame.action.candidateId
+    publicReason: frame.action.publicReason || frame.action.event?.resultLabel || frame.action.expression
   };
 }
 
@@ -388,18 +388,17 @@ function rulesSnapshot(state, activeUnitId, command) {
   const unitId = unit?.id || activeUnitId || "A1";
   const team = unit?.team || (String(unitId).startsWith("B") ? "B" : "A");
   const handState = state.hands?.[unitId] || {};
-  const swapsUsed = Number(handState.swapsUsed ?? handState.rerollsUsed) || 0;
-  const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+  const swapsUsed = Number(handState.swapsUsed) || 0;
+  const swapsRemaining = Math.max(0, Sim.CONFIG.maxSwapsPerTurn - swapsUsed);
   const hand = Sim.getCurrentHand(state, unitId);
-  const shotActions = Sim.listLegalShots(state, unitId, command || "").slice(0, 12);
+  const allowedTargetIds = state.units.filter((item) => item.team !== team && item.hp > 0).map((item) => item.id);
   const legalActions = [
     ...(swapsRemaining > 0 ? [{ action: "swap_hand", swapsUsed, swapsRemaining }] : []),
-    ...shotActions.map((shot) => ({
+    {
       action: "shot",
-      candidateId: shot.candidateId,
-      targetId: shot.targetId,
-      combo: shot.combo?.name || "y0+dy*t"
-    }))
+      allowedTargetIds,
+      output: "targetId + y=<expression>"
+    }
   ];
   const allyIds = state.units.filter((item) => item.team === team && item.hp > 0).map((item) => item.id);
   const opponentIds = state.units.filter((item) => item.team !== team && item.hp > 0).map((item) => item.id);
@@ -847,7 +846,7 @@ function App() {
   async function runLeague() {
     setLeagueBusy(true);
     try {
-      const userProvider = login.apiKey.trim() || login.provider === "openrouter" ? login.provider : "local";
+      const userProvider = login.provider;
       const response = await fetch("/api/simulations/league", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -856,7 +855,7 @@ function App() {
           contestants: [
             {
               id: "your-model",
-              label: userProvider === "local" ? "Your Local Baseline" : `${login.provider} ${login.model}`,
+              label: `${login.provider} ${login.model}`,
               provider: userProvider,
               model: login.model,
               apiKey: login.apiKey,
@@ -1678,7 +1677,7 @@ function CompactLaunchSummary({ login, profile, sessionToken, match, queueState,
   const modelReady = Boolean(selectedProvider?.configured || login.apiKey.trim());
   const items = [
     { label: tx(locale, "account"), value: profile && sessionToken ? profile.handle || profile.displayName : profile ? "restore token" : tx(locale, "guest") },
-    { label: tx(locale, "model"), value: modelReady ? selectedProvider?.model || login.model : tx(locale, "localFallback") },
+    { label: tx(locale, "model"), value: modelReady ? selectedProvider?.model || login.model : tx(locale, "apiKeyNeeded") },
     { label: tx(locale, "room"), value: autoBattle ? "settled" : match ? match.status : queueState ? `${queueState.queueSize}/2 queued` : "idle" },
     { label: tx(locale, "control"), value: tx(locale, "watchOnly") }
   ];
@@ -1907,7 +1906,7 @@ function ProviderReadinessGrid({ login, profile, providerCatalog, locale }) {
         return (
           <span className={selected ? "selected" : ""} key={provider.id}>
             <b>{provider.label}</b>
-            <small>{selected && keyed ? tx(locale, "providerReady") : selected ? tx(locale, "providerFallback") : modelLabel}</small>
+            <small>{selected && keyed ? tx(locale, "providerReady") : selected ? tx(locale, "apiKeyRequired") : modelLabel}</small>
           </span>
         );
       })}
@@ -2451,8 +2450,8 @@ function AgentBattleMatrix({ state, match, activeTeam, activeUnitId, lastDecisio
         const unit = state.units.find((item) => item.id === seat.unitId) || { hp: 0, team: seat.team };
         const handState = state.hands?.[seat.unitId] || {};
         const hand = Sim.getCurrentHand(state, seat.unitId).slice(0, 4);
-        const swapsUsed = Number(handState.swapsUsed ?? handState.rerollsUsed) || 0;
-        const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+        const swapsUsed = Number(handState.swapsUsed) || 0;
+        const swapsRemaining = Math.max(0, Sim.CONFIG.maxSwapsPerTurn - swapsUsed);
         const teamDecision = lastDecision?.unitId === seat.unitId || (activeUnitId === seat.unitId && lastDecision?.team === seat.team) ? lastDecision : null;
         const event = latestUnitEvent(seat.unitId);
         const actionLabel = teamDecision?.action || (event ? event.resultLabel : "standing by");
@@ -2741,7 +2740,7 @@ function AgentThoughtPanel({ state, match, activeTeam, activeUnitId, displayUnit
       <div className="thought-hand-read">
         <span>{tx(locale, "handRead")}</span>
         <strong>{usedFunctions}</strong>
-        <small>{handAnalysis.functionRead || `${activeHand?.length || 0} ${tx(locale, "cards")}`} · {handAnalysis.risk || "stable"}</small>
+        <small>{handAnalysis.functionRead || `${activeHand?.length || 0} ${tx(locale, "cards")}`} · {handAnalysis.precisionRead || "precision unknown"}</small>
       </div>
     </aside>
   );
@@ -2823,7 +2822,7 @@ function BattleReplayRail({ state }) {
   return (
     <div className="battle-replay-rail" data-testid="battle-replay-rail">
       {events.length ? events.map((event) => (
-        <div className={`replay-chip team-${event.team.toLowerCase()} ${event.result}`} key={`${event.turn}-${event.team}-${event.candidateId || event.result}`}>
+        <div className={`replay-chip team-${event.team.toLowerCase()} ${event.result}`} key={`${event.turn}-${event.team}-${event.expression || event.result}`}>
           <span>T{event.turn + 1}</span>
           <strong>{event.team} {event.resultLabel}</strong>
           <small>{event.expression || event.combo?.name || "y = ..."}</small>
@@ -2972,7 +2971,7 @@ function RulesPacketPanel({ state, activeUnitId, standingOrder }) {
       <div className="panel-title"><KeyRound size={18} /> Bare Rules Packet</div>
       <div className="rules-metrics">
         <span><b>{snapshot.activeUnitId}</b> active unit</span>
-        <span><b>{shotCount}</b> shot candidates</span>
+        <span><b>{shotCount}</b> function action</span>
         <span><b>{canSwap ? "swap_hand" : "shot only"}</b> legal action</span>
       </div>
       <div className="rules-targets">
@@ -3022,7 +3021,7 @@ function ModelDecisionStack({ state, lastDecision }) {
       ) : null}
       <div className="decision-list">
         {events.length ? events.map((event, index) => (
-          <div className={`decision-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.candidateId || index}`}>
+          <div className={`decision-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.expression || index}`}>
             <i>{String(index + 1).padStart(2, "0")}</i>
             <div>
               <span>{event.provider || "Local AI"} · Team {event.team}</span>
@@ -3055,8 +3054,8 @@ function ModelWarFeed({ state, lastDecision }) {
         </div>
       )}
       <div className="feed-list">
-        {events.length ? events.map((event) => (
-          <div className={`feed-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.candidateId}`}>
+        {events.length ? events.map((event, index) => (
+          <div className={`feed-row team-${event.team.toLowerCase()}`} key={`${event.turn}-${event.team}-${event.expression || index}`}>
             <span>T{event.turn + 1} · Team {event.team}</span>
             <strong>{event.resultLabel}</strong>
             <small>{event.provider || "Local AI"} · {event.combo?.name || "y0+dy*t"}</small>

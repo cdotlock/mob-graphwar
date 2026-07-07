@@ -22,7 +22,7 @@ function testProviderCatalogRedactsKeys() {
   assert.strictEqual(getProvider("unknown"), null);
 }
 
-function testFallbackCatalogUsesCurrentMainstreamModels() {
+function testCuratedCatalogUsesCurrentMainstreamModels() {
   assert.strictEqual(getProvider("openai").defaultModel, "gpt-5.5");
   assert.strictEqual(getProvider("anthropic").defaultModel, "claude-sonnet-5");
   assert.strictEqual(getProvider("gemini").defaultModel, "gemini-3.5-flash");
@@ -363,22 +363,16 @@ async function testProviderCatalogFetchesDynamicModelsForConfiguredProviders() {
 }
 
 function testNormalizeDecision() {
-  const decision = normalizeProviderDecision('{"candidateId":"A-1","publicReason":"<think>x</think>Use high arc."}');
-  assert.deepStrictEqual(decision, { action: "shot", candidateId: "A-1", publicReason: "Use high arc." });
-  assert.deepStrictEqual(
-    normalizeProviderDecision('Here is the legal JSON: {"action":"shot","candidateId":"B-2","publicReason":"thread lane"}'),
-    { action: "shot", candidateId: "B-2", publicReason: "thread lane" }
+  assert.throws(() => normalizeProviderDecision('{"candidateId":"A-1","publicReason":"Use high arc."}'), /missing_expression/);
+  assert.throws(
+    () => normalizeProviderDecision('Here is the legal JSON: {"action":"shot","candidateId":"B-2","publicReason":"thread lane"}'),
+    /missing_expression/
   );
   assert.deepStrictEqual(normalizeProviderDecision('{"action":"swap_hand","publicReason":"Need a different hand."}'), {
     action: "swap_hand",
-    candidateId: undefined,
     publicReason: "Need a different hand."
   });
-  assert.deepStrictEqual(normalizeProviderDecision('{"action":"reroll","publicReason":"Legacy action."}'), {
-    action: "swap_hand",
-    candidateId: undefined,
-    publicReason: "Legacy action."
-  });
+  assert.throws(() => normalizeProviderDecision('{"action":"replace_hand","publicReason":"Unsupported action."}'), /missing_expression/);
   assert.deepStrictEqual(
     normalizeProviderDecision(
       '{"action":"shot","targetId":"B2","expression":"y=y0+dy*t+12*sin(pi*t)","cardSlots":[1,3],"publicReason":"clear arc"}'
@@ -402,7 +396,6 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
     deepseek,
     {
       command: "",
-      candidates: [{ candidateId: "A-0-0-B2-arc", targetId: "B2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "Basalt Gate" } }
     },
     "sk-redacted"
@@ -420,7 +413,7 @@ function testDeepSeekUsesCurrentJsonModeDefaults() {
   assert.ok(userPayload.rules, "provider should receive bare rules");
   assert.ok(Array.isArray(userPayload.legalActions), "provider should receive legal actions");
   assert.ok(userPayload.legalActions.some((action) => action.action === "swap_hand"), "provider should be allowed to swap the retained hand");
-  assert.ok(!userPayload.legalActions.some((action) => action.action === "reroll"), "provider legal actions should use swap_hand");
+  assert.ok(userPayload.legalActions.every((action) => ["shot", "swap_hand"].includes(action.action)), "provider legal actions should use the current action set");
   assert.ok(!JSON.stringify(userPayload).includes("score"), "provider payload should not expose local scores");
   assert.ok(!JSON.stringify(userPayload).includes("hitEnemy"), "provider payload should not expose simulated hit outcomes");
 }
@@ -434,7 +427,6 @@ function testOpenRouterUsesFreeJsonModeDefaults() {
     openrouter,
     {
       command: "thread the maze, swap if hand is weak",
-      candidates: [{ candidateId: "B-0-0-A2-bend", targetId: "A2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "Basalt Gate" } }
     },
     "sk-router"
@@ -462,7 +454,6 @@ function testOpenRouterCanEnableReasoningForBenchmark() {
     openrouter,
     {
       command: "",
-      candidates: [{ candidateId: "B-0-0-A2-bend", targetId: "A2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
       model: "google/gemini-3.5-flash",
       reasoning: {
@@ -487,7 +478,6 @@ function testOpenRouterBenchmarkCanRequireStrictDecisionJson() {
     openrouter,
     {
       command: "",
-      candidates: [{ candidateId: "B-0-0-A2-bend", targetId: "A2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
       model: "google/gemini-3.5-flash",
       reasoning: {
@@ -521,7 +511,6 @@ function testDeepSeekStrictDecisionFallsBackToJsonObject() {
     deepseek,
     {
       command: "",
-      candidates: [{ candidateId: "A-0-0-B2-arc", targetId: "B2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } },
       model: "deepseek-v4-flash",
       strictDecisionSchema: true
@@ -539,7 +528,6 @@ function testMiMoUsesApiKeyHeaderForOpenAICompatibleChat() {
     mimo,
     {
       command: "write a clean function shot",
-      candidates: [{ candidateId: "A-0-0-B2-arc", targetId: "B2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "Needle Canyon" } }
     },
     "sk-mimo"
@@ -559,7 +547,6 @@ function testAnthropicUsesSameBareRulesPayload() {
     anthropic,
     {
       command: "thread the center",
-      candidates: [{ candidateId: "legacy", targetId: "B2" }],
       stateSummary: { seed: 7351, turn: 0, map: { name: "legacy" } },
       rulesPayload,
       model: "claude-test"
@@ -614,7 +601,6 @@ async function testProviderRequestTimeoutUsesEnvLimit() {
         {
           apiKey: "sk-redacted",
           command: "thread the maze",
-          candidates: rulesPayload.legalActions.filter((action) => action.action === "shot"),
           stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
           rulesPayload,
           model: "openrouter/free"
@@ -642,7 +628,7 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
       choices: [
         {
           message: {
-            reasoning: "I compare the legal function candidates before selecting the first shot.",
+            reasoning: "I compare the legal function contract before writing the first shot.",
             reasoning_details: [{ type: "reasoning.text", text: "Detailed model thought trace." }],
             content: JSON.stringify({
               action: "shot",
@@ -662,7 +648,6 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
     {
       apiKey: "sk-redacted",
       command: "",
-      candidates: [],
       stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
       rulesPayload,
       model: "google/gemini-3.5-flash",
@@ -672,7 +657,7 @@ async function testExecuteProviderDecisionReturnsReasoningTrace() {
   );
 
   assert.strictEqual(result.decision.action, "shot");
-  assert.ok(result.reasoningText.includes("compare the legal function candidates"), "reasoning text should be preserved for benchmark traces");
+  assert.ok(result.reasoningText.includes("compare the legal function contract"), "reasoning text should be preserved for benchmark traces");
   assert.deepStrictEqual(result.reasoningDetails, [{ type: "reasoning.text", text: "Detailed model thought trace." }]);
   assert.ok(result.rawText.includes("sin(pi*t)"), "raw JSON model output should be preserved separately");
 }
@@ -681,7 +666,6 @@ async function testExecuteProviderDecisionAttachesFailedRawOutput() {
   const openrouter = getProvider("openrouter");
   const state = Sim.createInitialState({ seed: 7351 });
   const rulesPayload = Contract.buildRulesPayload(state, "A1", "");
-  const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
   const fetchMock = async () => ({
     ok: true,
     status: 200,
@@ -689,7 +673,7 @@ async function testExecuteProviderDecisionAttachesFailedRawOutput() {
       choices: [
         {
           message: {
-            reasoning: "I thought about the legal candidates but failed the response contract.",
+            reasoning: "I thought about the expression contract but failed the response contract.",
             content: "I would shoot through the top lane, but here is not JSON."
           }
         }
@@ -704,7 +688,6 @@ async function testExecuteProviderDecisionAttachesFailedRawOutput() {
         {
           apiKey: "sk-redacted",
           command: "",
-          candidates,
           stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
           rulesPayload,
           model: "anthropic/claude-opus-4.8",
@@ -725,7 +708,6 @@ async function testExecuteProviderDecisionAttachesHttpErrorBody() {
   const openrouter = getProvider("openrouter");
   const state = Sim.createInitialState({ seed: 7351 });
   const rulesPayload = Contract.buildRulesPayload(state, "A1", "");
-  const candidates = rulesPayload.legalActions.filter((action) => action.action === "shot");
   const fetchMock = async () => ({
     ok: false,
     status: 400,
@@ -739,7 +721,6 @@ async function testExecuteProviderDecisionAttachesHttpErrorBody() {
         {
           apiKey: "sk-redacted",
           command: "",
-          candidates,
           stateSummary: { seed: state.seed, turn: state.turn, map: state.mapMeta },
           rulesPayload,
           model: "openai/gpt-5.5",
@@ -759,7 +740,7 @@ async function testExecuteProviderDecisionAttachesHttpErrorBody() {
 
 (async () => {
   testProviderCatalogRedactsKeys();
-  testFallbackCatalogUsesCurrentMainstreamModels();
+  testCuratedCatalogUsesCurrentMainstreamModels();
   await testProviderCatalogIncludesSelectableModels();
   await testOpenRouterCatalogIsCuratedForGameModelSelection();
   await testProviderCatalogFetchesDynamicModelsForConfiguredProviders();

@@ -168,7 +168,7 @@ async function executeProviderDecision(provider, payload, options) {
     }
     const validation = validateAgentDecision(
       decision,
-      payload.rulesPayload && payload.rulesPayload.legalActions ? payload.rulesPayload.legalActions : payload.candidates
+      payload.rulesPayload && payload.rulesPayload.legalActions ? payload.rulesPayload.legalActions : []
     );
     if (!validation.ok) {
       const err = new Error(validation.reason);
@@ -184,7 +184,6 @@ async function executeProviderDecision(provider, payload, options) {
           action: "swap_hand",
           publicReason: validation.publicReason
         },
-        candidate: null,
         rawText: stripReasoning(rawText),
         reasoningText,
         reasoningDetails
@@ -199,23 +198,16 @@ async function executeProviderDecision(provider, payload, options) {
           cardSlots: validation.cardSlots || [],
           publicReason: validation.publicReason
         },
-        candidate: null,
         rawText: stripReasoning(rawText),
         reasoningText,
         reasoningDetails
       };
     }
-    return {
-      decision: {
-        action: "shot",
-        candidateId: validation.candidate.candidateId,
-        publicReason: validation.publicReason
-      },
-      candidate: validation.candidate,
-      rawText: stripReasoning(rawText),
-      reasoningText,
-      reasoningDetails
-    };
+    const err = new Error("missing_expression");
+    err.rawText = stripReasoning(rawText);
+    err.reasoningText = reasoningText;
+    err.reasoningDetails = reasoningDetails;
+    throw err;
   }, timeoutMs);
 }
 

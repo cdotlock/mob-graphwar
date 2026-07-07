@@ -4,9 +4,10 @@ Mob Graphwar Arena is a ranked watch-only AI artillery game inspired by Graphwar
 
 Players log in, attach their own model key, enter ranked A-vs-B team commander
 matchmaking, and issue one short launch-time standing order before watching the AIs fight. Each model only
-receives bare rules, map state, units, current hand, and legal actions. Empty
-opponent commanders are filled by OpenRouter free-model opponents when the server has an
-`OPENROUTER_API_KEY`, otherwise by the local fallback. The point is not to let a
+receives bare rules, map state, units, current hand, recent feedback, and the
+`swap_hand` / `shot` action contract. Empty opponent commanders are filled by
+OpenRouter free-model opponents when the server has an `OPENROUTER_API_KEY`.
+Provider failures are surfaced as errors instead of falling back silently. The point is not to let a
 model solve raw Graphwar directly; it has to act inside a hard function-card
 economy where human wording, hand variance, swap timing, and map complexity
 matter.
@@ -15,7 +16,7 @@ matter.
 
 The game now plays as an idle spectator arena:
 
-1. Configure an account and model provider, or stay on the local fallback.
+1. Configure an account and model provider.
 2. Write one short standing order for the model before matchmaking.
 3. Launch ranked A vs B. Each commander controls two agents on one team: A1/A2 or B1/B2.
 4. If no human opponent is available, AI fills one opposing commander, not three separate seats.
@@ -52,7 +53,7 @@ present, and falls back to the source entrypoint for local development.
 npm test
 ```
 
-The test suite covers deterministic simulation, card/resource validation,
+The test suite covers deterministic simulation, hand/function validation,
 seeded map generation, score/rank output, watch-only ranked resolution,
 provider contract redaction, provider catalog redaction, and the minimal Node
 server.
@@ -95,21 +96,30 @@ errors, timeouts, and JSON failures without printing the key.
 - AI-filled opponent commanders default to OpenRouter `openrouter/free` plus one
   built-in standing order shared by B1/B2, and fall back locally when no OpenRouter
   key is configured.
-- Cards persist in hand until swapped; each active turn allows up to 3 swaps.
+- Cards persist in hand until swapped; each active unit turn allows up to 3
+  `swap_hand` actions before firing.
 - The model chooses exactly one legal action: `swap_hand` or `shot`.
-- The AI can use at most two shape/control cards and one modifier card.
-- Maps are seeded, high-density, and intentionally hard.
+- For `shot`, the model writes `targetId`, `expression`, optional `cardSlots`,
+  and `publicReason`. It is not given precomputed shot candidates.
+- The current hand is a function whitelist. The model may compose any current
+  hand function types with free numeric coefficients.
+- There is no energy, cost, card-count budget, or high-risk/high-damage function
+  class.
+- Maps are seeded, blob-based, and tuned to be readable but non-trivial.
+- The duel has no fixed turn limit; simulations use a resolution guard only to
+  settle pathological benchmark loops by remaining HP.
 - Session responses and traces never expose API keys.
 - Rank changes after match resolution.
 
 ## Provider Architecture
 
 OpenRouter free-model commanders fill missing human opponents when
-`OPENROUTER_API_KEY` is configured. Local AI still handles offline play and
-hosted-provider failures.
+`OPENROUTER_API_KEY` is configured. Hosted-provider failures return errors;
+they do not silently become local baseline turns.
 Hosted providers are BYOK:
 
-- `src/agents/contract.js` exposes legal candidate IDs and redaction helpers.
+- `src/agents/contract.js` builds the bare model-written-expression contract and
+  redacts secrets.
 - `server/providers/catalog.js` lists OpenRouter, OpenAI, DeepSeek, MiniMax,
   Zhipu, and Anthropic.
 - `server/index.js` serves the React app plus `/healthz`, `/api/providers`,
@@ -117,11 +127,12 @@ Hosted providers are BYOK:
   `/api/profile/providers`, `/api/match/join`, `/api/match/:id/auto-duel`,
   `/api/simulations/league`, and `/api/agent/shot`.
 
-Models are expected to choose `{"action":"swap_hand"}` or a listed shot
-`candidateId`. They should never output arbitrary JavaScript or free-form
-functions. Public payloads include rules, map, unit positions, current hand,
-legal actions, cards, combo identity, target, cost, and expression, but not
-local simulation scores or hit results.
+Models are expected to return JSON with either `{"action":"swap_hand"}` or a
+`shot` containing `targetId`, `expression`, `cardSlots`, and `publicReason`.
+They write math expressions directly, but the server validates syntax, allowed
+functions, target IDs, and collision results. Public payloads include rules,
+map, unit positions, current hand, recent feedback, legal actions, cards, and
+function expressions, but not local simulation scores or hidden hit predictions.
 
 See [docs/architecture/providers.md](docs/architecture/providers.md).
 
@@ -140,8 +151,8 @@ curl -X POST http://127.0.0.1:3000/api/simulations/league \
   -d '{
     "rounds": 4,
     "contestants": [
-      { "id": "arc", "label": "Arc Local", "provider": "local", "command": "safe high arc target weakest enemy" },
-      { "id": "bend", "label": "Bend Local", "provider": "local", "command": "bend through center avoid ally" }
+      { "id": "deepseek-flash-raw", "label": "DeepSeek Flash (raw)", "provider": "deepseek", "model": "deepseek-v4-flash", "command": "" },
+      { "id": "openrouter-free-raw", "label": "OpenRouter Free (raw)", "provider": "openrouter", "model": "openrouter/free", "command": "" }
     ]
   }'
 ```

@@ -49,7 +49,7 @@ Expected: FAIL because `routeArchetypes` and `highArcDominance` do not exist yet
 
 Build a seed-driven chamber/corridor scaffold that creates ceiling caps, staggered chamber walls, and route contour guides without adding unit movement.
 
-- [x] **Step 2: Update candidate scoring**
+- [x] **Step 2: Update local solver scoring**
 
 Reject or down-rank maps where high arcs dominate, where fewer than three route archetypes exist, or where ceiling lock is absent.
 
@@ -98,7 +98,7 @@ Expected: PASS.
 **Interfaces:**
 - Adds provider id `openrouter` with default model `openrouter/free`.
 - Uses OpenRouter free for AI-filled seats when `OPENROUTER_API_KEY` exists.
-- Keeps local fallback when no OpenRouter key exists.
+- Surfaces provider errors when OpenRouter is not configured; no silent local fallback.
 - Adds distinct default standing orders for AI-filled ally/rival seats.
 
 - [x] **Step 1: Write failing provider/server/UI tests**

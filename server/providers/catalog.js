@@ -129,7 +129,7 @@ const PROVIDERS = [
   },
 ];
 
-const PROVIDER_MODEL_FALLBACKS = {
+const CURATED_PROVIDER_MODELS = {
   openrouter: [
     { id: "openrouter/auto", label: "Auto Router", family: "auto", free: false, contextLength: 200000 },
     { id: "openrouter/free", label: "Free Models Router", free: true, contextLength: 200000 },
@@ -354,11 +354,11 @@ function curateOpenRouterModels(models) {
     .slice(0, OPENROUTER_MODEL_LIMIT);
 }
 
-function fallbackProviderModels(provider, env) {
+function curatedProviderModels(provider, env) {
   const source = env || process.env;
-  const fallback = PROVIDER_MODEL_FALLBACKS[provider.id] || [];
+  const curated = CURATED_PROVIDER_MODELS[provider.id] || [];
   const selected = String(source[provider.modelEnv] || provider.defaultModel || "").trim();
-  return ensureSelectedModel(fallback, selected);
+  return ensureSelectedModel(curated, selected);
 }
 
 function providerModelsUrl(provider, env) {
@@ -416,9 +416,13 @@ async function fetchProviderModels(provider, env, options) {
   const opts = options || {};
   const fetchImpl = opts.fetch || globalThis.fetch;
   const apiKey = providerModelKey(provider, env, opts.apiKey);
+  const strictRefresh = Boolean(opts.strict || opts.apiKey);
   const modelList = provider.modelList || {};
-  if (!modelList.public && !apiKey) return fallbackProviderModels(provider, env);
-  if (typeof fetchImpl !== "function") return fallbackProviderModels(provider, env);
+  if (!modelList.public && !apiKey) return curatedProviderModels(provider, env);
+  if (typeof fetchImpl !== "function") {
+    if (strictRefresh) throw new Error(`${provider.id}_models_fetch_unavailable`);
+    return curatedProviderModels(provider, env);
+  }
   const url = providerModelsUrl(provider, env);
   const cacheKey = `${provider.id}:${url}:${apiKey ? "env-keyed" : "public"}`;
   if (!opts.noCache && !opts.apiKey) {
@@ -433,11 +437,13 @@ async function fetchProviderModels(provider, env, options) {
     if (!response || !response.ok) throw new Error(`${provider.id}_models_${response ? response.status : "failed"}`);
     const payload = await response.json();
     const models = normalizeProviderModels(provider, payload);
-    const resolved = models.length ? ensureSelectedModel(models, (env || process.env)[provider.modelEnv] || provider.defaultModel) : fallbackProviderModels(provider, env);
+    if (!models.length && strictRefresh) throw new Error(`${provider.id}_models_empty`);
+    const resolved = models.length ? ensureSelectedModel(models, (env || process.env)[provider.modelEnv] || provider.defaultModel) : curatedProviderModels(provider, env);
     if (!opts.noCache && !opts.apiKey) providerModelCache.set(cacheKey, { expiresAt: now + MODEL_CACHE_MS, models: resolved });
     return resolved;
-  } catch {
-    return fallbackProviderModels(provider, env);
+  } catch (err) {
+    if (strictRefresh) throw err;
+    return curatedProviderModels(provider, env);
   }
 }
 

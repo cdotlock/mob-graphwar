@@ -25,25 +25,6 @@ function openFeedbackState(seed = 10) {
   return state;
 }
 
-function testCandidateExportIsSafe() {
-  const state = Sim.createInitialState({ seed: 7351 });
-  const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
-  assert.ok(candidates.length > 0, "should expose legal candidates");
-  assert.ok(candidates.length <= Contract.MAX_PUBLIC_CANDIDATES, "candidate list should be bounded");
-  assert.ok(candidates.every((candidate) => candidate.candidateId), "candidate should have stable id");
-  assert.ok(candidates.every((candidate) => !candidate.expression.includes("function")), "candidate should not expose code");
-  assert.ok(candidates.every((candidate) => candidate.combo && candidate.combo.name), "candidate should expose combo identity");
-  assert.ok(
-    candidates.every((candidate) => Array.isArray(candidate.combo.traits)),
-    "candidate combo should expose readable traits"
-  );
-  assert.ok(candidates.every((candidate) => candidate.mapFit === undefined), "candidate should not expose simulated map fit");
-  assert.ok(candidates.every((candidate) => candidate.score === undefined), "candidate should not expose local score");
-  assert.ok(candidates.every((candidate) => candidate.cost === undefined), "candidate should not expose removed gameplay cost");
-  assert.ok(candidates.every((candidate) => candidate.resultLabel === undefined), "candidate should not expose simulated result");
-  assert.ok(candidates.every((candidate) => candidate.action === "shot"), "candidate should expose the legal shot action");
-}
-
 function testRulesPayloadIsBareGameStateAndLegalActions() {
   const state = Sim.createInitialState({ seed: 7351 });
   const payload = Contract.buildRulesPayload(state, "A1", "human prompt only");
@@ -58,7 +39,7 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(payload.hand.cards.length === Sim.CONFIG.handSize, "payload should include the retained current hand");
   assert.strictEqual(payload.hand.retained, true, "payload should tell providers that hands persist");
   assert.strictEqual(payload.hand.swapsUsed, 0, "payload should expose active-turn swap usage");
-  assert.strictEqual(payload.hand.swapsRemaining, Sim.CONFIG.maxRerollsPerTurn, "payload should expose remaining hand swaps");
+  assert.strictEqual(payload.hand.swapsRemaining, Sim.CONFIG.maxSwapsPerTurn, "payload should expose remaining hand swaps");
   assert.ok(Array.isArray(payload.hand.availableFunctionTypes), "payload should expose the current hand function whitelist");
   assert.ok(payload.rules.functionHand.includes("function whitelist"), "rules should describe the function whitelist");
   assert.ok(payload.rules.expressionFunctions.includes("availableFunctionTypes"), "rules should bind expressions to current hand functions");
@@ -66,18 +47,17 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(payload.rules.expressionCoordinate.includes("y0+dy*t"), "rules should tell models to anchor shots on the shooter-target baseline");
   assert.ok(payload.rules.functionScaling.includes("free numeric coefficients"), "rules should clarify that function cards are types, not fixed amplitudes");
   assert.ok(payload.rules.damageModel.includes("proximityAccuracy"), "rules should explain close hits as proximity accuracy");
-  assert.ok(payload.rules.damageModel.includes("damageBonus"), "rules should explain high-damage function metadata");
-  assert.ok(payload.rules.damageModel.includes("volatility"), "rules should explain high-risk function metadata");
-  assert.ok(payload.rules.cardEffectMeaning.includes("high-risk"), "rules should define high-risk without prescribing a tactic");
-  assert.ok(payload.hand.cards.every((card) => card.effect && Number.isFinite(card.effect.damageBonus)), "hand cards should expose numeric damage metadata");
-  assert.ok(payload.hand.cards.every((card) => card.effect && Number.isFinite(card.effect.volatility)), "hand cards should expose numeric volatility metadata");
+  assert.ok(payload.rules.precisionMeaning.includes("precisionBonus"), "rules should explain precision metadata");
   assert.ok(payload.hand.cards.every((card) => card.effect && Number.isFinite(card.effect.precisionBonus)), "hand cards should expose numeric precision metadata");
-  assert.ok(payload.hand.cards.every((card) => typeof card.risk === "string"), "hand cards should expose readable risk level");
+  assert.ok(!serialized.includes("high-risk"), "provider payload should not expose high-risk function concepts");
+  assert.ok(!serialized.includes("high-damage"), "provider payload should not expose high-damage function concepts");
+  assert.ok(!serialized.includes("damageBonus"), "provider payload should not expose function damage bonuses");
+  assert.ok(!serialized.includes("volatility"), "provider payload should not expose function volatility");
+  assert.ok(!serialized.includes('"risk"'), "provider payload should not expose function risk labels");
   assert.ok(payload.legalActions.some((action) => action.action === "swap_hand"), "payload should include swap_hand as a legal model action");
   assert.ok(payload.legalActions.some((action) => action.action === "shot"), "payload should include shot as a legal model action");
   assert.ok(payload.rules.handRetention.includes("persist"), "rules should describe retained hands");
   assert.ok(payload.rules.actionLimit.includes("swap_hand"), "rules should use the public swap_hand action");
-  assert.ok(!serialized.includes('"action":"reroll"'), "provider payload should not expose reroll as the public action");
   assert.ok(!serialized.includes("score"), "payload should not expose local scoring");
   assert.ok(!serialized.includes("hitEnemy"), "payload should not expose simulated outcomes");
   assert.ok(!serialized.includes("energy"), "payload should not expose removed energy rules");
@@ -93,7 +73,6 @@ function testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames() {
   const publicCardText = JSON.stringify({
     hand: payload.hand.cards,
     shots: payload.legalActions.filter((action) => action.action === "shot").map((action) => ({
-      candidateId: action.candidateId,
       cards: action.cards
     }))
   });
@@ -179,29 +158,35 @@ function testRulesPayloadIncludesOwnRecentFeedback() {
 
 function testDecisionValidation() {
   const state = Sim.createInitialState({ seed: 7351 });
-  const candidates = Contract.listPublicShotCandidates(state, "A1", "hit B2 high");
-  const valid = Contract.validateAgentDecision({ candidateId: candidates[0].candidateId, publicReason: "High arc." }, candidates);
-  assert.strictEqual(valid.ok, true);
-
   const payload = Contract.buildRulesPayload(state, "A1", "hit B2 high");
+  const validExpression = Contract.validateAgentDecision(
+    {
+      action: "shot",
+      targetId: "B2",
+      expression: "y=y0+dy*t+12*sin(pi*t)",
+      cardSlots: [1],
+      publicReason: "High arc."
+    },
+    payload.legalActions
+  );
+  assert.strictEqual(validExpression.ok, true);
+  assert.strictEqual(validExpression.action, "shot");
+  assert.strictEqual(validExpression.expression, "y=y0+dy*t+12*sin(pi*t)");
+
   const swap = Contract.validateAgentDecision({ action: "swap_hand", publicReason: "Need a better hand." }, payload.legalActions);
   assert.strictEqual(swap.ok, true);
   assert.strictEqual(swap.action, "swap_hand");
 
-  const legacyReroll = Contract.validateAgentDecision({ action: "reroll", publicReason: "Legacy client." }, payload.legalActions);
-  assert.strictEqual(legacyReroll.ok, true);
-  assert.strictEqual(legacyReroll.action, "swap_hand", "legacy reroll should normalize to swap_hand");
-
-  const noReroll = Contract.validateAgentDecision(
+  const noSwap = Contract.validateAgentDecision(
     { action: "swap_hand", publicReason: "Need a better hand." },
     payload.legalActions.filter((action) => action.action !== "swap_hand")
   );
-  assert.strictEqual(noReroll.ok, false);
-  assert.strictEqual(noReroll.reason, "reroll_limit_reached");
+  assert.strictEqual(noSwap.ok, false);
+  assert.strictEqual(noSwap.reason, "swap_limit_reached");
 
-  const invalid = Contract.validateAgentDecision({ candidateId: "missing", publicReason: "Nope." }, candidates);
+  const invalid = Contract.validateAgentDecision({ candidateId: "missing", publicReason: "Nope." }, payload.legalActions);
   assert.strictEqual(invalid.ok, false);
-  assert.strictEqual(invalid.reason, "unknown_candidate");
+  assert.strictEqual(invalid.reason, "missing_expression");
 }
 
 function testSecretRedaction() {
@@ -216,7 +201,6 @@ function testSecretRedaction() {
   assert.strictEqual(redacted.safe, "ok");
 }
 
-testCandidateExportIsSafe();
 testRulesPayloadIsBareGameStateAndLegalActions();
 testRulesPayloadUsesMathExpressionsInsteadOfInternalCardNames();
 testRulesPayloadDoesNotExposeShotCandidates();

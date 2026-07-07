@@ -7,7 +7,6 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function contractFactory(Sim) {
   "use strict";
 
-  const MAX_PUBLIC_CANDIDATES = 24;
   const SECRET_KEYS = new Set(["apiKey", "key", "authorization", "Authorization", "x-api-key"]);
 
   function redactSecrets(value) {
@@ -28,29 +27,6 @@
     const active = Sim.getActiveUnit ? Sim.getActiveUnit(state) : null;
     if (active && active.team === normalized) return active;
     return units.find((unit) => unit.team === normalized && unit.hp > 0) || active || null;
-  }
-
-  function listPublicShotCandidates(state, owner, command) {
-    const unit = resolveControlledUnit(state, owner);
-    const handOwner = unit ? unit.id : owner;
-    const shots = Sim.listLegalShots(state, handOwner, command).slice(0, MAX_PUBLIC_CANDIDATES);
-    return shots.map(publicShotCandidate);
-  }
-
-  function publicShotCandidate(shot) {
-    return {
-      action: "shot",
-      candidateId: shot.candidateId,
-      targetId: shot.targetId,
-      cards: shot.cards,
-      combo: shot.combo
-        ? {
-            name: shot.combo.name,
-            traits: shot.combo.traits || []
-          }
-        : null,
-      expression: shot.expression
-    };
   }
 
   function publicRecentFeedback(state) {
@@ -100,17 +76,8 @@
   function publicCardEffect(card) {
     const effect = card && card.effect ? card.effect : {};
     return {
-      damageBonus: Number(effect.damageBonus) || 0,
-      volatility: Number(effect.volatility) || 0,
       precisionBonus: Number(effect.precisionBonus) || 0
     };
-  }
-
-  function publicCardRisk(card) {
-    const tags = card && Array.isArray(card.tags) ? card.tags : [];
-    if (tags.includes("volatile")) return "high-risk";
-    if (card && card.family === "risk") return "risk";
-    return "stable";
   }
 
   function buildRulesPayload(state, owner, command) {
@@ -125,14 +92,13 @@
       label: card.label,
       family: card.family,
       tags: card.tags,
-      risk: publicCardRisk(card),
       effect: publicCardEffect(card),
       description: card.description
     }));
     const availableFunctionTypes =
       typeof Sim.allowedFunctionNamesForHand === "function" ? Sim.allowedFunctionNamesForHand(cards) : [];
-    const swapsUsed = handState ? Number(handState.swapsUsed ?? handState.rerollsUsed) || 0 : 0;
-    const swapsRemaining = Math.max(0, Sim.CONFIG.maxRerollsPerTurn - swapsUsed);
+    const swapsUsed = handState ? Number(handState.swapsUsed) || 0 : 0;
+    const swapsRemaining = Math.max(0, Sim.CONFIG.maxSwapsPerTurn - swapsUsed);
     const opponentIds = units.filter((unit) => unit.team !== team && unit.hp > 0).map((unit) => unit.id);
     const shotAction = {
       action: "shot",
@@ -151,13 +117,14 @@
     return {
       rules: {
         turnOrder: "A1, B1, A2, B2 rotate as separate AI seats",
-        actionLimit: "choose exactly one legal action: swap_hand or shot; for shot, write your own function expression instead of choosing a precomputed candidate",
+        actionLimit: "choose exactly one legal action: swap_hand or shot; for shot, write your own function expression instead of choosing a server-authored shot option",
         handRetention: "cards persist in hand across shots until the active model chooses swap_hand",
-        swapLimit: `${Sim.CONFIG.maxRerollsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
+        swapLimit: `${Sim.CONFIG.maxSwapsPerTurn} swap_hand actions per active turn; swap_hand replaces the retained hand and does not fire a shot`,
         functionHand: "the current hand is the function whitelist; combine any or all current hand function types freely",
         functionScaling: "card labels name allowed function types, not fixed amplitudes; free numeric coefficients are allowed and often need board-scale values such as 10..60",
-        cardEffectMeaning: "high-risk means card.effect.volatility is above 0; high-damage means card.effect.damageBonus is above 0; precision support means card.effect.precisionBonus is above 0. These are public card metadata, not a required tactic.",
-        damageModel: "enemy damage rises with proximityAccuracy, expression function count, card effect damageBonus/volatility, and route bonus points. proximityAccuracy is 1 at a unit center and falls toward 0 at the unit edge.",
+        precisionMeaning: "card.effect.precisionBonus above 0 marks a function that is useful for fine correction or tight lanes; it is metadata, not a required tactic.",
+        damageModel: "enemy damage rises with proximityAccuracy, expression function count, and route bonus points. proximityAccuracy is 1 at a unit center and falls toward 0 at the unit edge.",
+        swapPolicy: "If ownRecentFeedback shows repeated blocked, out, ground, hitAlly, or invalid shots and the current hand does not suggest a materially different lane, swap_hand is a valid choice.",
         expressionVariables: "t is normalized 0..1, u is horizontal travel, d is shooter-target horizontal distance, x is board x, y0/y1 are shooter/target y, dy=y1-y0",
         expressionCoordinate: "y is the absolute board y coordinate, not a small offset; y0+dy*t is the straight shooter-to-target baseline and card functions should be added as scaled offsets around that baseline",
         expressionFunctions: "call only function names that appear in hand.availableFunctionTypes; if a useful function is absent, use swap_hand instead of inventing sin/cos/max/etc; arithmetic, numbers, variables, pi, e, +, -, *, /, ^, comparisons, and ternary expressions are always allowed",
@@ -190,16 +157,14 @@
         retained: true,
         swapsUsed,
         swapsRemaining,
-        rerollsUsed: swapsUsed,
-        rerollsRemaining: swapsRemaining,
         analysis: Sim.analyzeHand(cards),
         availableFunctionTypes,
         cards
       },
       actionSpace: {
         mode: "model_written_expression",
-        shotCandidateCount: 0,
-        publicShotCandidateCount: 0,
+        modelFacingShotOptions: 0,
+        publicShotOptions: 0,
         capped: false
       },
       legalActions
@@ -210,9 +175,8 @@
     if (!decision || typeof decision !== "object") return { ok: false, reason: "missing_decision" };
     const actions = Array.isArray(legalActions) ? legalActions : [];
     const shotContract = actions.find((item) => item.action === "shot") || {};
-    const candidates = actions.filter((item) => item.action === "shot" && item.candidateId);
-    if (decision.action === "swap_hand" || decision.action === "reroll") {
-      if (!actions.some((item) => item.action === "swap_hand")) return { ok: false, reason: "reroll_limit_reached" };
+    if (decision.action === "swap_hand") {
+      if (!actions.some((item) => item.action === "swap_hand")) return { ok: false, reason: "swap_limit_reached" };
       return {
         ok: true,
         action: "swap_hand",
@@ -240,21 +204,11 @@
           typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider wrote a function shot."
       };
     }
-    if (typeof decision.candidateId !== "string") return { ok: false, reason: "missing_candidate_id" };
-    const candidate = candidates.find((item) => item.candidateId === decision.candidateId);
-    if (!candidate) return { ok: false, reason: "unknown_candidate" };
-    return {
-      ok: true,
-      candidate,
-      publicReason:
-        typeof decision.publicReason === "string" ? decision.publicReason.slice(0, 240) : "Provider selected a legal shot."
-    };
+    return { ok: false, reason: "missing_expression" };
   }
 
   return {
-    MAX_PUBLIC_CANDIDATES,
     buildRulesPayload,
-    listPublicShotCandidates,
     redactSecrets,
     validateAgentDecision
   };

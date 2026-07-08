@@ -614,9 +614,13 @@ function testLeaderboardsExplainCommanderModelPromptAndPairCompetition() {
   assert.ok(main.includes("Pair League"), "leaderboard should distinguish model plus prompt competition");
   assert.ok(main.includes("prompt hash"), "prompt leaderboard should explain prompt identity tracking");
   assert.ok(main.includes("model + prompt"), "pair leaderboard should explain combination ranking");
+  assert.ok(main.includes("BenchmarkBadge"), "leaderboard rows should expose benchmark provenance badges");
+  assert.ok(main.includes("No prompt"), "raw benchmark rows should be visibly marked as no-prompt baselines");
+  assert.ok(main.includes("No thinking"), "raw benchmark rows should be visibly marked as no-thinking baselines");
   assert.ok(main.includes("Random Match"), "ranked play should expose one clear random match action");
   assert.ok(main.includes("Sign in to play ranked"), "guest play should be explicitly gated behind sign-in");
   assert.ok(css.includes(".league-board-grid"), "CSS should style the multi-league leaderboard grid");
+  assert.ok(css.includes(".benchmark-badge"), "CSS should style compact benchmark provenance badges");
   assert.ok(css.includes(".locked-play-card"), "CSS should style the locked ranked play state");
 }
 

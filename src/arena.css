@@ -1403,6 +1403,30 @@ label {
   font-size: 13px;
 }
 
+.leaderboard-name {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.benchmark-badge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.benchmark-badge span {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgba(82, 208, 255, 0.34);
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: var(--cyan);
+  background: rgba(82, 208, 255, 0.08);
+  line-height: 1;
+}
+
 .leaderboard-row b {
   color: var(--gold);
   font-family: "Russo One", sans-serif;

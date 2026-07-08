@@ -1997,7 +1997,10 @@ function LeaderboardPanel({ players, profile, onRefresh }) {
         {players.length ? players.map((player, index) => (
           <div className={`leaderboard-row ${profile?.id === player.id ? "you" : ""}`} key={player.id}>
             <span>#{index + 1}</span>
-            <strong>{player.displayName}</strong>
+            <div className="leaderboard-name">
+              <strong>{player.displayName}</strong>
+              <BenchmarkBadge benchmark={player.benchmark} />
+            </div>
             <b>{player.rating}</b>
             <small>{player.tier} · {player.games}G</small>
           </div>
@@ -2005,6 +2008,19 @@ function LeaderboardPanel({ players, profile, onRefresh }) {
       </div>
       <button type="button" onClick={onRefresh}>Refresh Ladder</button>
     </div>
+  );
+}
+
+function BenchmarkBadge({ benchmark }) {
+  if (!benchmark) return null;
+  const promptLabel = benchmark.promptPolicy === "none" ? "No prompt" : benchmark.promptPolicy;
+  const thinkingLabel = benchmark.thinkingMode === "off" ? "No thinking" : benchmark.thinkingMode;
+  return (
+    <small className="benchmark-badge" title={benchmark.label || "Benchmark baseline"}>
+      <span>Raw baseline</span>
+      <span>{promptLabel}</span>
+      <span>{thinkingLabel}</span>
+    </small>
   );
 }
 

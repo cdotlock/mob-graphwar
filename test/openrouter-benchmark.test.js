@@ -11,6 +11,7 @@ const {
   runBenchmark,
   resolveTargetModels
 } = require("../scripts/openrouter-raw-benchmark.js");
+const { replayBenchmarkArtifact } = require("../scripts/replay-benchmark-artifact.js");
 const { runLeagueBattle } = require("../server/index.js");
 
 function fakeModel(id, name, created) {
@@ -313,6 +314,67 @@ async function testBenchmarkCanResumeExistingTraceFiles() {
   assert.ok(result.leaderboard.every((row) => row.games === 2), "resumed and new traces should be aggregated together");
 }
 
+function testBenchmarkReplayReprocessesCompliantAliasesWithoutProviderCalls() {
+  const sourceDir = "artifacts/openrouter-benchmark/test-replay-compliance-source";
+  const outDir = "artifacts/openrouter-benchmark/test-replay-compliance-output";
+  fs.rmSync(sourceDir, { recursive: true, force: true });
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(sourceDir, "traces"), { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, "models.json"), JSON.stringify({
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    platform: "infron",
+    maxActionsPerGame: 1,
+    contestants: [
+      { id: "a", label: "Alias A", provider: "infron", model: "provider/a", command: "" },
+      { id: "b", label: "Alias B", provider: "infron", model: "provider/b", command: "" }
+    ]
+  }, null, 2));
+  fs.writeFileSync(path.join(sourceDir, "traces", "match-0001.json"), JSON.stringify({
+    id: "match-0001",
+    seed: 8123,
+    pair: "a:b",
+    game: 1,
+    teamA: { id: "a", label: "Alias A", model: "provider/a" },
+    teamB: { id: "b", label: "Alias B", model: "provider/b" },
+    maxActions: 1,
+    actions: [
+      {
+        index: 0,
+        turn: 0,
+        team: "A",
+        unitId: "A1",
+        contestantId: "a",
+        contestantLabel: "Alias A",
+        model: "provider/a",
+        provider: "Alias A / provider/a",
+        action: "invalid",
+        modelOutput: JSON.stringify({
+          move: "fire",
+          target: "B1",
+          formula: "y=y0+dy*t+8*sin(pi*t)",
+          slots: [1],
+          reason: "old alias shape"
+        }),
+        failure: { error: "missing_expression" }
+      }
+    ],
+    failures: []
+  }, null, 2));
+
+  const result = replayBenchmarkArtifact({
+    sourceDir,
+    outDir,
+    id: "test-replay-compliance",
+    generatedAt: "2026-01-02T00:00:00.000Z"
+  });
+  const trace = result.traces[0];
+  assert.strictEqual(trace.actions[0].action, "shot");
+  assert.strictEqual(trace.failures.length, 0);
+  assert.strictEqual(trace.state.events.length, 1);
+  assert.strictEqual(result.leaderboard.length, 2);
+  assert.ok(!JSON.stringify(result).includes("sk-"), "replay artifacts should not contain provider secrets");
+}
+
 async function testBenchmarkStopsOnProviderErrorByDefault() {
   await assert.rejects(
     () =>
@@ -346,6 +408,7 @@ async function testBenchmarkStopsOnProviderErrorByDefault() {
   await testRunWithConcurrencyKeepsResultsInScheduleOrder();
   await testConcurrentBenchmarkDoesNotDoubleScore();
   await testBenchmarkCanResumeExistingTraceFiles();
+  testBenchmarkReplayReprocessesCompliantAliasesWithoutProviderCalls();
   await testBenchmarkStopsOnProviderErrorByDefault();
   console.log("openrouter benchmark tests passed");
 })().catch((err) => {

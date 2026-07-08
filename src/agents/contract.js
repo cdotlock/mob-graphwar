@@ -132,7 +132,7 @@
         feedbackPolicy: "If recentFeedback shows repeated ground shots, anchor on y0+dy*t and increase positive board-scale lift; for blocked shots, route above or around the reported collisionPoint instead of repeating the same curve; for hitAlly, do not repeat that path and choose a different target/path or swap_hand; if invalid unavailable functions appear, use only the whitelist or swap_hand",
         repeatPolicy: "Do not repeat the exact same failed expression from ownRecentFeedback after blocked, hitAlly, out, ground, or invalid results; change coefficients/shape materially or use swap_hand",
         promptPolicy: "this JSON packet is the full public model contract; no hidden tactical hints are provided",
-        output: "return JSON only with action,targetId,expression,cardSlots,publicReason; swap_hand uses empty targetId/expression and [] cardSlots"
+        output: "return JSON only. Preferred JSON keys are action,targetId,expression,cardSlots,publicReason. For shot: action='shot', targetId is one allowedTargetIds value, expression is y=<absolute board y expression>, cardSlots is an array, publicReason is one sentence. For swap_hand: action='swap_hand', targetId='', expression='', cardSlots=[]. The server may tolerate target/formula/slots/reason aliases, but the preferred keys are the most reliable contract."
       },
       objective: "eliminate opposing team while avoiding allied units",
       team,

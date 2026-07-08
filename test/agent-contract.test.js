@@ -1,6 +1,7 @@
 const assert = require("assert");
 const Sim = require("../src/sim-core.js");
 const Contract = require("../src/agents/contract.js");
+const { normalizeProviderDecision } = require("../server/providers/normalize.js");
 
 function hasStandaloneAmplitudeVariable(text) {
   return /(^|[^A-Za-z0-9_])a([^A-Za-z0-9_]|$)/.test(String(text || ""));
@@ -45,6 +46,8 @@ function testRulesPayloadIsBareGameStateAndLegalActions() {
   assert.ok(payload.rules.expressionFunctions.includes("availableFunctionTypes"), "rules should bind expressions to current hand functions");
   assert.ok(payload.rules.expressionCoordinate.includes("absolute board y"), "rules should state that y is the absolute board coordinate");
   assert.ok(payload.rules.expressionCoordinate.includes("y0+dy*t"), "rules should tell models to anchor shots on the shooter-target baseline");
+  assert.ok(payload.rules.output.includes("Preferred JSON keys"), "rules should make the exact output keys unambiguous");
+  assert.ok(payload.rules.output.includes("target/formula/slots/reason"), "rules should document tolerated aliases without making them the primary contract");
   assert.ok(payload.rules.functionScaling.includes("free numeric coefficients"), "rules should clarify that function cards are types, not fixed amplitudes");
   assert.ok(payload.rules.damageModel.includes("proximityAccuracy"), "rules should explain close hits as proximity accuracy");
   assert.ok(payload.rules.precisionMeaning.includes("precisionBonus"), "rules should explain precision metadata");
@@ -189,6 +192,47 @@ function testDecisionValidation() {
   assert.strictEqual(invalid.reason, "missing_expression");
 }
 
+function testProviderDecisionNormalizerAcceptsCommonFieldAliases() {
+  const decision = normalizeProviderDecision(JSON.stringify({
+    action: "fire",
+    target: "b2,",
+    formula: "y = y0 + dy*t + 12*sin(pi*t)",
+    slots: [1, "2"],
+    reason: "Use a clean sine arc."
+  }));
+  assert.deepStrictEqual(decision, {
+    action: "shot",
+    targetId: "B2",
+    expression: "y = y0 + dy*t + 12*sin(pi*t)",
+    cardSlots: [1, 2],
+    publicReason: "Use a clean sine arc."
+  });
+
+  const alternate = normalizeProviderDecision(JSON.stringify({
+    action_type: "shot",
+    target_id: "A1}Let me fix the JSON.",
+    function: "y=y0+dy*t",
+    card_slots: [3],
+    explanation: "Straight correction."
+  }));
+  assert.strictEqual(alternate.action, "shot");
+  assert.strictEqual(alternate.targetId, "A1");
+  assert.strictEqual(alternate.expression, "y=y0+dy*t");
+  assert.deepStrictEqual(alternate.cardSlots, [3]);
+  assert.strictEqual(alternate.publicReason, "Straight correction.");
+}
+
+function testProviderDecisionNormalizerAcceptsSwapAliases() {
+  const decision = normalizeProviderDecision(JSON.stringify({
+    action: "swapHand",
+    reason: "Need a different legal hand."
+  }));
+  assert.deepStrictEqual(decision, {
+    action: "swap_hand",
+    publicReason: "Need a different legal hand."
+  });
+}
+
 function testSecretRedaction() {
   const redacted = Contract.redactSecrets({
     provider: "openai",
@@ -207,6 +251,8 @@ testRulesPayloadDoesNotExposeShotCandidates();
 testRulesPayloadIncludesRecentShotFeedback();
 testRulesPayloadIncludesOwnRecentFeedback();
 testDecisionValidation();
+testProviderDecisionNormalizerAcceptsCommonFieldAliases();
+testProviderDecisionNormalizerAcceptsSwapAliases();
 testSecretRedaction();
 
 console.log("agent-contract tests passed");

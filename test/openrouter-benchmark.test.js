@@ -114,6 +114,9 @@ function testBenchmarkStoreRegistersRawRowsWithoutSecrets() {
   assert.ok(players.every((player) => player.displayName.endsWith("(raw)")));
   assert.ok(players.every((player) => player.providers.infron.configured === true));
   assert.ok(players.every((player) => !player.providers.openrouter));
+  assert.ok(players.every((player) => player.benchmark?.promptPolicy === "none"));
+  assert.ok(players.every((player) => player.benchmark?.thinkingMode === "off"));
+  assert.ok(players.every((player) => player.benchmark?.kind === "raw_model_benchmark"));
   assert.ok(!store.players["benchmark-stale-model-raw"], "benchmark store should remove stale raw rows not present in the current run");
   assert.ok(!JSON.stringify(store).includes("sk-"), "benchmark store should not contain provider secrets");
 }

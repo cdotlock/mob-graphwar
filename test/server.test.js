@@ -334,6 +334,83 @@ async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   assert.ok(!leaderboard.text.includes("persist-secret"), "leaderboard should not expose API keys");
 }
 
+async function testAdminBenchmarkImportRequiresTokenAndPublishesRawMetadata() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-benchmark-"));
+  const dataFile = path.join(dataDir, "store.json");
+  const env = { GRAPHWAR_DATA_FILE: dataFile, GRAPHWAR_ADMIN_TOKEN: "admin-secret" };
+  const benchmarkPayload = {
+    id: "infron-raw-20260707b",
+    title: "Infron Raw Model Benchmark",
+    generatedAt: "2026-07-08T00:00:00.000Z",
+    platform: "infron",
+    promptPolicy: "none",
+    thinkingMode: "off",
+    leaderboard: [
+      {
+        id: "openai-gpt-5-5",
+        label: "OpenAI GPT-5.5",
+        provider: "infron",
+        model: "openai/gpt-5.5",
+        rating: 1298,
+        games: 16,
+        wins: 13,
+        losses: 3,
+        draws: 0
+      }
+    ],
+    analysis: { aggregate: { matches: 72, invalidActions: 198 } },
+    matches: [{ id: "match-0001", winner: "A" }],
+    traces: { "match-0001": { id: "match-0001", actions: [] } }
+  };
+
+  const missingToken = await request(createServer({ env }), "/api/admin/benchmarks/import", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(benchmarkPayload)
+  });
+  assert.strictEqual(missingToken.status, 401);
+  assert.strictEqual(missingToken.json.error, "missing_admin_token");
+
+  const imported = await request(createServer({ env }), "/api/admin/benchmarks/import", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer admin-secret" },
+    body: JSON.stringify(benchmarkPayload)
+  });
+  assert.strictEqual(imported.status, 200);
+  assert.strictEqual(imported.json.benchmark.id, "infron-raw-20260707b");
+  assert.strictEqual(imported.json.benchmark.promptPolicy, "none");
+  assert.strictEqual(imported.json.benchmark.thinkingMode, "off");
+  assert.strictEqual(imported.json.importedPlayers, 1);
+  assert.strictEqual(imported.json.traces, 1);
+  assert.ok(!imported.text.includes("admin-secret"), "admin import response should not echo the admin token");
+
+  const createPersistentServer = freshCreateServer();
+  const leaderboard = await request(createPersistentServer({ env }), "/api/leaderboard");
+  assert.strictEqual(leaderboard.status, 200);
+  const rawRow = leaderboard.json.players.find((player) => player.displayName === "OpenAI GPT-5.5 (raw)");
+  assert.ok(rawRow, "imported raw benchmark player should appear in the public leaderboard");
+  assert.deepStrictEqual(rawRow.benchmark, {
+    runId: "infron-raw-20260707b",
+    kind: "raw_model_benchmark",
+    promptPolicy: "none",
+    thinkingMode: "off",
+    platform: "infron",
+    label: "Infron Raw Model Benchmark"
+  });
+  assert.ok(!leaderboard.text.includes("admin-secret"), "leaderboard should not expose admin tokens");
+
+  const benchmarkList = await request(createPersistentServer({ env }), "/api/benchmarks");
+  assert.strictEqual(benchmarkList.status, 200);
+  assert.strictEqual(benchmarkList.json.benchmarks.length, 1);
+  assert.strictEqual(benchmarkList.json.benchmarks[0].id, "infron-raw-20260707b");
+  assert.strictEqual(benchmarkList.json.benchmarks[0].promptPolicy, "none");
+  assert.strictEqual(benchmarkList.json.benchmarks[0].thinkingMode, "off");
+
+  const benchmarkDetail = await request(createPersistentServer({ env }), "/api/benchmarks/infron-raw-20260707b?includeTraces=1");
+  assert.strictEqual(benchmarkDetail.status, 200);
+  assert.strictEqual(benchmarkDetail.json.benchmark.traces["match-0001"].id, "match-0001");
+}
+
 async function testRegisterLoginAndProviderUpdatePersistAcrossRestart() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-auth-"));
   const dataFile = path.join(dataDir, "store.json");
@@ -1456,6 +1533,7 @@ async function testProviderShotRequiresKey() {
   await testLoginMatchmakingAndRankLoop();
   await testAiFillSeatsDefaultToOpenRouterFreePrompts();
   await testProfileRankAndLeaderboardPersistAcrossRestart();
+  await testAdminBenchmarkImportRequiresTokenAndPublishesRawMetadata();
   await testRegisterLoginAndProviderUpdatePersistAcrossRestart();
   await testSessionTokenProtectsRankedAndProviderRoutes();
   await testHumanMatchmakingQueueCanFormRanked2v2();

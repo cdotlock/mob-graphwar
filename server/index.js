@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, "..");
 const DIST_ROOT = path.join(ROOT, "dist");
 const players = new Map();
 const matches = new Map();
+const benchmarks = new Map();
 const playerMatchIndex = new Map();
 const matchmakingQueue = [];
 let nextPlayerId = 1;
@@ -110,7 +111,7 @@ function persistableProviders(providers) {
 }
 
 function persistablePlayer(player) {
-  return {
+  const out = {
     id: player.id,
     handle: player.handle || "",
     displayName: player.displayName,
@@ -121,18 +122,21 @@ function persistablePlayer(player) {
     rank: player.rank,
     providers: persistableProviders(player.providers)
   };
+  if (player.benchmark && typeof player.benchmark === "object") out.benchmark = publicBenchmarkRef(player.benchmark);
+  return out;
 }
 
 function readStoreFile(storeFile) {
-  if (!storeFile || !fs.existsSync(storeFile)) return { players: {}, nextPlayerId: 1 };
+  if (!storeFile || !fs.existsSync(storeFile)) return { players: {}, benchmarks: {}, nextPlayerId: 1 };
   try {
     const parsed = JSON.parse(fs.readFileSync(storeFile, "utf8"));
     return {
       players: parsed && parsed.players && typeof parsed.players === "object" ? parsed.players : {},
+      benchmarks: parsed && parsed.benchmarks && typeof parsed.benchmarks === "object" ? parsed.benchmarks : {},
       nextPlayerId: Number(parsed && parsed.nextPlayerId) || 1
     };
   } catch {
-    return { players: {}, nextPlayerId: 1 };
+    return { players: {}, benchmarks: {}, nextPlayerId: 1 };
   }
 }
 
@@ -141,10 +145,15 @@ function loadPersistentStore(env) {
   if (!storeFile || loadedStoreFile === storeFile) return storeFile;
   players.clear();
   matches.clear();
+  benchmarks.clear();
   playerMatchIndex.clear();
   matchmakingQueue.length = 0;
 
   const store = readStoreFile(storeFile);
+  for (const benchmark of Object.values(store.benchmarks || {})) {
+    if (!benchmark || !benchmark.id) continue;
+    benchmarks.set(String(benchmark.id), publicBenchmark(benchmark, { includeTraces: true }));
+  }
   let maxPlayerNumber = 0;
   for (const player of Object.values(store.players)) {
     if (!player || !player.id) continue;
@@ -157,7 +166,8 @@ function loadPersistentStore(env) {
       passwordHash: String(player.passwordHash || ""),
       passwordSalt: String(player.passwordSalt || ""),
       rank: player.rank || { rating: 1000, tier: "Bronze", games: 0 },
-      providers: persistableProviders(player.providers)
+      providers: persistableProviders(player.providers),
+      benchmark: player.benchmark && typeof player.benchmark === "object" ? publicBenchmarkRef(player.benchmark) : null
     });
     const numeric = Number(String(player.id).replace(/^player-/, ""));
     if (Number.isFinite(numeric)) maxPlayerNumber = Math.max(maxPlayerNumber, numeric);
@@ -175,7 +185,8 @@ function savePersistentStore(env) {
   const body = JSON.stringify({
     version: 1,
     nextPlayerId,
-    players: Object.fromEntries(Array.from(players.values()).map((player) => [player.id, persistablePlayer(player)]))
+    players: Object.fromEntries(Array.from(players.values()).map((player) => [player.id, persistablePlayer(player)])),
+    benchmarks: Object.fromEntries(Array.from(benchmarks.values()).map((benchmark) => [benchmark.id, publicBenchmark(benchmark, { includeTraces: true })]))
   }, null, 2);
   const tempFile = `${storeFile}.tmp`;
   fs.writeFileSync(tempFile, body);
@@ -206,7 +217,7 @@ function summarizeState(state) {
 }
 
 function publicPlayer(player) {
-  return {
+  const out = {
     id: player.id,
     handle: player.handle || "",
     displayName: player.displayName,
@@ -218,6 +229,8 @@ function publicPlayer(player) {
       ])
     )
   };
+  if (player.benchmark) out.benchmark = publicBenchmarkRef(player.benchmark);
+  return out;
 }
 
 function normalizeHandle(handle) {
@@ -383,10 +396,149 @@ function publicLeaderboard(limit) {
       rating: player.rank.rating,
       tier: player.rank.tier,
       games: player.rank.games,
-      providers: Object.keys(player.providers || {})
+      providers: Object.keys(player.providers || {}),
+      ...(player.benchmark ? { benchmark: publicBenchmarkRef(player.benchmark) } : {})
     }))
     .sort((a, b) => b.rating - a.rating || b.games - a.games || a.displayName.localeCompare(b.displayName))
     .slice(0, limit || 25);
+}
+
+function slug(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96) || "item";
+}
+
+function publicBenchmarkRef(value) {
+  const source = value || {};
+  return {
+    runId: String(source.runId || source.id || "").slice(0, 96),
+    kind: String(source.kind || "raw_model_benchmark").slice(0, 48),
+    promptPolicy: String(source.promptPolicy || "none").slice(0, 48),
+    thinkingMode: String(source.thinkingMode || "off").slice(0, 48),
+    platform: String(source.platform || "").slice(0, 48),
+    label: String(source.label || source.title || "").slice(0, 120)
+  };
+}
+
+function publicBenchmark(value, options) {
+  const source = value || {};
+  const includeTraces = Boolean(options && options.includeTraces);
+  const out = {
+    id: String(source.id || "").slice(0, 96),
+    title: String(source.title || source.label || "Benchmark").slice(0, 160),
+    kind: String(source.kind || "raw_model_benchmark").slice(0, 48),
+    generatedAt: String(source.generatedAt || ""),
+    importedAt: String(source.importedAt || ""),
+    platform: String(source.platform || "").slice(0, 48),
+    promptPolicy: String(source.promptPolicy || "none").slice(0, 48),
+    thinkingMode: String(source.thinkingMode || "off").slice(0, 48),
+    notes: String(source.notes || "").slice(0, 1000),
+    leaderboard: Array.isArray(source.leaderboard) ? source.leaderboard : [],
+    analysis: source.analysis && typeof source.analysis === "object" ? source.analysis : null,
+    matches: Array.isArray(source.matches) ? source.matches : [],
+    traceCount: Number(source.traceCount) || (source.traces && typeof source.traces === "object" ? Object.keys(source.traces).length : 0)
+  };
+  if (includeTraces && source.traces && typeof source.traces === "object") out.traces = source.traces;
+  return out;
+}
+
+function adminAuthError(req, env) {
+  const expected = String((env || process.env).GRAPHWAR_ADMIN_TOKEN || "").trim();
+  if (!expected) return { status: 403, error: "admin_import_disabled" };
+  const authorization = String(req.headers.authorization || "").trim();
+  const bearer = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  const direct = String(req.headers["x-admin-token"] || "").trim();
+  const actual = bearer || direct;
+  if (!actual) return { status: 401, error: "missing_admin_token" };
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+  if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) {
+    return { status: 403, error: "invalid_admin_token" };
+  }
+  return null;
+}
+
+function normalizeBenchmarkRun(body) {
+  const source = body && typeof body === "object" ? body : {};
+  const id = slug(source.id || source.runId || source.title || `benchmark-${Date.now()}`);
+  const leaderboard = Array.isArray(source.leaderboard) ? source.leaderboard.map((row, index) => ({
+    id: String(row.id || slug(row.model || row.label || `model-${index + 1}`)).slice(0, 96),
+    label: String(row.label || row.displayName || row.model || `Model ${index + 1}`).replace(/\s+\(raw\)$/i, "").slice(0, 120),
+    provider: String(row.provider || source.platform || "").slice(0, 48),
+    model: String(row.model || "").slice(0, 120),
+    rating: Number(row.rating) || 1000,
+    games: Number(row.games) || 0,
+    wins: Number(row.wins) || 0,
+    losses: Number(row.losses) || 0,
+    draws: Number(row.draws) || 0
+  })) : [];
+  const traces = source.traces && typeof source.traces === "object" ? source.traces : {};
+  return {
+    id,
+    title: String(source.title || source.label || "Raw Model Benchmark").slice(0, 160),
+    kind: String(source.kind || "raw_model_benchmark").slice(0, 48),
+    generatedAt: String(source.generatedAt || new Date().toISOString()),
+    importedAt: new Date().toISOString(),
+    platform: String(source.platform || "").slice(0, 48),
+    promptPolicy: String(source.promptPolicy || "none").slice(0, 48),
+    thinkingMode: String(source.thinkingMode || "off").slice(0, 48),
+    notes: String(source.notes || "").slice(0, 1000),
+    leaderboard,
+    analysis: source.analysis && typeof source.analysis === "object" ? source.analysis : null,
+    matches: Array.isArray(source.matches) ? source.matches : [],
+    traces,
+    traceCount: Object.keys(traces).length
+  };
+}
+
+function importBenchmarkRun(body) {
+  const benchmark = normalizeBenchmarkRun(body);
+  benchmarks.set(benchmark.id, benchmark);
+  const currentPlayerIds = new Set();
+  const benchmarkRef = {
+    runId: benchmark.id,
+    kind: benchmark.kind,
+    promptPolicy: benchmark.promptPolicy,
+    thinkingMode: benchmark.thinkingMode,
+    platform: benchmark.platform,
+    label: benchmark.title
+  };
+  for (const row of benchmark.leaderboard) {
+    const id = `benchmark-${slug(row.model || row.id || row.label)}-raw`;
+    currentPlayerIds.add(id);
+    players.set(id, {
+      id,
+      handle: slug(`${row.label}-raw`).slice(0, 24),
+      displayName: `${row.label} (raw)`,
+      createdAt: players.get(id)?.createdAt || benchmark.importedAt,
+      lastLoginAt: benchmark.importedAt,
+      passwordHash: "",
+      passwordSalt: "",
+      rank: {
+        rating: row.rating,
+        tier: row.rating >= 1200 ? "Gold" : row.rating >= 1050 ? "Silver" : "Bronze",
+        games: row.games
+      },
+      providers: {
+        [row.provider || benchmark.platform || "benchmark"]: {
+          model: row.model,
+          configured: true
+        }
+      },
+      benchmark: benchmarkRef
+    });
+  }
+  for (const [id, player] of Array.from(players.entries())) {
+    if (player?.benchmark?.runId === benchmark.id && !currentPlayerIds.has(id)) players.delete(id);
+  }
+  return {
+    benchmark: publicBenchmark(benchmark),
+    importedPlayers: currentPlayerIds.size,
+    traces: benchmark.traceCount
+  };
 }
 
 function normalizeStandingOrder(value) {
@@ -1598,6 +1750,36 @@ function createServer(options) {
       if (req.method === "GET" && url.pathname === "/api/leaderboard") {
         const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 25));
         sendJson(res, 200, { players: publicLeaderboard(limit) });
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/benchmarks") {
+        sendJson(res, 200, {
+          benchmarks: Array.from(benchmarks.values())
+            .map((benchmark) => publicBenchmark(benchmark))
+            .sort((a, b) => String(b.importedAt || b.generatedAt).localeCompare(String(a.importedAt || a.generatedAt)))
+        });
+        return;
+      }
+      const benchmarkMatch = url.pathname.match(/^\/api\/benchmarks\/([^/]+)$/);
+      if (req.method === "GET" && benchmarkMatch) {
+        const benchmark = benchmarks.get(benchmarkMatch[1]);
+        if (!benchmark) {
+          sendJson(res, 404, { error: "unknown_benchmark" });
+          return;
+        }
+        sendJson(res, 200, { benchmark: publicBenchmark(benchmark, { includeTraces: url.searchParams.get("includeTraces") === "1" }) });
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/admin/benchmarks/import") {
+        const authError = adminAuthError(req, env);
+        if (authError) {
+          sendJson(res, authError.status, { error: authError.error });
+          return;
+        }
+        const body = JSON.parse(await readBody(req, 64_000_000));
+        const result = importBenchmarkRun(body);
+        savePersistentStore(env);
+        sendJson(res, 200, result);
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/auth/register") {

@@ -417,24 +417,35 @@ function tierForRating(rating) {
 }
 
 function readStore(file) {
-  if (!file || !fs.existsSync(file)) return { version: 1, nextPlayerId: 1, players: {} };
+  if (!file || !fs.existsSync(file)) return { version: 1, nextPlayerId: 1, players: {}, benchmarks: {} };
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     return {
       version: parsed.version || 1,
       nextPlayerId: Number(parsed.nextPlayerId) || 1,
-      players: parsed.players && typeof parsed.players === "object" ? parsed.players : {}
+      players: parsed.players && typeof parsed.players === "object" ? parsed.players : {},
+      benchmarks: parsed.benchmarks && typeof parsed.benchmarks === "object" ? parsed.benchmarks : {}
     };
   } catch {
-    return { version: 1, nextPlayerId: 1, players: {} };
+    return { version: 1, nextPlayerId: 1, players: {}, benchmarks: {} };
   }
 }
 
-function buildBenchmarkStore(leaderboard, existingStore) {
+function buildBenchmarkStore(leaderboard, existingStore, benchmarkMeta) {
+  const meta = benchmarkMeta || {};
+  const benchmarkRef = {
+    runId: String(meta.id || "raw-model-benchmark"),
+    kind: String(meta.kind || "raw_model_benchmark"),
+    promptPolicy: String(meta.promptPolicy || "none"),
+    thinkingMode: String(meta.thinkingMode || "off"),
+    platform: String(meta.platform || ""),
+    label: String(meta.title || meta.label || "Raw Model Benchmark")
+  };
   const store = {
     version: 1,
     nextPlayerId: Number(existingStore?.nextPlayerId) || 1,
-    players: { ...(existingStore?.players || {}) }
+    players: { ...(existingStore?.players || {}) },
+    benchmarks: { ...(existingStore?.benchmarks || {}) }
   };
   const currentIds = new Set(leaderboard.map((row) => `benchmark-${slug(row.model)}-raw`));
   for (const [id, player] of Object.entries(store.players)) {
@@ -464,7 +475,33 @@ function buildBenchmarkStore(leaderboard, existingStore) {
           model: row.model,
           configured: true
         }
-      }
+      },
+      benchmark: benchmarkRef
+    };
+  }
+  if (meta.id) {
+    store.benchmarks[benchmarkRef.runId] = {
+      id: benchmarkRef.runId,
+      title: benchmarkRef.label,
+      kind: benchmarkRef.kind,
+      generatedAt: String(meta.generatedAt || now),
+      importedAt: String(meta.importedAt || now),
+      platform: benchmarkRef.platform,
+      promptPolicy: benchmarkRef.promptPolicy,
+      thinkingMode: benchmarkRef.thinkingMode,
+      leaderboard: leaderboard.map((row) => ({
+        id: row.id,
+        label: row.label,
+        provider: row.provider,
+        model: row.model,
+        rating: row.rating,
+        games: row.games,
+        wins: row.wins,
+        losses: row.losses,
+        draws: row.draws
+      })),
+      matches: [],
+      traceCount: Number(meta.traceCount) || 0
     };
   }
   return store;
@@ -729,7 +766,15 @@ async function runBenchmark(options) {
   const leaderboard = sortedLeaderboard(rows);
   writeJson(path.join(outputDir, "leaderboard.json"), leaderboard);
   writeJson(path.join(outputDir, "matches-summary.json"), allMatches);
-  const store = buildBenchmarkStore(leaderboard, readStore(opts.writeStore));
+  const store = buildBenchmarkStore(leaderboard, readStore(opts.writeStore), {
+    id: slug(path.basename(outputDir)),
+    title: route.reportTitle,
+    generatedAt,
+    platform: route.id,
+    promptPolicy: "none",
+    thinkingMode: String(opts.reasoning || "off").toLowerCase() === "high" ? "high" : "off",
+    traceCount: allMatches.length
+  });
   writeJson(path.join(outputDir, "graphwar-store.json"), store);
   if (opts.writeStore) writeJson(path.resolve(opts.writeStore), store);
   const report = buildReport({

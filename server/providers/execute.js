@@ -5,9 +5,10 @@ const { buildAnthropicRequest } = require("./anthropic.js");
 const { buildOpenAICompatibleRequest } = require("./openai-compatible.js");
 const { normalizeProviderDecision, stripReasoning } = require("./normalize.js");
 
-function resolveApiKey(provider, body, env) {
+function resolveApiKey(provider, body, env, allowEnvKey = true) {
   const byok = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
   if (byok) return byok;
+  if (!allowEnvKey) return "";
   const source = env || process.env;
   return source[provider.keyEnv] || (provider.alternateKeyEnv ? source[provider.alternateKeyEnv] : "") || "";
 }
@@ -124,7 +125,7 @@ async function executeProviderDecision(provider, payload, options) {
   const fetchFn = opts.fetch || globalThis.fetch;
   if (typeof fetchFn !== "function") throw new Error("fetch_unavailable");
 
-  const apiKey = resolveApiKey(provider, payload, opts.env);
+  const apiKey = resolveApiKey(provider, payload, opts.env, opts.allowEnvKey !== false);
   if (!apiKey) throw new Error("missing_api_key");
 
   const timeoutMs = providerTimeoutMs(opts);

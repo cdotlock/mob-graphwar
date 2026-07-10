@@ -13,7 +13,7 @@ async function request(server, path, options) {
     const text = await response.text();
     const trimmed = text.trim();
     const json = trimmed.startsWith("{") || trimmed.startsWith("[") ? JSON.parse(text) : null;
-    return { status: response.status, text, json };
+    return { status: response.status, text, json, headers: response.headers };
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -25,6 +25,23 @@ function authHeaders(session, extra) {
     ...(extra || {}),
     ...(token ? { authorization: `Bearer ${token}` } : {})
   };
+}
+
+let testAccountNumber = 1;
+async function createAuthenticatedSession(serverOptions) {
+  const options = serverOptions || { env: {} };
+  const suffix = testAccountNumber++;
+  const session = await request(createServer(options), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      handle: `test-user-${suffix}`,
+      displayName: `Test User ${suffix}`,
+      password: "password-123"
+    })
+  });
+  assert.strictEqual(session.status, 200);
+  return session;
 }
 
 function providerRulesPayload(requestBody) {
@@ -166,9 +183,11 @@ async function testStaticServerOnlyServesMainEntrypoint() {
 }
 
 async function testInvalidProviderFails() {
-  const result = await request(createServer({ env: {} }), "/api/agent/shot", {
+  const options = { env: {} };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/agent/shot", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({ provider: "unknown" })
   });
   assert.strictEqual(result.status, 400);
@@ -236,7 +255,10 @@ async function testLoginMatchmakingAndRankLoop() {
   const result = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: fetchMock }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId: session.json.player.id })
+    body: JSON.stringify({
+      playerId: session.json.player.id,
+      providerConfig: { provider: "deepseek", model: "deepseek-v4-flash", apiKey: "sk-user" }
+    })
   });
   assert.strictEqual(result.status, 200);
   assert.ok(result.json.rankDelta !== 0, "resolved ranked match should award or remove rank points");
@@ -310,7 +332,10 @@ async function testProfileRankAndLeaderboardPersistAcrossRestart() {
   const resolved = await request(createPersistentServer({ env, fetch: fetchMock }), `/api/match/${match.json.match.id}/resolve`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId })
+    body: JSON.stringify({
+      playerId,
+      providerConfig: { provider: "deepseek", model: "deepseek-v4-flash", apiKey: "persist-secret" }
+    })
   });
   assert.strictEqual(resolved.status, 200);
   const settledRating = resolved.json.player.rank.rating;
@@ -433,7 +458,7 @@ async function testRegisterLoginAndProviderUpdatePersistAcrossRestart() {
   assert.strictEqual(registered.json.player.handle, "clock_ai");
   assert.strictEqual(registered.json.player.displayName, "Clock Auth");
   assert.strictEqual(registered.json.player.rank.rating, 1000);
-  assert.strictEqual(registered.json.player.providers.deepseek.configured, true);
+  assert.strictEqual(registered.json.player.providers.deepseek.configured, false);
   assert.ok(!registered.text.includes("sk-auth-register"), "register response should not echo API keys");
   assert.ok(!registered.text.includes("passwordHash"), "register response should not expose password hash");
   assert.ok(!registered.text.includes("passwordSalt"), "register response should not expose password salt");
@@ -470,7 +495,7 @@ async function testRegisterLoginAndProviderUpdatePersistAcrossRestart() {
   assert.strictEqual(loggedIn.json.player.id, registered.json.player.id);
   assert.strictEqual(loggedIn.json.player.handle, "clock_ai");
   assert.strictEqual(loggedIn.json.player.providers.openai.model, "gpt-5.5");
-  assert.strictEqual(loggedIn.json.player.providers.openai.configured, true);
+  assert.strictEqual(loggedIn.json.player.providers.openai.configured, false);
   assert.ok(!loggedIn.text.includes("sk-auth-login"), "login response should not echo API keys");
   assert.ok(!loggedIn.text.includes("Swordfish!9"), "login response should not echo password");
   assert.ok(!loggedIn.text.includes("passwordHash"), "login response should not expose password hash");
@@ -531,7 +556,7 @@ async function testSessionTokenProtectsRankedAndProviderRoutes() {
     })
   });
   assert.strictEqual(updated.status, 200);
-  assert.strictEqual(updated.json.player.providers.anthropic.configured, true);
+  assert.strictEqual(updated.json.player.providers.anthropic.configured, false);
   assert.strictEqual(updated.json.player.providers.anthropic.model, "claude-sonnet-5");
   assert.ok(!updated.text.includes("sk-provider-session"), "provider update response should not leak API keys");
 
@@ -580,7 +605,10 @@ async function testSessionTokenProtectsRankedAndProviderRoutes() {
     {
     method: "POST",
     headers: authHeaders(registered, { "content-type": "application/json" }),
-    body: JSON.stringify({ command: "safe arc" })
+    body: JSON.stringify({
+      command: "safe arc",
+      providerConfig: { provider: "anthropic", model: "claude-sonnet-5", apiKey: "sk-provider-session" }
+    })
     }
   );
   assert.strictEqual(autoDuel.status, 200);
@@ -719,25 +747,7 @@ async function testHumanMatchmakingStoresLaunchOrdersPerSeat() {
     assert.ok(!matched.text.includes(order), "match response should not leak launch order text");
   }
 
-  const autoDuel = await request(createServer({ env: {}, fetch: fetchMock }), `/api/match/${matched.json.match.id}/auto-duel`, {
-    method: "POST",
-    headers: authHeaders(players[0], { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId: players[0].id })
-  });
-  assert.strictEqual(autoDuel.status, 200);
-  const firstPromptByUnit = new Map();
-  for (const captured of capturedPrompts) {
-    if (!firstPromptByUnit.has(captured.prompt.activeUnitId)) {
-      firstPromptByUnit.set(captured.prompt.activeUnitId, captured.prompt.command);
-    }
-  }
-  assert.strictEqual(firstPromptByUnit.get("A1"), launchOrders[0]);
-  assert.strictEqual(firstPromptByUnit.get("A2"), launchOrders[0]);
-  assert.strictEqual(firstPromptByUnit.get("B1"), launchOrders[1]);
-  assert.strictEqual(firstPromptByUnit.get("B2"), launchOrders[1]);
-  for (const order of launchOrders) {
-    assert.ok(!autoDuel.text.includes(order), "auto duel response should not leak other players' launch orders");
-  }
+  assert.strictEqual(capturedPrompts.length, 0, "human matchmaking must not retain provider keys for unattended server resolution");
 }
 
 async function testQueuedPlayersCanPollMatchedRoom() {
@@ -836,7 +846,10 @@ async function testRankedMatchRejectsMidDuelManualActions() {
   const autoDuel = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: expressionShotFetchMock() }), `/api/match/${matchId}/auto-duel`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId: session.json.player.id })
+    body: JSON.stringify({
+      playerId: session.json.player.id,
+      providerConfig: { provider: "deepseek", model: "deepseek-v4-flash", apiKey: "sk-commander" }
+    })
   });
   assert.strictEqual(autoDuel.status, 200);
   assert.strictEqual(autoDuel.json.match.status, "resolved");
@@ -864,7 +877,10 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
   const autoDuel = await request(createServer({ env: { OPENROUTER_API_KEY: "sk-router-env" }, fetch: expressionShotFetchMock() }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
-    body: JSON.stringify({ playerId: session.json.player.id })
+    body: JSON.stringify({
+      playerId: session.json.player.id,
+      providerConfig: { provider: "deepseek", model: "deepseek-v4-flash", apiKey: "sk-auto" }
+    })
   });
   assert.strictEqual(autoDuel.status, 200);
   assert.strictEqual(autoDuel.json.match.status, "resolved");
@@ -942,6 +958,7 @@ async function testRankedJoinCanRunServerSideIdleBatch() {
       ? prompt.recentFeedback[prompt.recentFeedback.length - 1]
       : null;
     const targetId = prompt.opponentIds && prompt.opponentIds[0] ? prompt.opponentIds[0] : "";
+    const shouldSwap = previous && previous.result === "blocked" && Number(prompt.hand?.swapsRemaining) > 0;
     return {
       ok: true,
       status: 200,
@@ -950,10 +967,10 @@ async function testRankedJoinCanRunServerSideIdleBatch() {
           {
             message: {
               content: JSON.stringify({
-                action: previous && previous.result === "blocked" ? "swap_hand" : "shot",
-                targetId: previous && previous.result === "blocked" ? "" : targetId,
-                expression: previous && previous.result === "blocked" ? "" : "y=y0+dy*t+10*sin(pi*t)",
-                cardSlots: previous && previous.result === "blocked" ? [] : [1],
+                action: shouldSwap ? "swap_hand" : "shot",
+                targetId: shouldSwap ? "" : targetId,
+                expression: shouldSwap ? "" : "y=y0+dy*t+10*sin(pi*t)",
+                cardSlots: shouldSwap ? [] : [1],
                 publicReason: previous ? `adjusting after ${previous.result}` : "opening function shot"
               })
             }
@@ -1001,7 +1018,8 @@ async function testRankedJoinCanRunServerSideIdleBatch() {
       allowAiFill: true,
       standingOrder: "use prior collision feedback; swap blocked hands",
       rounds: 2,
-      maxActions: 4
+      maxActions: 4,
+      providerConfig: { provider: "openai", model: "gpt-idle", apiKey: "idle-batch-secret" }
     })
   });
 
@@ -1011,6 +1029,10 @@ async function testRankedJoinCanRunServerSideIdleBatch() {
   assert.strictEqual(batch.json.matches.length, 2, "server should return one settled match per idle-run round");
   assert.strictEqual(batch.json.autoBattles.length, 2, "server should return one battle summary per idle-run round");
   assert.strictEqual(batch.json.player.rank.games, 2, "server-side idle batch should settle rank once per round");
+  assert.ok(
+    batch.json.matches.every((match) => match.state.turn > 4 || match.state.reason !== "resolution_guard"),
+    "ranked idle batches must ignore a client attempt to lower the 24-action cap"
+  );
   assert.ok(batch.json.match, "batch response should keep the latest match for the watch UI");
   assert.ok(
     capturedPrompts.some((prompt) => Array.isArray(prompt.recentFeedback) && prompt.recentFeedback.length > 0),
@@ -1157,7 +1179,8 @@ async function testAutoDuelUsesConfiguredProviderWithoutLeakingKeys() {
     headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       playerId: session.json.player.id,
-      command: "safe high arc, avoid ally, target the weakest opponent"
+      command: "safe high arc, avoid ally, target the weakest opponent",
+      providerConfig: { provider: "openai", model: "gpt-auto", apiKey: "auto-provider-secret" }
     })
   });
 
@@ -1239,7 +1262,10 @@ async function testAutoDuelUsesOpenRouterFreeForAiOpponentsWhenEnvKeyExists() {
     {
       method: "POST",
       headers: authHeaders(session, { "content-type": "application/json" }),
-      body: JSON.stringify({ command: "support ally, swap if the hand cannot thread the maze" })
+      body: JSON.stringify({
+        command: "support ally, swap if the hand cannot thread the maze",
+        providerConfig: { provider: "openrouter", model: "openrouter/free", apiKey: "sk-router-env" }
+      })
     }
   );
 
@@ -1297,7 +1323,10 @@ async function testAutoDuelPropagatesSlowProviderTimeout() {
   const autoDuel = await request(createServer({ env, fetch: fetchMock }), `/api/match/${joined.json.match.id}/auto-duel`, {
     method: "POST",
     headers: authHeaders(session, { "content-type": "application/json" }),
-    body: JSON.stringify({ command: "safe arc" })
+    body: JSON.stringify({
+      command: "safe arc",
+      providerConfig: { provider: "openrouter", model: "openrouter/free", apiKey: "sk-router-env" }
+    })
   });
   assert.strictEqual(autoDuel.status, 504);
   assert.strictEqual(autoDuel.json.error, "provider_timeout");
@@ -1305,9 +1334,11 @@ async function testAutoDuelPropagatesSlowProviderTimeout() {
 }
 
 async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
-  const result = await request(createServer({ env: {} }), "/api/simulations/league", {
+  const options = { env: {} };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/simulations/league", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       rounds: 2,
       contestants: [
@@ -1336,9 +1367,11 @@ async function testModelLeagueSimulationRanksContestantsWithoutLeakingKeys() {
 }
 
 async function testModelLeagueRoundRobinCanExportCompleteTraces() {
-  const result = await request(createServer({ env: {} }), "/api/simulations/league", {
+  const options = { env: {} };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/simulations/league", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       schedule: "round_robin",
       gamesPerPair: 2,
@@ -1395,9 +1428,11 @@ async function testProviderShotUsesByokAndValidatesExpression() {
     };
   };
 
-  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/agent/shot", {
+  const options = { env: {}, fetch: fetchMock };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/agent/shot", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       provider: "openai",
       apiKey: "sk-live-user",
@@ -1456,9 +1491,11 @@ async function testProviderShotUsesCurrentTurnOrder() {
     };
   };
 
-  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/agent/shot", {
+  const options = { env: {}, fetch: fetchMock };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/agent/shot", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       provider: "openai",
       apiKey: "sk-live-user",
@@ -1491,9 +1528,11 @@ async function testProviderCanChooseSwapHand() {
     })
   });
 
-  const result = await request(createServer({ env: {}, fetch: fetchMock }), "/api/agent/shot", {
+  const options = { env: {}, fetch: fetchMock };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/agent/shot", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       provider: "openai",
       apiKey: "sk-live-user",
@@ -1510,9 +1549,11 @@ async function testProviderCanChooseSwapHand() {
 
 async function testProviderShotRequiresKey() {
   const state = require("../src/sim-core.js").createInitialState({ seed: 7351 });
-  const result = await request(createServer({ env: {} }), "/api/agent/shot", {
+  const options = { env: {} };
+  const session = await createAuthenticatedSession(options);
+  const result = await request(createServer(options), "/api/agent/shot", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: authHeaders(session, { "content-type": "application/json" }),
     body: JSON.stringify({
       provider: "openai",
       state,
@@ -1522,6 +1563,116 @@ async function testProviderShotRequiresKey() {
   });
   assert.strictEqual(result.status, 400);
   assert.strictEqual(result.json.error, "missing_api_key");
+}
+
+function testProductionRequiresExplicitSessionSecret() {
+  assert.throws(
+    () => createServer({ env: { NODE_ENV: "production" } }),
+    /missing_session_secret/,
+    "production must not start with the historical development signing secret"
+  );
+  const server = createServer({
+    env: { NODE_ENV: "production", GRAPHWAR_SESSION_SECRET: "test-production-secret-that-is-long-enough" }
+  });
+  server.close();
+}
+
+async function testRegistrationNeverStoresUserApiKeys() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-local-key-"));
+  const dataFile = path.join(tempDir, "store.json");
+  const env = { GRAPHWAR_DATA_FILE: dataFile, GRAPHWAR_SESSION_SECRET: "test-session-secret" };
+  const result = await request(createServer({ env }), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      handle: "localkey",
+      displayName: "Local Key",
+      password: "password-123",
+      providers: { openai: { apiKey: "sk-browser-only", model: "gpt-5.5" } }
+    })
+  });
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.json.player.providers.openai.configured, false, "server profile must not claim a browser key is retained");
+  assert.ok(!fs.readFileSync(dataFile, "utf8").includes("sk-browser-only"), "persistent store must not contain a user key");
+}
+
+async function testExpensiveProviderRoutesRequireSession() {
+  const Sim = require("../src/sim-core.js");
+  let providerCalls = 0;
+  const fetchMock = async () => {
+    providerCalls += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "{}" } }] })
+    };
+  };
+  const serverOptions = {
+    env: { OPENROUTER_API_KEY: "sk-server-owned" },
+    fetch: fetchMock
+  };
+  const shot = await request(createServer(serverOptions), "/api/agent/shot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "openrouter", state: Sim.createInitialState({ seed: 42 }), team: "A" })
+  });
+  assert.strictEqual(shot.status, 401);
+  assert.strictEqual(shot.json.error, "missing_session");
+
+  const league = await request(createServer(serverOptions), "/api/simulations/league", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contestants: [] })
+  });
+  assert.strictEqual(league.status, 401);
+  assert.strictEqual(league.json.error, "missing_session");
+  assert.strictEqual(providerCalls, 0, "anonymous routes must never reach a provider");
+}
+
+async function testCookieSessionSurvivesReloadAndLogout() {
+  const env = { GRAPHWAR_SESSION_SECRET: "test-cookie-session-secret" };
+  const registered = await request(createServer({ env }), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ handle: "cookie-user", displayName: "Cookie User", password: "password-123" })
+  });
+  assert.strictEqual(registered.status, 200);
+  const setCookie = registered.headers.get("set-cookie") || "";
+  assert.match(setCookie, /graphwar_session=/);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /SameSite=Lax/i);
+  const cookie = setCookie.split(";")[0];
+
+  const restored = await request(createServer({ env }), "/api/session/me", {
+    headers: { cookie }
+  });
+  assert.strictEqual(restored.status, 200);
+  assert.strictEqual(restored.json.player.id, registered.json.player.id);
+
+  const logout = await request(createServer({ env }), "/api/auth/logout", {
+    method: "POST",
+    headers: { cookie }
+  });
+  assert.strictEqual(logout.status, 200);
+  assert.match(logout.headers.get("set-cookie") || "", /Max-Age=0/i);
+}
+
+async function testExpensiveRoutesAreRateLimitedPerSession() {
+  const env = {
+    GRAPHWAR_SESSION_SECRET: "test-rate-limit-session-secret",
+    GRAPHWAR_RATE_LIMIT_PER_MINUTE: "2"
+  };
+  const session = await createAuthenticatedSession({ env });
+  const makeRequest = () => request(createServer({ env }), "/api/agent/shot", {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({ provider: "unknown" })
+  });
+  assert.strictEqual((await makeRequest()).status, 400);
+  assert.strictEqual((await makeRequest()).status, 400);
+  const limited = await makeRequest();
+  assert.strictEqual(limited.status, 429);
+  assert.strictEqual(limited.json.error, "rate_limited");
 }
 
 (async () => {
@@ -1554,6 +1705,11 @@ async function testProviderShotRequiresKey() {
   await testProviderShotUsesCurrentTurnOrder();
   await testProviderCanChooseSwapHand();
   await testProviderShotRequiresKey();
+  testProductionRequiresExplicitSessionSecret();
+  await testRegistrationNeverStoresUserApiKeys();
+  await testExpensiveProviderRoutesRequireSession();
+  await testCookieSessionSurvivesReloadAndLogout();
+  await testExpensiveRoutesAreRateLimitedPerSession();
   console.log("server tests passed");
 })().catch((err) => {
   console.error(err);

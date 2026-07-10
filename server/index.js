@@ -16,11 +16,15 @@ const matches = new Map();
 const benchmarks = new Map();
 const playerMatchIndex = new Map();
 const matchmakingQueue = [];
+const rateWindows = new Map();
 let nextPlayerId = 1;
 let nextMatchId = 1;
 let loadedStoreFile = null;
 const DEFAULT_AI_PROVIDER = "openrouter";
 const DEFAULT_AI_MODEL = "openrouter/free";
+const DEVELOPMENT_SESSION_SECRET = "dev-graphwar-session-secret";
+const MAX_MATCH_ACTIONS = 24;
+const SESSION_COOKIE = "graphwar_session";
 const MATCH_COMMANDER_COUNT = 2;
 const LEAGUE_MAX_CONTESTANTS = 16;
 const LEAGUE_MAX_MATCHES = 240;
@@ -104,7 +108,7 @@ function persistableProviders(providers) {
       id,
       {
         model: value.model || "",
-        configured: Boolean(value.apiKey || value.configured)
+        configured: false
       }
     ])
   );
@@ -225,7 +229,7 @@ function publicPlayer(player) {
     providers: Object.fromEntries(
       Object.entries(player.providers || {}).map(([id, value]) => [
         id,
-        { model: value.model || "", configured: Boolean(value.apiKey || value.configured) }
+        { model: value.model || "", configured: false }
       ])
     )
   };
@@ -283,9 +287,8 @@ function normalizeAuthProviders(providers) {
     Object.entries(providers).map(([id, value]) => [
       String(id).slice(0, 40),
       {
-        apiKey: typeof value?.apiKey === "string" ? value.apiKey : "",
         model: typeof value?.model === "string" ? value.model.slice(0, 100) : "",
-        configured: Boolean(value?.apiKey || value?.configured)
+        configured: false
       }
     ])
   );
@@ -319,7 +322,39 @@ function authErrorResponse(res, err) {
 }
 
 function sessionSecret(env) {
-  return String((env || process.env).GRAPHWAR_SESSION_SECRET || "dev-graphwar-session-secret");
+  return String((env || process.env).GRAPHWAR_SESSION_SECRET || DEVELOPMENT_SESSION_SECRET);
+}
+
+function validateRuntimeConfig(env) {
+  const source = env || process.env;
+  if (source.NODE_ENV !== "production") return;
+  const secret = String(source.GRAPHWAR_SESSION_SECRET || "").trim();
+  if (!secret || secret === DEVELOPMENT_SESSION_SECRET || secret.length < 32) {
+    throw new Error("missing_session_secret");
+  }
+}
+
+function rateLimitPerMinute(env) {
+  const parsed = Number((env || process.env).GRAPHWAR_RATE_LIMIT_PER_MINUTE);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 30;
+}
+
+function enforceRateLimit(req, res, env, player, scope) {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const identity = player?.id || String(req.socket?.remoteAddress || "unknown");
+  const key = `${scope}:${identity}`;
+  const current = rateWindows.get(key);
+  const bucket = !current || now - current.startedAt >= windowMs
+    ? { startedAt: now, count: 0 }
+    : current;
+  bucket.count += 1;
+  rateWindows.set(key, bucket);
+  const limit = rateLimitPerMinute(env);
+  if (bucket.count <= limit) return true;
+  res.setHeader("retry-after", String(Math.max(1, Math.ceil((windowMs - (now - bucket.startedAt)) / 1000))));
+  sendJson(res, 429, { error: "rate_limited" });
+  return false;
 }
 
 function encodeSessionPayload(payload) {
@@ -345,6 +380,34 @@ function bearerToken(req) {
   return match ? match[1].trim() : "";
 }
 
+function cookieToken(req) {
+  const header = String(req.headers.cookie || "");
+  for (const part of header.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === SESSION_COOKIE) return decodeURIComponent(rawValue.join("="));
+  }
+  return "";
+}
+
+function sessionCookie(token, env, clear = false) {
+  const source = env || process.env;
+  const secure = source.NODE_ENV === "production" || source.RAILWAY_ENVIRONMENT || source.RAILWAY_PROJECT_ID;
+  return [
+    `${SESSION_COOKIE}=${clear ? "" : encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    secure ? "Secure" : "",
+    clear ? "Max-Age=0" : "Max-Age=2592000"
+  ].filter(Boolean).join("; ");
+}
+
+function issueSession(res, player, env) {
+  const token = createSessionToken(player, env);
+  res.setHeader("set-cookie", sessionCookie(token, env));
+  return token;
+}
+
 function verifySessionToken(token, env) {
   const [encodedPayload, signature] = String(token || "").split(".");
   if (!encodedPayload || !signature) return null;
@@ -365,7 +428,7 @@ function verifySessionToken(token, env) {
 }
 
 function sessionPlayer(req, env) {
-  const token = bearerToken(req);
+  const token = cookieToken(req) || bearerToken(req);
   if (!token) return { status: 401, error: "missing_session" };
   const payload = verifySessionToken(token, env);
   if (!payload) return { status: 401, error: "invalid_session" };
@@ -724,12 +787,6 @@ function normalizeIdleRounds(value) {
   return Math.max(1, Math.min(25, Math.floor(parsed)));
 }
 
-function normalizeActionCap(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-  return Math.max(1, Math.min(Number(Sim.CONFIG.maxResolutionActions || 24), Math.floor(parsed)));
-}
-
 function getPlayerSeat(match, player) {
   if (!match || !player) return null;
   return match.roster.find((seat) => seat.playerId === player.id) || null;
@@ -838,7 +895,16 @@ function providerEnvKey(provider, env) {
   return source[provider.keyEnv] || (provider.alternateKeyEnv ? source[provider.alternateKeyEnv] : "") || "";
 }
 
-function configuredSeatProvider(seat, env) {
+function normalizeRequestProvider(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    provider: String(source.provider || "").slice(0, 40),
+    model: String(source.model || "").slice(0, 100),
+    apiKey: typeof source.apiKey === "string" ? source.apiKey.trim() : ""
+  };
+}
+
+function configuredSeatProvider(seat, env, requestProvider) {
   if (!seat) return null;
   const source = env || process.env;
   const player = seat.control === "human" && seat.playerId ? players.get(seat.playerId) : null;
@@ -846,7 +912,8 @@ function configuredSeatProvider(seat, env) {
   const provider = getProvider(providerId);
   const allowedProviders = listProviders(env).map((item) => item.id);
   const providerConfig = player && player.providers && player.providers[providerId] ? player.providers[providerId] : {};
-  const apiKey = typeof providerConfig.apiKey === "string" ? providerConfig.apiKey.trim() : "";
+  const localProvider = normalizeRequestProvider(requestProvider);
+  const apiKey = localProvider.provider === providerId ? localProvider.apiKey : "";
   const envKey = providerEnvKey(provider, source);
   if (!provider || provider.id === "local" || !allowedProviders.includes(provider.id)) return null;
   if (seat.control === "ai") {
@@ -859,8 +926,8 @@ function configuredSeatProvider(seat, env) {
       model: seat.model || source[provider.modelEnv] || provider.defaultModel
     };
   }
-  if (!player || (!apiKey && !envKey)) return null;
-  const model = providerConfig.model || seat.model || source[provider.modelEnv] || provider.defaultModel;
+  if (!player || !apiKey) return null;
+  const model = localProvider.model || providerConfig.model || seat.model || provider.defaultModel;
   return { player, provider, providerConfig, apiKey, model };
 }
 
@@ -894,7 +961,7 @@ async function autoResolveDecisionForTurn(match, turn, options) {
   const opts = options || {};
   const rulesPayload = Contract.buildRulesPayload(match.state, turn.unitId || turn.team, turn.command);
   const rulesDigest = buildRulesDigest(rulesPayload);
-  const configured = configuredSeatProvider(turn.seat, opts.env);
+  const configured = configuredSeatProvider(turn.seat, opts.env, opts.playerProvider);
   if (!configured) throw new Error("provider_not_configured");
   if (!budgetAllowsProvider(opts.providerBudget)) throw new Error("provider_budget_exhausted");
 
@@ -928,8 +995,7 @@ async function advanceMatchToResolution(match, options) {
   const opts = options || {};
   opts.providerBudget = opts.providerBudget || createProviderBudget(opts.env);
   let guard = 0;
-  const configuredMaxActions = normalizeActionCap(opts.maxActions);
-  const maxActions = configuredMaxActions || Number(Sim.CONFIG.maxResolutionActions || 24);
+  const maxActions = MAX_MATCH_ACTIONS;
   while (!match.state.winner && guard < maxActions) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
@@ -1146,7 +1212,8 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
     playerId: player.id,
     playerTeam,
     command: opts.command,
-    maxActions: opts.maxActions,
+    maxActions: MAX_MATCH_ACTIONS,
+    playerProvider: opts.playerProvider,
     frames
   });
   let settlement = match.rankSettlements[player.id];
@@ -1172,7 +1239,6 @@ async function runRankedIdleBatch(player, body, env, fetchFn) {
   const rounds = normalizeIdleRounds(body.rounds);
   const standingOrder = normalizeStandingOrder(body.standingOrder);
   const preferredProvider = body.preferredProvider;
-  const maxActions = normalizeActionCap(body.maxActions);
   const matchesOut = [];
   const autoBattles = [];
   const rankDeltas = [];
@@ -1193,7 +1259,8 @@ async function runRankedIdleBatch(player, body, env, fetchFn) {
       {
         mode: "idle_batch",
         command: standingOrder,
-        maxActions
+        maxActions: MAX_MATCH_ACTIONS,
+        playerProvider: body.providerConfig
       },
       fetchFn
     );
@@ -1368,7 +1435,7 @@ function localDecisionFromRules(rulesPayload) {
   return { action: "shot", targetId: "", expression: "", cardSlots: [], publicReason: "No legal action available." };
 }
 
-async function contestantDecision(contestant, state, unitId, env, fetchFn) {
+async function contestantDecision(contestant, state, unitId, env, fetchFn, options) {
   const unit = (state.units || []).find((item) => item.id === unitId) || Sim.getActiveUnit(state);
   const team = unit ? unit.team : getActiveTeam(state);
   const command = contestant.command || "";
@@ -1384,7 +1451,8 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
       rawText: ""
     };
   }
-  if (!provider || !allowedProviders.includes(provider.id) || (!apiKey && !providerEnvKey(provider, env))) {
+  const allowEnvKey = options?.allowEnvKey !== false;
+  if (!provider || !allowedProviders.includes(provider.id) || (!apiKey && (!allowEnvKey || !providerEnvKey(provider, env)))) {
     throw new Error("provider_not_configured");
   }
   const result = await executeProviderDecision(
@@ -1398,7 +1466,7 @@ async function contestantDecision(contestant, state, unitId, env, fetchFn) {
       reasoning: contestant.reasoning || undefined,
       strictDecisionSchema: contestant.strictDecisionSchema
     },
-    { env, fetch: fetchFn }
+    { env, fetch: fetchFn, allowEnvKey }
   );
   return {
     command,
@@ -1504,8 +1572,7 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
   let guard = 0;
   const actions = [];
   const failures = [];
-  const configuredMaxActions = normalizeActionCap(opts.maxActions);
-  const maxActions = configuredMaxActions || Number(Sim.CONFIG.maxResolutionActions || 24);
+  const maxActions = MAX_MATCH_ACTIONS;
   while (!state.winner && guard < maxActions) {
     guard += 1;
     const unitId = getActiveUnitId(state);
@@ -1513,7 +1580,7 @@ async function runLeagueBattle(seed, teamA, teamB, env, fetchFn, options) {
     const contestant = team === "A" ? teamA : teamB;
     let resolved;
     try {
-      resolved = await contestantDecision(contestant, state, unitId, env, fetchFn);
+      resolved = await contestantDecision(contestant, state, unitId, env, fetchFn, { allowEnvKey: opts.allowEnvKeys !== false });
     } catch (err) {
       const failed = contestantFailureDecision(contestant, state, unitId, err, failures);
       if (opts.penalizeInvalidActions && isModelDecisionError(err)) {
@@ -1633,7 +1700,7 @@ function buildLeagueSchedule(contestants, body) {
   }));
 }
 
-async function runLeagueSimulation(body, env, fetchFn) {
+async function runLeagueSimulation(body, env, fetchFn, options) {
   const contestants = normalizeContestants(body.contestants);
   if (contestants.length < 2) {
     const err = new Error("not_enough_contestants");
@@ -1650,7 +1717,8 @@ async function runLeagueSimulation(body, env, fetchFn) {
     const seed = entry.seed;
     const battle = await runLeagueBattle(seed, teamA, teamB, env, fetchFn, {
       continueOnProviderError: body.continueOnProviderError !== false,
-      maxActions: body.maxActions
+      maxActions: MAX_MATCH_ACTIONS,
+      allowEnvKeys: options?.allowEnvKeys !== false
     });
     const state = battle.state;
     applyLeagueScore(rows, teamA, teamB, state.winner);
@@ -1698,6 +1766,7 @@ function createServer(options) {
   const opts = options || {};
   const env = opts.env || process.env;
   const fetchFn = opts.fetch || globalThis.fetch;
+  validateRuntimeConfig(env);
   loadPersistentStore(env);
   return http.createServer(async (req, res) => {
     try {
@@ -1788,7 +1857,7 @@ function createServer(options) {
           const player = createRegisteredPlayer(body);
           players.set(player.id, player);
           savePersistentStore(env);
-          sendJson(res, 200, { player: publicPlayer(player), sessionToken: createSessionToken(player, env) });
+          sendJson(res, 200, { player: publicPlayer(player), sessionToken: issueSession(res, player, env) });
         } catch (err) {
           authErrorResponse(res, err);
         }
@@ -1808,7 +1877,12 @@ function createServer(options) {
         }
         player.lastLoginAt = new Date().toISOString();
         savePersistentStore(env);
-        sendJson(res, 200, { player: publicPlayer(player), sessionToken: createSessionToken(player, env) });
+        sendJson(res, 200, { player: publicPlayer(player), sessionToken: issueSession(res, player, env) });
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+        res.setHeader("set-cookie", sessionCookie("", env, true));
+        sendJson(res, 200, { ok: true });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/profile/providers") {
@@ -1871,12 +1945,12 @@ function createServer(options) {
         const player = {
           id,
           displayName: String(body.displayName || "Player").slice(0, 32),
-          providers: body.providers || {},
+          providers: normalizeAuthProviders(body.providers),
           rank: { rating: 1000, tier: "Bronze", games: 0 }
         };
         players.set(id, player);
         savePersistentStore(env);
-        sendJson(res, 200, { player: publicPlayer(player), sessionToken: createSessionToken(player, env) });
+        sendJson(res, 200, { player: publicPlayer(player), sessionToken: issueSession(res, player, env) });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/match/join") {
@@ -1940,7 +2014,12 @@ function createServer(options) {
         }
         const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
         try {
-          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "auto_duel", command, maxActions: body.maxActions }, fetchFn));
+          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, {
+            mode: "auto_duel",
+            command,
+            maxActions: MAX_MATCH_ACTIONS,
+            playerProvider: body.providerConfig
+          }, fetchFn));
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
         }
@@ -1962,16 +2041,23 @@ function createServer(options) {
           return;
         }
         try {
-          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, { mode: "rank_resolve", maxActions: body.maxActions }, fetchFn));
+          sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, {
+            mode: "rank_resolve",
+            maxActions: MAX_MATCH_ACTIONS,
+            playerProvider: body.providerConfig
+          }, fetchFn));
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
         }
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/simulations/league") {
+        const player = protectedPlayer(req, res, env);
+        if (!player) return;
+        if (!enforceRateLimit(req, res, env, player, "league")) return;
         const body = JSON.parse(await readBody(req, 512_000));
         try {
-          const simulation = await runLeagueSimulation(body, env, fetchFn);
+          const simulation = await runLeagueSimulation(body, env, fetchFn, { allowEnvKeys: false });
           sendJson(res, 200, simulation);
         } catch (err) {
           sendJson(res, err.status || providerErrorStatus(err), { error: err.message || "simulation_failed" });
@@ -1979,6 +2065,9 @@ function createServer(options) {
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/agent/shot") {
+        const player = protectedPlayer(req, res, env);
+        if (!player) return;
+        if (!enforceRateLimit(req, res, env, player, "agent-shot")) return;
         const body = JSON.parse(await readBody(req, 512_000));
         const provider = getProvider(body.provider);
         const allowedProviders = listProviders(env).map((item) => item.id);
@@ -2009,7 +2098,7 @@ function createServer(options) {
               rulesPayload,
               model: body.model
             },
-            { env, fetch: fetchFn }
+            { env, fetch: fetchFn, allowEnvKey: false }
           );
           sendJson(res, 200, {
             provider: provider.id,

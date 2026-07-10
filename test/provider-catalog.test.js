@@ -579,6 +579,7 @@ function testAnthropicUsesSameBareRulesPayload() {
     "sk-redacted"
   );
   assert.strictEqual(request.body.model, "claude-test");
+  assert.ok(request.body.max_tokens >= 8192, "Anthropic requires max_tokens, but normal model play must not be trapped behind the old 240-token wall");
   assert.strictEqual(request.body.system, undefined, "Anthropic request should not add hidden prompt text outside the bare rules packet");
   assert.strictEqual(request.body.messages.length, 1, "Anthropic should receive only the bare rules packet as prompt content");
   const userPayload = JSON.parse(request.body.messages[0].content);

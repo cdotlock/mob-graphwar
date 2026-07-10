@@ -1,6 +1,10 @@
 "use strict";
 
 function buildAnthropicRequest(provider, payload, apiKey) {
+  const requestedMaxTokens = Number(payload.maxTokens || payload.max_tokens);
+  const maxTokens = Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0
+    ? Math.floor(requestedMaxTokens)
+    : 16384;
   const rulesPayload =
     payload.rulesPayload || {
       rules: {
@@ -35,7 +39,7 @@ function buildAnthropicRequest(provider, payload, apiKey) {
     },
     body: {
       model: payload.model || provider.defaultModel,
-      max_tokens: 240,
+      max_tokens: maxTokens,
       temperature: 0.2,
       messages: [
         {

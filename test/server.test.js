@@ -80,7 +80,8 @@ function expressionShotFetchMock(captured) {
         choices: [
           {
             message: {
-              content
+              content,
+              reasoning_content: "Model inspected coordinates, obstacles, allies, and the current function hand."
             }
           }
         ]
@@ -171,7 +172,7 @@ async function testStaticServerOnlyServesMainEntrypoint() {
   assert.strictEqual(main.status, 200);
   assert.ok(main.text.includes("Mob Graphwar Arena"));
   assert.ok(main.text.includes('<div id="root"></div>'), "entrypoint should mount the React game shell");
-  assert.ok(main.text.includes("/src/sim-core.js"), "entrypoint should load the simulation engine");
+  assert.ok(!main.text.includes("/src/sim-core.js"), "entrypoint should not load a duplicate public simulation engine");
   assert.ok(
     main.text.includes("/src/main.jsx") || main.text.includes("/assets/"),
     "entrypoint should load either the dev React app or the built bundle"
@@ -180,6 +181,19 @@ async function testStaticServerOnlyServesMainEntrypoint() {
   const duplicate = await request(createServer({ env: {} }), "/index%202.html");
   assert.strictEqual(duplicate.status, 404);
   assert.strictEqual(duplicate.json.error, "not_found");
+}
+
+async function testProductionStaticServerFailsClosedWithoutBuild() {
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "graphwar-empty-dist-"));
+  const result = await request(createServer({
+    env: {
+      NODE_ENV: "production",
+      GRAPHWAR_SESSION_SECRET: "test-production-static-secret-long-enough"
+    },
+    staticRoot: emptyRoot
+  }), "/");
+  assert.strictEqual(result.status, 503);
+  assert.strictEqual(result.json.error, "build_unavailable");
 }
 
 async function testInvalidProviderFails() {
@@ -922,6 +936,10 @@ async function testAutoDuelResolvesRankedMatchWithBattleSummary() {
     autoDuel.json.autoBattle.modelTurns.some((turn) => turn.expression && turn.publicReason),
     "model turn summary should carry the visible function and model thought"
   );
+  assert.ok(
+    autoDuel.json.autoBattle.frames.some((frame) => frame.action.modelThought?.includes("coordinates")),
+    "replay frames should carry the provider's returned reasoning when available"
+  );
   const modelActionFrames = autoDuel.json.autoBattle.frames.filter((frame) => frame.action.action !== "start");
   assert.ok(modelActionFrames.length >= 1, "auto duel should include model action frames");
   assert.ok(
@@ -1657,6 +1675,40 @@ async function testCookieSessionSurvivesReloadAndLogout() {
   assert.match(logout.headers.get("set-cookie") || "", /Max-Age=0/i);
 }
 
+async function testSessionStatusIsAnonymousSafeAndCookieAware() {
+  const env = { GRAPHWAR_SESSION_SECRET: "test-session-status-secret" };
+  const anonymous = await request(createServer({ env }), "/api/session/status");
+  assert.strictEqual(anonymous.status, 200);
+  assert.deepStrictEqual(anonymous.json, { authenticated: false });
+
+  const registered = await request(createServer({ env }), "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ handle: "status-user", displayName: "Status User", password: "password-123" })
+  });
+  const cookie = (registered.headers.get("set-cookie") || "").split(";")[0];
+  const restored = await request(createServer({ env }), "/api/session/status", {
+    headers: { cookie }
+  });
+  assert.strictEqual(restored.status, 200);
+  assert.strictEqual(restored.json.authenticated, true);
+  assert.strictEqual(restored.json.player.id, registered.json.player.id);
+}
+
+async function testLegacyPasswordlessSessionIsDisabledInProduction() {
+  const env = {
+    NODE_ENV: "production",
+    GRAPHWAR_SESSION_SECRET: "test-production-legacy-session-secret"
+  };
+  const result = await request(createServer({ env }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ displayName: "Anonymous Legacy" })
+  });
+  assert.strictEqual(result.status, 410);
+  assert.strictEqual(result.json.error, "legacy_session_disabled");
+}
+
 async function testExpensiveRoutesAreRateLimitedPerSession() {
   const env = {
     GRAPHWAR_SESSION_SECRET: "test-rate-limit-session-secret",
@@ -1723,11 +1775,72 @@ async function testResolvedMatchReplayAndRankSettlementAreIdempotent() {
   );
 }
 
+async function testHumanMatchStepsUseOnlyTheActivePlayersLocalKey() {
+  const createIsolatedServer = freshCreateServer();
+  const captured = [];
+  const fetchMock = expressionShotFetchMock(captured);
+  async function createHuman(handle) {
+    return request(createIsolatedServer({ env: {}, fetch: fetchMock }), "/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        handle,
+        displayName: handle.toUpperCase(),
+        password: "password-123",
+        providers: { openai: { model: `model-${handle}` } }
+      })
+    });
+  }
+  const alpha = await createHuman("step-alpha");
+  const bravo = await createHuman("step-bravo");
+  const queued = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(alpha, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "openai", allowAiFill: false, standingOrder: "alpha order" })
+  });
+  assert.strictEqual(queued.status, 202);
+  const matched = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(bravo, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "openai", allowAiFill: false, standingOrder: "bravo order" })
+  });
+  assert.strictEqual(matched.status, 200);
+  const matchId = matched.json.match.id;
+
+  const alphaStep = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), `/api/match/${matchId}/step`, {
+    method: "POST",
+    headers: authHeaders(alpha, { "content-type": "application/json" }),
+    body: JSON.stringify({ providerConfig: { provider: "openai", model: "model-step-alpha", apiKey: "sk-alpha-local" } })
+  });
+  assert.strictEqual(alphaStep.status, 200);
+  assert.strictEqual(alphaStep.json.step.waiting, false);
+  assert.strictEqual(captured[0].options.headers.authorization, "Bearer sk-alpha-local");
+
+  const alphaWait = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), `/api/match/${matchId}/step`, {
+    method: "POST",
+    headers: authHeaders(alpha, { "content-type": "application/json" }),
+    body: JSON.stringify({ providerConfig: { provider: "openai", model: "model-step-alpha", apiKey: "sk-alpha-local" } })
+  });
+  assert.strictEqual(alphaWait.status, 202);
+  assert.strictEqual(alphaWait.json.step.waiting, true);
+  assert.strictEqual(captured.length, 1, "inactive player must not invoke any provider");
+
+  const bravoStep = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), `/api/match/${matchId}/step`, {
+    method: "POST",
+    headers: authHeaders(bravo, { "content-type": "application/json" }),
+    body: JSON.stringify({ providerConfig: { provider: "openai", model: "model-step-bravo", apiKey: "sk-bravo-local" } })
+  });
+  assert.strictEqual(bravoStep.status, 200);
+  assert.strictEqual(captured[1].options.headers.authorization, "Bearer sk-bravo-local");
+  assert.ok(!alphaStep.text.includes("sk-alpha-local") && !bravoStep.text.includes("sk-bravo-local"));
+}
+
 (async () => {
   await testHealthAndProviders();
   await testProviderModelsEndpointUsesByokForLiveCatalog();
   await testProviderModelsEndpointSurfacesRefreshErrors();
   await testStaticServerOnlyServesMainEntrypoint();
+  await testProductionStaticServerFailsClosedWithoutBuild();
   await testInvalidProviderFails();
   await testLoginMatchmakingAndRankLoop();
   await testAiFillSeatsDefaultToOpenRouterFreePrompts();
@@ -1757,8 +1870,11 @@ async function testResolvedMatchReplayAndRankSettlementAreIdempotent() {
   await testRegistrationNeverStoresUserApiKeys();
   await testExpensiveProviderRoutesRequireSession();
   await testCookieSessionSurvivesReloadAndLogout();
+  await testSessionStatusIsAnonymousSafeAndCookieAware();
+  await testLegacyPasswordlessSessionIsDisabledInProduction();
   await testExpensiveRoutesAreRateLimitedPerSession();
   await testResolvedMatchReplayAndRankSettlementAreIdempotent();
+  await testHumanMatchStepsUseOnlyTheActivePlayersLocalKey();
   console.log("server tests passed");
 })().catch((err) => {
   console.error(err);

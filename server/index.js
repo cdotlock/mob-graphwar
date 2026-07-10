@@ -66,9 +66,17 @@ function readBody(req, limit) {
   });
 }
 
-function serveStatic(req, res) {
+function serveStatic(req, res, options) {
+  const opts = options || {};
+  const env = opts.env || process.env;
   const url = new URL(req.url, "http://127.0.0.1");
-  const staticRoot = fs.existsSync(path.join(DIST_ROOT, "index.html")) ? DIST_ROOT : ROOT;
+  const configuredRoot = opts.staticRoot ? path.resolve(opts.staticRoot) : DIST_ROOT;
+  const hasBuild = fs.existsSync(path.join(configuredRoot, "index.html"));
+  if (!hasBuild && env.NODE_ENV === "production") {
+    sendJson(res, 503, { error: "build_unavailable" });
+    return;
+  }
+  const staticRoot = hasBuild ? configuredRoot : ROOT;
   const rawPath = url.pathname === "/" || (!path.extname(url.pathname) && !url.pathname.startsWith("/api/"))
     ? "/index.html"
     : url.pathname;
@@ -342,7 +350,11 @@ function rateLimitPerMinute(env) {
 function enforceRateLimit(req, res, env, player, scope) {
   const now = Date.now();
   const windowMs = 60_000;
-  const identity = player?.id || String(req.socket?.remoteAddress || "unknown");
+  const token = cookieToken(req) || bearerToken(req);
+  const sessionFingerprint = token
+    ? crypto.createHash("sha256").update(token).digest("hex").slice(0, 20)
+    : "";
+  const identity = sessionFingerprint || player?.id || String(req.socket?.remoteAddress || "unknown");
   const key = `${scope}:${identity}`;
   const current = rateWindows.get(key);
   const bucket = !current || now - current.startedAt >= windowMs
@@ -690,7 +702,9 @@ function createRankedMatchFromRoster(roster, options) {
     roster,
     filledByAi: Boolean(opts.filledByAi),
     state: Sim.createInitialState({ seed }),
-    rankSettlements: {}
+    rankSettlements: {},
+    actionCount: 0,
+    liveFrames: []
   };
   matches.set(id, match);
   for (const seat of roster) {
@@ -983,12 +997,65 @@ async function autoResolveDecisionForTurn(match, turn, options) {
       command: turn.command,
       providerLabel,
       decision: result.decision,
+      modelThought: String(result.reasoningText || "").slice(0, 4000),
       rulesDigest
     };
   } catch (err) {
     recordProviderFailure(opts.providerBudget, err);
     throw err;
   }
+}
+
+function applyResolvedMatchAction(match, turn, resolved, frames) {
+  match.actionCount = Math.min(MAX_MATCH_ACTIONS, Number(match.actionCount || 0) + 1);
+  const providerReason = resolved.modelThought || resolved.decision.publicReason;
+  if (isSwapAction(resolved.decision.action)) {
+    const swapResult = Sim.applyTurn(match.state, {}, {
+      action: "swap_hand",
+      provider: resolved.providerLabel,
+      providerReason
+    });
+    pushPlaybackFrame(frames, match, {
+      action: "swap_hand",
+      team: turn.team,
+      unitId: turn.unitId,
+      provider: resolved.providerLabel,
+      modelThought: resolved.modelThought,
+      publicReason: resolved.decision.publicReason,
+      swapsUsed: swapResult.swapsUsed,
+      swapsRemaining: swapResult.swapsRemaining,
+      hand: swapResult.cards,
+      rulesDigest: resolved.rulesDigest
+    });
+    return;
+  }
+  const beforeEventCount = match.state.events.length;
+  Sim.applyTurn(
+    match.state,
+    { [turn.unitId || turn.team]: resolved.command },
+    {
+      targetId: resolved.decision.targetId || undefined,
+      expression: resolved.decision.expression || undefined,
+      cardSlots: resolved.decision.cardSlots || undefined,
+      provider: resolved.providerLabel,
+      providerReason
+    }
+  );
+  const event = match.state.events[beforeEventCount] || match.state.events[match.state.events.length - 1] || null;
+  pushPlaybackFrame(frames, match, {
+    action: "shot",
+    team: turn.team,
+    unitId: event ? event.unitId || event.shooterId : turn.unitId,
+    provider: resolved.providerLabel,
+    modelThought: resolved.modelThought,
+    publicReason: resolved.decision.publicReason,
+    targetId: resolved.decision.targetId || null,
+    expression: resolved.decision.expression || null,
+    cardSlots: resolved.decision.cardSlots || [],
+    resultLabel: event ? event.resultLabel : match.state.reason || null,
+    event: publicEventSummary(event),
+    rulesDigest: resolved.rulesDigest
+  });
 }
 
 async function advanceMatchToResolution(match, options) {
@@ -1000,51 +1067,7 @@ async function advanceMatchToResolution(match, options) {
     guard += 1;
     const turn = autoResolveCommandsForTurn(match, opts);
     const resolved = await autoResolveDecisionForTurn(match, turn, opts);
-    if (isSwapAction(resolved.decision.action)) {
-      const swapResult = Sim.applyTurn(match.state, {}, {
-        action: "swap_hand",
-        provider: resolved.providerLabel,
-        providerReason: resolved.decision.publicReason
-      });
-      pushPlaybackFrame(opts.frames, match, {
-        action: "swap_hand",
-        team: turn.team,
-        unitId: turn.unitId,
-        provider: resolved.providerLabel,
-        publicReason: resolved.decision.publicReason,
-        swapsUsed: swapResult.swapsUsed,
-        swapsRemaining: swapResult.swapsRemaining,
-        hand: swapResult.cards,
-        rulesDigest: resolved.rulesDigest
-      });
-      continue;
-    }
-    const beforeEventCount = match.state.events.length;
-    Sim.applyTurn(
-      match.state,
-      { [turn.unitId || turn.team]: resolved.command },
-      {
-        targetId: resolved.decision.targetId || undefined,
-        expression: resolved.decision.expression || undefined,
-        cardSlots: resolved.decision.cardSlots || undefined,
-        provider: resolved.providerLabel,
-        providerReason: resolved.decision.publicReason
-      }
-    );
-    const event = match.state.events[beforeEventCount] || match.state.events[match.state.events.length - 1] || null;
-    pushPlaybackFrame(opts.frames, match, {
-      action: "shot",
-      team: turn.team,
-      unitId: event ? event.unitId || event.shooterId : turn.unitId,
-      provider: resolved.providerLabel,
-      publicReason: resolved.decision.publicReason,
-      targetId: resolved.decision.targetId || null,
-      expression: resolved.decision.expression || null,
-      cardSlots: resolved.decision.cardSlots || [],
-      resultLabel: event ? event.resultLabel : match.state.reason || null,
-      event: publicEventSummary(event),
-      rulesDigest: resolved.rulesDigest
-    });
+    applyResolvedMatchAction(match, turn, resolved, opts.frames);
   }
   if (!match.state.winner) {
     Sim.forceResolveByHp(match.state, "resolution_guard");
@@ -1145,6 +1168,7 @@ function buildPlaybackFrame(match, action) {
       unitId: publicAction.unitId || getActiveUnitId(match.state) || null,
       provider: publicAction.provider || "Battle Engine",
       publicReason: publicAction.publicReason || "",
+      modelThought: publicAction.modelThought || "",
       resultLabel: publicAction.resultLabel || null,
       swapsUsed: Number.isFinite(Number(publicAction.swapsUsed)) ? Number(publicAction.swapsUsed) : null,
       swapsRemaining: Number.isFinite(Number(publicAction.swapsRemaining)) ? Number(publicAction.swapsRemaining) : null,
@@ -1154,6 +1178,86 @@ function buildPlaybackFrame(match, action) {
     },
     state: publicPlaybackState(match.state)
   };
+}
+
+async function performMatchStep(match, player, env, body, fetchFn) {
+  const playerSeat = getPlayerSeat(match, player);
+  if (!playerSeat) {
+    const err = new Error("player_not_in_match");
+    err.status = 403;
+    throw err;
+  }
+  if (match.status === "resolved" || match.state.winner) {
+    const settlement = match.rankSettlements[player.id] || { rankDelta: 0 };
+    return {
+      status: 200,
+      payload: {
+        match: publicMatch(match),
+        player: publicPlayer(player),
+        rankDelta: settlement.rankDelta,
+        step: { waiting: false, resolved: true },
+        autoBattle: buildAutoBattleSummary(match, 0, playerSeat.team, "human_step_duel", match.resolution?.frames || match.liveFrames)
+      }
+    };
+  }
+
+  const turn = autoResolveCommandsForTurn(match, { playerId: player.id });
+  if (turn.seat?.control === "human" && turn.seat.playerId !== player.id) {
+    return {
+      status: 202,
+      payload: { match: publicMatch(match), step: { waiting: true, activePlayerId: turn.seat.playerId } }
+    };
+  }
+
+  if (!match.liveFrames.length) {
+    pushPlaybackFrame(match.liveFrames, match, {
+      action: "start",
+      team: turn.team,
+      provider: "Battle Engine",
+      publicReason: "Pre-duel ranked state."
+    });
+  }
+  const resolved = await autoResolveDecisionForTurn(match, turn, {
+    env,
+    fetchFn,
+    playerId: player.id,
+    playerProvider: body.providerConfig,
+    providerBudget: createProviderBudget(env)
+  });
+  applyResolvedMatchAction(match, turn, resolved, match.liveFrames);
+  if (!match.state.winner && match.actionCount >= MAX_MATCH_ACTIONS) {
+    Sim.forceResolveByHp(match.state, "resolution_guard");
+    pushPlaybackFrame(match.liveFrames, match, {
+      action: "state",
+      team: match.state.winner || "draw",
+      provider: "Battle Engine",
+      publicReason: "24-action cap settled the duel by remaining HP.",
+      resultLabel: match.state.winner ? `${match.state.winner} wins by remaining HP` : "draw"
+    });
+  }
+  if (match.state.winner) {
+    match.status = "resolved";
+    settleAllRankedPlayers(match, match.state, env);
+    match.resolution = { startedTurn: 0, mode: "human_step_duel", frames: match.liveFrames };
+  }
+  const settlement = match.rankSettlements[player.id] || { rankDelta: 0 };
+  return {
+    status: 200,
+    payload: {
+      match: publicMatch(match),
+      player: publicPlayer(player),
+      rankDelta: settlement.rankDelta,
+      step: { waiting: false, resolved: match.status === "resolved", actionCount: match.actionCount },
+      ...(match.status === "resolved" ? { autoBattle: buildAutoBattleSummary(match, 0, playerSeat.team, "human_step_duel", match.liveFrames) } : {})
+    }
+  };
+}
+
+function enqueueMatchStep(match, operation) {
+  const previous = match.stepQueue || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  match.stepQueue = current;
+  return current;
 }
 
 function pushPlaybackFrame(frames, match, action) {
@@ -1189,6 +1293,7 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode, frames) {
         expression: frame.action.event?.expression || "",
         hand: frame.action.hand || null,
         publicReason: frame.action.publicReason || "",
+        modelThought: frame.action.modelThought || "",
         rulesDigest: frame.action.rulesDigest || null
       })),
     frames: Array.isArray(frames) ? frames : []
@@ -1802,6 +1907,7 @@ function createServer(options) {
   const opts = options || {};
   const env = opts.env || process.env;
   const fetchFn = opts.fetch || globalThis.fetch;
+  const staticRoot = opts.staticRoot;
   validateRuntimeConfig(env);
   loadPersistentStore(env);
   return http.createServer(async (req, res) => {
@@ -1843,6 +1949,13 @@ function createServer(options) {
         const player = protectedPlayer(req, res, env);
         if (!player) return;
         sendJson(res, 200, { player: publicPlayer(player) });
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/session/status") {
+        const resolved = sessionPlayer(req, env);
+        sendJson(res, 200, resolved.player
+          ? { authenticated: true, player: publicPlayer(resolved.player) }
+          : { authenticated: false });
         return;
       }
       const sessionMatch = url.pathname.match(/^\/api\/session\/([^/]+)$/);
@@ -1976,6 +2089,10 @@ function createServer(options) {
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/session") {
+        if (env.NODE_ENV === "production") {
+          sendJson(res, 410, { error: "legacy_session_disabled" });
+          return;
+        }
         const body = JSON.parse(await readBody(req, 128_000));
         const id = `player-${nextPlayerId++}`;
         const player = {
@@ -2058,6 +2175,24 @@ function createServer(options) {
           }, fetchFn));
         } catch (err) {
           sendJson(res, providerErrorStatus(err), { error: err.message || "provider_error" });
+        }
+        return;
+      }
+      const stepMatch = url.pathname.match(/^\/api\/match\/([^/]+)\/step$/);
+      if (req.method === "POST" && stepMatch) {
+        const body = JSON.parse(await readBody(req, 64_000));
+        const match = matches.get(stepMatch[1]);
+        if (!match) {
+          sendJson(res, 404, { error: "unknown_match" });
+          return;
+        }
+        const player = protectedPlayer(req, res, env, body.playerId);
+        if (!player) return;
+        try {
+          const result = await enqueueMatchStep(match, () => performMatchStep(match, player, env, body, fetchFn));
+          sendJson(res, result.status, result.payload);
+        } catch (err) {
+          sendJson(res, err.status || providerErrorStatus(err), { error: err.message || "step_failed" });
         }
         return;
       }
@@ -2148,7 +2283,7 @@ function createServer(options) {
         return;
       }
       if (req.method === "GET" || req.method === "HEAD") {
-        serveStatic(req, res);
+        serveStatic(req, res, { env, staticRoot });
         return;
       }
       sendJson(res, 405, { error: "method_not_allowed" });

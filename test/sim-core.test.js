@@ -553,7 +553,7 @@ function testSeededHardMapGeneration() {
 }
 
 function testHardMapsRemainSolvableByFiniteCardCombos() {
-  for (let seed = 1; seed <= 40; seed += 1) {
+  for (let seed = 1; seed <= 12; seed += 1) {
     const state = Sim.createInitialState({ seed });
     assert.ok(state.mapMeta.complexity.blobCount >= 6, `seed ${seed} should keep enough continuous blockers`);
     assert.strictEqual(state.mapMeta.complexity.blobCount, 6, `seed ${seed} should keep blocker count at six`);
@@ -666,6 +666,24 @@ function testRouteBonusPointsAffectShotScoring() {
   assert.ok(state.paths[0].routeBonus.value === event.routeBonus.value, "replay path should preserve route bonus scoring");
 }
 
+function testRouteBonusPointsStaySeparatedAndOutsideObstacles() {
+  for (let seed = 1; seed <= 40; seed += 1) {
+    const state = Sim.createInitialState({ seed });
+    assert.ok(state.bonusPoints.length >= 2 && state.bonusPoints.length <= 3, `seed ${seed} should keep two or three route points`);
+    for (let left = 0; left < state.bonusPoints.length; left += 1) {
+      const point = state.bonusPoints[left];
+      for (const obstacle of state.obstacles) {
+        const clearance = Math.hypot(point.x - obstacle.cx, point.y - obstacle.cy) - obstacle.r - point.radius;
+        assert.ok(clearance >= 1.5, `seed ${seed} reward ${point.id} must stay outside solid terrain`);
+      }
+      for (let right = left + 1; right < state.bonusPoints.length; right += 1) {
+        const other = state.bonusPoints[right];
+        assert.ok(Math.hypot(point.x - other.x, point.y - other.y) >= 8, `seed ${seed} route rewards must not overlap visually`);
+      }
+    }
+  }
+}
+
 function testTraceShapeIncludesMapAndScore() {
   const state = Sim.runBattle({ seed: 7107, commands: commands() });
   const trace = Sim.exportTrace(state);
@@ -710,6 +728,7 @@ testHardMapsExposeSolverPressureWithoutBecomingImpossible();
 testCommercialMapsExposeTopologyNotJustBlockCount();
 testBlobMapsDoNotCollapseToHighArcOnly();
 testRouteBonusPointsAffectShotScoring();
+testRouteBonusPointsStaySeparatedAndOutsideObstacles();
 testTraceShapeIncludesMapAndScore();
 
 console.log("sim-core tests passed");

@@ -1229,9 +1229,14 @@
       { x: 51, y: 28, value: 10 },
       { x: 68, y: 43, value: 12 }
     ];
-    return anchors.map((anchor, index) => {
+    const chosen = [];
+    for (let index = 0; index < anchors.length; index += 1) {
+      const anchor = anchors[index];
       const radius = index === 1 ? 1.7 : 1.9;
       const candidates = [];
+      const isClear = (point) =>
+        bonusPointClear(point, units, obstacles) &&
+        chosen.every((existing) => distance(point, existing) >= 8);
       for (let attempt = 0; attempt < 90; attempt += 1) {
         const point = {
           id: `route-bonus-${index + 1}`,
@@ -1240,7 +1245,7 @@
           radius,
           value: anchor.value
         };
-        if (bonusPointClear(point, units, obstacles)) candidates.push(point);
+        if (isClear(point)) candidates.push(point);
       }
       for (let x = 14; x <= 86; x += 4) {
         for (let y = 12; y <= 52; y += 4) {
@@ -1251,17 +1256,19 @@
             radius,
             value: anchor.value
           };
-          if (bonusPointClear(point, units, obstacles)) candidates.push(point);
+          if (isClear(point)) candidates.push(point);
         }
       }
       if (!candidates.length) {
-        return {
+        const fallback = {
           id: `route-bonus-${index + 1}`,
           x: round(clamp(anchor.x, 12, 88), 1),
           y: round(clamp(CONFIG.height - 7 - index * 4, 10, 52), 1),
           radius,
           value: anchor.value
         };
+        if (isClear(fallback)) chosen.push(fallback);
+        continue;
       }
       candidates.sort((a, b) => {
         const aAnchor = Math.abs(a.x - anchor.x) + Math.abs(a.y - anchor.y);
@@ -1269,12 +1276,13 @@
         return (b.value + bonusPointClearance(b, obstacles) * 1.2 - bAnchor * 0.12) -
           (a.value + bonusPointClearance(a, obstacles) * 1.2 - aAnchor * 0.12);
       });
-      return {
+      chosen.push({
         ...candidates[0],
         x: round(candidates[0].x, 1),
         y: round(candidates[0].y, 1)
-      };
-    });
+      });
+    }
+    return chosen.slice(0, 3);
   }
 
   function blobMapMetrics(obstacles, bonusPoints, topology, solver) {

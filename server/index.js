@@ -1195,7 +1195,27 @@ function buildAutoBattleSummary(match, startedTurn, playerTeam, mode, frames) {
   };
 }
 
-async function settleResolvedMatch(match, player, playerSeat, env, options, fetchFn) {
+function settleAllRankedPlayers(match, finalState, env) {
+  const participants = new Map();
+  for (const seat of match.roster || []) {
+    if (seat.playerId && !participants.has(seat.playerId)) participants.set(seat.playerId, seat.team);
+  }
+  let changed = false;
+  for (const [playerId, team] of participants) {
+    if (match.rankSettlements[playerId]) continue;
+    const rankedPlayer = players.get(playerId);
+    if (!rankedPlayer) continue;
+    const rankDelta = resolveRankDelta(finalState.winner, team);
+    rankedPlayer.rank.rating += rankDelta;
+    rankedPlayer.rank.games += 1;
+    rankedPlayer.rank.tier = rankedPlayer.rank.rating >= 1200 ? "Gold" : rankedPlayer.rank.rating >= 1050 ? "Silver" : "Bronze";
+    match.rankSettlements[playerId] = { rankDelta, rating: rankedPlayer.rank.rating };
+    changed = true;
+  }
+  if (changed) savePersistentStore(env);
+}
+
+async function resolveMatchOnce(match, player, playerSeat, env, options, fetchFn) {
   const opts = options || {};
   const startedTurn = match.state.events.length;
   const playerTeam = playerSeat ? playerSeat.team : "A";
@@ -1216,22 +1236,38 @@ async function settleResolvedMatch(match, player, playerSeat, env, options, fetc
     playerProvider: opts.playerProvider,
     frames
   });
-  let settlement = match.rankSettlements[player.id];
-  if (!settlement) {
-    const rankDelta = resolveRankDelta(finalState.winner, playerTeam);
-    player.rank.rating += rankDelta;
-    player.rank.games += 1;
-    player.rank.tier = player.rank.rating >= 1200 ? "Gold" : player.rank.rating >= 1050 ? "Silver" : "Bronze";
-    settlement = { rankDelta, rating: player.rank.rating };
-    match.rankSettlements[player.id] = settlement;
-    savePersistentStore(env);
+  settleAllRankedPlayers(match, finalState, env);
+  match.resolution = {
+    startedTurn,
+    mode: opts.mode || "auto_duel",
+    frames
+  };
+}
+
+async function settleResolvedMatch(match, player, playerSeat, env, options, fetchFn) {
+  const opts = options || {};
+  if (!match.resolution && !match.resolutionPromise) {
+    match.resolutionPromise = resolveMatchOnce(match, player, playerSeat, env, opts, fetchFn)
+      .finally(() => {
+        match.resolutionPromise = null;
+      });
   }
+  if (match.resolutionPromise) await match.resolutionPromise;
+  const resolution = match.resolution || { startedTurn: 0, mode: opts.mode || "auto_duel", frames: [] };
+  const playerTeam = playerSeat ? playerSeat.team : "A";
+  const settlement = match.rankSettlements[player.id] || { rankDelta: 0, rating: player.rank.rating };
   return {
     match: publicMatch(match),
     player: publicPlayer(player),
     rankDelta: settlement.rankDelta,
-    score: finalState.score,
-    autoBattle: buildAutoBattleSummary(match, opts.startedTurn ?? startedTurn, playerTeam, opts.mode || "auto_duel", frames)
+    score: match.state.score,
+    autoBattle: buildAutoBattleSummary(
+      match,
+      opts.startedTurn ?? resolution.startedTurn,
+      playerTeam,
+      resolution.mode,
+      resolution.frames
+    )
   };
 }
 

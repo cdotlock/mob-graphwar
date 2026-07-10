@@ -1675,6 +1675,54 @@ async function testExpensiveRoutesAreRateLimitedPerSession() {
   assert.strictEqual(limited.json.error, "rate_limited");
 }
 
+async function testResolvedMatchReplayAndRankSettlementAreIdempotent() {
+  let providerCalls = 0;
+  const fetchMock = expressionShotFetchMock();
+  const countedFetch = async (...args) => {
+    providerCalls += 1;
+    return fetchMock(...args);
+  };
+  const env = { OPENROUTER_API_KEY: "sk-ai-fill", GRAPHWAR_SESSION_SECRET: "test-idempotent-secret" };
+  const session = await request(createServer({ env, fetch: countedFetch }), "/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Idempotent",
+      providers: { openai: { apiKey: "sk-never-store", model: "gpt-idempotent" } }
+    })
+  });
+  const joined = await request(createServer({ env, fetch: countedFetch }), "/api/match/join", {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({ preferredProvider: "openai", allowAiFill: true })
+  });
+  const resolve = () => request(createServer({ env, fetch: countedFetch }), `/api/match/${joined.json.match.id}/auto-duel`, {
+    method: "POST",
+    headers: authHeaders(session, { "content-type": "application/json" }),
+    body: JSON.stringify({
+      providerConfig: { provider: "openai", model: "gpt-idempotent", apiKey: "sk-never-store" }
+    })
+  });
+
+  const first = await resolve();
+  assert.strictEqual(first.status, 200);
+  const callsAfterFirst = providerCalls;
+  const second = await resolve();
+  assert.strictEqual(second.status, 200);
+  assert.strictEqual(providerCalls, callsAfterFirst, "replaying a resolved match must not invoke providers again");
+  assert.strictEqual(second.json.player.rank.games, 1, "a resolved match must settle rank exactly once");
+  assert.strictEqual(
+    second.json.autoBattle.frames.length,
+    first.json.autoBattle.frames.length,
+    "replay should return the original authoritative trajectory"
+  );
+  assert.strictEqual(
+    second.json.autoBattle.frames.at(-1)?.state?.turn,
+    first.json.autoBattle.frames.at(-1)?.state?.turn,
+    "replay should end on the original authoritative turn"
+  );
+}
+
 (async () => {
   await testHealthAndProviders();
   await testProviderModelsEndpointUsesByokForLiveCatalog();
@@ -1710,6 +1758,7 @@ async function testExpensiveRoutesAreRateLimitedPerSession() {
   await testExpensiveProviderRoutesRequireSession();
   await testCookieSessionSurvivesReloadAndLogout();
   await testExpensiveRoutesAreRateLimitedPerSession();
+  await testResolvedMatchReplayAndRankSettlementAreIdempotent();
   console.log("server tests passed");
 })().catch((err) => {
   console.error(err);

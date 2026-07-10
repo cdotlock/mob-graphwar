@@ -599,7 +599,7 @@ async function runBenchmark(options) {
   const contestants = (Number.isFinite(limitModels) && limitModels > 0 ? resolved.contestants.slice(0, limitModels) : resolved.contestants)
     .map((contestant) => ({ ...contestant, apiKey }));
   const gamesPerPair = Math.max(1, Math.min(8, Number(opts.gamesPerPair) || DEFAULT_GAMES_PER_PAIR));
-  const maxActions = Math.max(1, Math.min(Sim.CONFIG.maxResolutionActions, Number(opts.maxActions) || DEFAULT_MAX_ACTIONS));
+  const maxActions = DEFAULT_MAX_ACTIONS;
   const concurrency = Math.max(1, Math.min(16, Number(opts.concurrency) || DEFAULT_CONCURRENCY));
   const schedule = buildBenchmarkSchedule(contestants, gamesPerPair, opts.seedBase, opts.maxMatches);
   const resumedMatches = [];

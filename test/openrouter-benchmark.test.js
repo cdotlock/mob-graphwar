@@ -122,12 +122,12 @@ function testBenchmarkStoreRegistersRawRowsWithoutSecrets() {
   assert.ok(!JSON.stringify(store).includes("sk-"), "benchmark store should not contain provider secrets");
 }
 
-async function testLeagueBattleCanUseBenchmarkActionCap() {
+async function testLeagueBattleIgnoresClientActionCap() {
   const teamA = { id: "raw-a", label: "Raw A", provider: "local", model: "", command: "" };
   const teamB = { id: "raw-b", label: "Raw B", provider: "local", model: "", command: "" };
   const battle = await runLeagueBattle(8123, teamA, teamB, {}, globalThis.fetch, { maxActions: 1 });
-  assert.ok(battle.actions.length <= 1, "benchmark action cap should stop long model duels");
-  assert.ok(battle.state.winner, "capped benchmark battle should still settle by guard for ranking");
+  assert.ok(battle.actions.length > 1 && battle.actions.length <= 24, "all model duels should use the server-owned 24 action cap");
+  assert.ok(battle.state.winner, "globally capped benchmark battle should still settle by guard for ranking");
 }
 
 async function testLeagueBattleCannotExceedGlobalActionCap() {
@@ -171,11 +171,11 @@ async function testLeagueBattleCanPenalizeInvalidModelActions() {
     },
     { maxActions: 1, penalizeInvalidActions: true }
   );
-  assert.strictEqual(battle.actions.length, 1);
+  assert.strictEqual(battle.actions.length, 24);
   assert.strictEqual(battle.actions[0].action, "invalid");
   assert.strictEqual(battle.actions[0].failure.error, "unknown_target_id");
   assert.ok(battle.actions[0].modelOutput.includes("invalid own-team target"), "invalid model output should be preserved in trace");
-  assert.strictEqual(battle.failures.length, 1);
+  assert.strictEqual(battle.failures.length, 24);
   assert.strictEqual(battle.state.reason, "resolution_guard");
 }
 
@@ -309,7 +309,7 @@ async function testBenchmarkCanResumeExistingTraceFiles() {
       };
     }
   });
-  assert.strictEqual(calls, 1, "resume should skip the completed first trace and only run the missing second match");
+  assert.strictEqual(calls, 24, "resume should skip the completed first trace and run one globally capped missing match");
   assert.strictEqual(result.matches.length, 2);
   assert.ok(result.leaderboard.every((row) => row.games === 2), "resumed and new traces should be aggregated together");
 }
@@ -401,7 +401,7 @@ async function testBenchmarkStopsOnProviderErrorByDefault() {
   testResolveTargetModelsCanUseInfronRoute();
   testBenchmarkScheduleAlternatesSidesForEveryPair();
   testBenchmarkStoreRegistersRawRowsWithoutSecrets();
-  await testLeagueBattleCanUseBenchmarkActionCap();
+  await testLeagueBattleIgnoresClientActionCap();
   await testLeagueBattleCannotExceedGlobalActionCap();
   await testLeagueBattleCanPenalizeInvalidModelActions();
   await testLeagueBattleDoesNotPenalizeNetworkFailuresAsInvalidActions();

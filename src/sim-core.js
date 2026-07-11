@@ -1,9 +1,9 @@
 (function initGraphwarSim(root, factory) {
+  const simulation = factory();
   if (typeof module === "object" && module.exports) {
-    module.exports = factory();
-  } else {
-    root.GraphwarSim = factory();
+    module.exports = simulation;
   }
+  root.GraphwarSim = simulation;
 })(typeof globalThis !== "undefined" ? globalThis : this, function graphwarFactory() {
   "use strict";
 

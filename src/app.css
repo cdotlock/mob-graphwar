@@ -31,7 +31,7 @@ code, pre, small, .status-dot, .active-agent, .battle-status { font-family: "SFM
 .app-header {
   position: sticky; top: 0; z-index: 20;
   display: grid; grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr); align-items: center;
-  min-height: 58px; padding: 7px 14px; border-bottom: 1px solid var(--line);
+  min-height: 58px; height: 58px; padding: 7px 14px; border-bottom: 1px solid var(--line);
   background: rgba(13, 16, 20, .94); backdrop-filter: blur(16px);
 }
 .brand-button, .primary-nav button, .header-actions button { border: 0; background: transparent; }
@@ -209,7 +209,7 @@ code, pre, small, .status-dot, .active-agent, .battle-status { font-family: "SFM
 }
 
 @media (max-width: 900px) {
-  .app-header { grid-template-columns: auto 1fr auto; min-height: 54px; padding: 6px 8px; }
+  .app-header { grid-template-columns: auto 1fr auto; min-height: 54px; height: 54px; padding: 6px 8px; }
   .brand-button small, .header-actions .icon-command span, .account-command span, .account-command b { display: none; }
   .brand-button > span:last-child { display: none; }
   .primary-nav { justify-self: center; }

@@ -40,6 +40,8 @@ function testBattlefieldFirstProductStructure() {
   assert.ok(play.includes("<FunctionHand"));
   assert.ok(play.includes("mobile-task-tabs"));
   assert.ok(css.includes("grid-template-columns: 258px minmax(0, 1fr) 292px"));
+  assert.ok(css.includes("min-height: 58px; height: 58px;"), "desktop header height should match the play viewport calculation");
+  assert.ok(css.includes("min-height: 54px; height: 54px; padding: 6px 8px;"), "mobile header height should match the play viewport calculation");
   assert.ok(css.includes("@media (max-width: 900px)"));
   assert.ok(css.includes("overflow-x: hidden"));
   assert.ok(css.includes(".result-banner"));

@@ -31,8 +31,8 @@ Decision: Go only when every blocking item is checked
 - [x] Browser checks cover 1440, 1024, 768, and 390 pixel widths.
 - [x] Registration request inspection confirms the browser key is absent.
 - [x] Production dependency audit reports zero vulnerabilities.
-- [ ] Railway deployment is healthy and production smoke checks pass.
-- [ ] Persistent data path is backed by a Railway volume.
+- [x] Railway deployment is healthy and production smoke checks pass.
+- [x] Persistent data path is backed by a Railway volume.
 
 ## Rollback
 

@@ -806,6 +806,15 @@ function getPlayerSeat(match, player) {
   return match.roster.find((seat) => seat.playerId === player.id) || null;
 }
 
+function requiresDistributedHumanSteps(match) {
+  const humanPlayers = new Set(
+    (match?.roster || [])
+      .filter((seat) => seat.control === "human" && seat.playerId)
+      .map((seat) => seat.playerId)
+  );
+  return humanPlayers.size > 1;
+}
+
 function getActiveTeam(state) {
   const unit = Sim.getActiveUnit ? Sim.getActiveUnit(state) : null;
   return unit ? unit.team : null;
@@ -2165,6 +2174,10 @@ function createServer(options) {
           sendJson(res, 403, { error: "player_not_in_match" });
           return;
         }
+        if (requiresDistributedHumanSteps(match)) {
+          sendJson(res, 409, { error: "human_step_required" });
+          return;
+        }
         const command = String(body.command || "").slice(0, Sim.CONFIG.maxCommandLength);
         try {
           sendJson(res, 200, await settleResolvedMatch(match, player, playerSeat, env, {
@@ -2209,6 +2222,10 @@ function createServer(options) {
         const playerSeat = getPlayerSeat(match, player);
         if (!playerSeat) {
           sendJson(res, 403, { error: "player_not_in_match" });
+          return;
+        }
+        if (requiresDistributedHumanSteps(match)) {
+          sendJson(res, 409, { error: "human_step_required" });
           return;
         }
         try {

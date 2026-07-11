@@ -1807,6 +1807,15 @@ async function testHumanMatchStepsUseOnlyTheActivePlayersLocalKey() {
   assert.strictEqual(matched.status, 200);
   const matchId = matched.json.match.id;
 
+  const forbiddenAutoDuel = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), `/api/match/${matchId}/auto-duel`, {
+    method: "POST",
+    headers: authHeaders(alpha, { "content-type": "application/json" }),
+    body: JSON.stringify({ providerConfig: { provider: "openai", model: "model-step-alpha", apiKey: "sk-alpha-local" } })
+  });
+  assert.strictEqual(forbiddenAutoDuel.status, 409);
+  assert.strictEqual(forbiddenAutoDuel.json.error, "human_step_required");
+  assert.strictEqual(captured.length, 0, "full auto-duel must not spend one human's key on the opposing human team");
+
   const alphaStep = await request(createIsolatedServer({ env: {}, fetch: fetchMock }), `/api/match/${matchId}/step`, {
     method: "POST",
     headers: authHeaders(alpha, { "content-type": "application/json" }),

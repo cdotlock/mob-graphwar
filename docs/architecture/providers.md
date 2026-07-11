@@ -1,9 +1,10 @@
 # Provider Architecture
 
-Mob Graphwar Arena supports local AI seats plus BYOK hosted providers. The
-hosted layer is intentionally narrow: providers choose from legal actions
-during auto-duel resolution; humans do not submit mid-duel ranked actions, and
-models do not submit arbitrary functions.
+Mob Graphwar Arena supports browser-owned BYOK human commanders and server-owned
+AI-fill seats. The hosted layer is intentionally narrow: providers choose a
+legal action during unattended duel resolution, humans do not submit manual
+shots after launch, and models write mathematical expressions rather than
+selecting precomputed candidates.
 
 ## Contract
 
@@ -48,9 +49,14 @@ the current hand whitelist and cannot execute JavaScript or helper definitions.
 
 - `GET /healthz`
 - `GET /api/providers`
-- `POST /api/session`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/session/status`
 - `POST /api/match/join`
+- `POST /api/match/:id/step`
 - `POST /api/match/:id/auto-duel`
+- `POST /api/simulations/league`
 - `POST /api/agent/shot`
 
 The provider execution endpoint calls the selected provider, normalizes its
@@ -58,17 +64,23 @@ JSON, validates the selected legal action, then returns the verified action to
 the auto-duel resolver. The browser only watches the resulting frame stream and
 rank settlement.
 
-OpenAI-compatible providers use JSON mode. OpenRouter defaults to
+OpenAI-compatible providers use structured JSON responses. OpenRouter defaults to
 `openrouter/free` and is the default model for AI-filled ally/rival seats when
 `OPENROUTER_API_KEY` is available on the server. If a required provider key is
 missing or a provider call fails, the server returns an error rather than
-silently falling back. DeepSeek defaults to `deepseek-v4-flash`, caps output
-tokens for the JSON expression response, and disables thinking mode for the
-smoke-test path.
+silently falling back. Provider adapters do not impose a small hidden output
+budget; provider-native limits and the global request timeout still apply.
 
-The UI lets the player choose provider and model during session creation. A
-user-supplied key is sent only with the provider request and is never returned
-in session, provider, trace, or rank responses.
+The UI fetches current model lists with the browser key and stores the selected
+provider/model plus key locally. Account persistence contains provider/model
+metadata only. During human-v-human play, `/step` accepts a key only from the
+browser controlling the active team; the other browser receives a waiting
+response and cannot spend that key.
+
+Every ranked match uses the server-owned 24-action cap. Elimination resolves
+immediately; the action cap resolves by remaining team HP. Repeated settlement
+is idempotent, so replaying a resolved room cannot spend provider quota or apply
+rank twice.
 
 ## Railway
 

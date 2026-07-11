@@ -1,14 +1,27 @@
 # Security
 
-Mob Graphwar is designed so models choose from legal candidate IDs instead of
-writing arbitrary JavaScript or free-form functions.
+Mob Graphwar lets models write mathematical expressions, then parses and
+validates those expressions inside the simulation. Expressions are not executed
+as JavaScript. The active hand is the only function-family whitelist.
 
 ## API Keys
 
-- Offline local play does not need a key.
-- Hosted provider mode must not persist user-provided keys.
+- A player's provider key is stored only in that browser's local storage.
+- The key may transit through an authenticated request for the current model
+  action, but the server must not persist, log, trace, echo, or cache it.
+- Logout clears the browser-local provider key.
 - Keys must never be written to trace export, server logs, or client logs.
-- Put server-owned keys in deployment environment variables.
+- Server-owned AI-fill keys belong in deployment environment variables and may
+  only be used by internal AI seats.
+
+## Sessions and Provider Spending
+
+- Browser authentication uses a signed HttpOnly, Secure, SameSite=Lax cookie in
+  production.
+- Production requires an explicit 32+ character `GRAPHWAR_SESSION_SECRET`.
+- Provider execution and league routes require authentication and rate limits.
+- The legacy passwordless session route is disabled in production.
+- Provider errors are surfaced. There is no silent local model fallback.
 
 ## Reporting
 
